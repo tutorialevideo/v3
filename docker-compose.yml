@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # PostgreSQL Database
   postgres:
@@ -12,7 +10,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "5433:5432"  # Changed to 5433 to avoid conflicts
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U justapp -d justportal"]
       interval: 10s
@@ -30,7 +28,7 @@ services:
     volumes:
       - mongodb_data:/data/db
     ports:
-      - "27017:27017"
+      - "27018:27017"  # Changed to 27018 to avoid conflicts
     healthcheck:
       test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
       interval: 10s
@@ -48,7 +46,7 @@ services:
       - MONGO_URL=mongodb://root:rootpassword@mongodb:27017/
       - DB_NAME=justportal
       - POSTGRES_URL=postgresql://justapp:justapp123@postgres:5432/justportal
-      - CORS_ORIGINS=http://localhost:3000,http://localhost:80,http://frontend:3000
+      - CORS_ORIGINS=http://localhost:3080,http://localhost:3000,http://localhost:80,http://frontend:3000
     volumes:
       - backend_downloads:/app/downloads
     ports:
@@ -74,7 +72,7 @@ services:
         - REACT_APP_BACKEND_URL=http://localhost:8001
     container_name: just_frontend
     ports:
-      - "3000:80"
+      - "3080:80"  # Changed to 3080 to avoid conflicts with port 3000
     depends_on:
       - backend
     restart: unless-stopped

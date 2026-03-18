@@ -1,0 +1,180 @@
+<analysis>**original_problem_statement:** 
+The user requested a Docker-based application to automatically download all case files () related to companies () from the Romanian justice portal () on a daily basis.
+
+**PRODUCT REQUIREMENTS:**
+- **Core Functionality:** A script to download case files daily from the specified SOAP API.
+- **Data Storage:** Initially save data locally, but later changed to a **PostgreSQL** database. The structure should be  ->  -> .
+- **Web Interface:** A frontend to monitor the process, configure the download schedule (time), and view the downloaded data.
+- **Data Import:** A feature to import a large (~200MB) CSV file of companies from the National Trade Register Office (ONRC) to populate the  table. This import must:
+    - Handle large files via streaming.
+    - Support various delimiters (specifically ).
+    - Handle files with or without headers.
+    - Filter out non-company entities (like PFA, II) and only import legal entities (SRL, SA, etc.).
+    - Create new company entries in the database or update existing ones.
+- **Data Viewing:** A dedicated section in the UI to browse, search, and paginate through the companies stored in the database.
+- **Dockerization:** The entire application (frontend, backend, databases) must be containerized using Docker and easily runnable with a single  command.
+
+**User's preferred language**: The user's primary language is **Romanian**. The next agent MUST respond in Romanian.
+
+**what currently exists?**
+A full-stack application has been created and containerized.
+- **Backend (FastAPI):** Integrates with the  SOAP API to scrape data from all 246 judicial institutions. It uses APScheduler for cron jobs, stores data in PostgreSQL, and manages job metadata in MongoDB. It includes a robust CSV import endpoint that streams large files, detects delimiters, and filters records.
+- **Frontend (React):** A comprehensive dashboard with two main tabs:
+    1.  **Dashboard:** For configuring downloads (search term, date range), managing the daily cron job, and importing company data via a CSV uploader that includes a real-time log viewer.
+    2.  **Firme:** For viewing, searching, and paginating all companies stored in the PostgreSQL database, showing the number of associated cases for each.
+- **Databases:** A  orchestrates a PostgreSQL service for primary data (, , ) and a MongoDB service for job history and configuration. Data persistence is handled by Docker volumes.
+- **Dockerization:** All necessary files (,  for backend and frontend, , , , , , ) have been created to allow the user to run the entire stack locally.
+
+**Last working item**: 
+- **Last item agent was working on:** Debugging a series of errors the user encountered while trying to run the application locally using . The agent provided fixes for several build and runtime issues.
+- **Status:** **IN PROGRESS**
+- **Agent Testing Done:** N
+- **Which testing method agent to use?** This issue is on the user's local machine, so the agent cannot test it directly. The agent must provide instructions to the user and analyze the logs they provide.
+- **User Testing Done:** N (The user is in the middle of testing the latest fix provided by the agent for a port conflict.)
+
+**All Pending/In progress Issue list**:
+-   **Issue 1: Local Docker deployment fails.** (Priority: P0)
+    -   **Description:** The user is unable to successfully start the application using  on their local machine, encountering a sequence of errors.
+    -   **Attempted fixes:**
+        1.  : Fixed by updating  to make  copy optional ().
+        2.  : Fixed by removing the  package from  as it's an environment-specific dependency.
+        3.  : Fixed by upgrading the base image in  from  to .
+        4.  : Fixed by modifying  to remap the host ports to avoid conflicts (MongoDB: , PostgreSQL: ).
+    -   **Next debug checklist:**
+        1.  Ask the user to stop any existing containers with .
+        2.  Instruct the user to rebuild and restart the application with .
+        3.  Request the full terminal output if any errors occur.
+    -   **Why fix this issue and what will be achieved with the fix?** The main goal is to provide a portable, working Docker environment for the application, which was the user's final request.
+    -   **Status:** IN PROGRESS
+    -   **Is recurring issue?** Y
+    -   **Should Test frontend/backend/both after fix?** User will test the Docker setup.
+    -   **Blocked on other issue:** None
+
+**In progress Task List**:
+-   **Task 1: Finalize Docker Setup**
+    -   **Where to resume:** Respond to the user's Continue message. Reiterate the commands to run ( and ) and ask for the outcome. Be prepared to analyze new logs and provide further debugging steps.
+    -   **What will be achieved with this?** A fully functional and portable Docker environment that the user can run independently.
+    -   **Status:** IN PROGRESS
+    -   **Should Test frontend/backend/both after fix?** N/A (User is testing)
+    -   **Blocked on something:** Waiting for user feedback on the latest fix.
+
+**Upcoming and Future Tasks**
+- **Upcoming Tasks:**
+  - **(P1) View Company Details:** Implement functionality so that clicking on a company in the Firme list navigates to a detail page showing all its associated case files.
+  - **(P1) Manual CUI Editing:** Add a feature (e.g., an edit button in the Firme table) to manually add or update the CUI for a company.
+- **Future Tasks:**
+  - **(P2) Institution Selector:** Add a multi-select dropdown in the configuration to allow users to run downloads for specific judicial institutions instead of all 246, for faster targeted searches.
+  - **(P2) Data Export:** Add Export to CSV/Excel buttons on the Firme page to export the list of companies or case files.
+  - **(P2) Import Progress Monitoring:** Enhance the CSV import to show a real-time progress bar, which would be useful for 200MB+ files.
+  - **(P2) Advanced Search:** Add a search filter to find case files based on a company's CUI.
+
+**Completed work in this session**
+- **Backend (FastAPI):**
+  - Developed a SOAP client to fetch data from .
+  - Implemented data scraping from all 246 judicial institutions.
+  - Migrated data storage from local files to PostgreSQL (, ,  tables).
+  - Integrated  for configurable daily cron jobs.
+  - Added endpoints for date range filtering, statistics, and configuration.
+  - Built a streaming CSV importer to handle large files, auto-detect delimiters, and create/update company records in PostgreSQL.
+- **Frontend (React):**
+  - Created a dashboard with  and  tabs.
+  - Implemented a configuration panel for search term, date range, and cron job settings.
+  - Added a CSV import section with a file-drop zone and a real-time log viewer.
+  - Developed a Firme page with searching, pagination, and sorting to browse companies in the DB.
+- **Dockerization:**
+  - Created a complete  to orchestrate PostgreSQL, MongoDB, backend, and frontend services.
+  - Wrote  for both backend and frontend services.
+  - Added all necessary configuration and helper files (, , , , ).
+
+**Earlier issues found/mentioned but not fixed**
+None. Issues were addressed as they arose.
+
+**Known issue recurrence from previous fork**
+None.
+
+**Code Architecture**
+
+
+**Key Technical Concepts**
+- **Backend:** FastAPI, PostgreSQL (with SQLAlchemy and asyncpg), MongoDB (with Motor), APScheduler (for cron jobs), aiohttp (for asynchronous SOAP API calls).
+- **Frontend:** React, Axios, Tailwind CSS, Shadcn UI components (Card, Button, Badge, Calendar, etc.).
+- **Database:** Relational data (companies, cases) in PostgreSQL; non-relational metadata (job history, config) in MongoDB.
+- **Deployment:** A multi-container application orchestrated with Docker Compose.
+
+**key DB schema**
+-   **PostgreSQL:**
+    -   : {id (PK), cui (UNIQUE, text), denumire (text), denumire_normalized (text), created_at, updated_at}
+    -   : {id (PK), firma_id (FK->firme.id), numar_dosar (text), institutie (text), obiect (text), data_dosar (date), stadiu (text)}
+    -   : {id (PK), dosar_id (FK->dosare.id), tip (text), data (datetime), descriere (text)}
+-   **MongoDB:**
+    -   : Stores documents tracking the execution history, status, and results of each download job.
+    -   : Stores a single document with the user's saved configuration (search term, cron schedule, date range).
+
+**changes in tech stack**
+- The primary data storage was migrated from local JSON files to a PostgreSQL database to handle relational data and large volumes more effectively.
+
+**All files of reference**
+- : Defines and configures all services (postgres, mongo, backend, frontend), volumes, and networks for the application. Essential for the current debugging task.
+- : Describes the build process for the FastAPI backend image. Recently modified to remove a private dependency.
+- : Describes the build process for the React frontend image. Recently modified to use  and make  optional.
+- : The main application file containing all API endpoints, database logic, SOAP integration, and the CSV import functionality.
+- : The main React component that renders the entire user interface, including all tabs, forms, and data displays.
+
+**Areas that need refactoring**
+-  has grown to over 1100 lines and contains logic for database models, API routes, SOAP calls, and CSV importing. It should be split into multiple modules (e.g., , , , ) for better maintainability.
+-  is over 800 lines. The UI logic should be broken down into smaller, reusable components (e.g., , , ).
+
+**key api endpoints**
+- : Uploads and processes the large company CSV file.
+- : Retrieves a paginated list of companies for the Firme tab.
+- : Manually triggers a new file download job.
+- : Saves the user's configuration (search term, cron settings, etc.).
+- , : Provide statistics for the dashboard.
+- : Enables/disables and configures the daily cron job.
+
+**Critical Info for New Agent**
+- The immediate task is to help the user resolve their local  issues. The agent cannot run Docker commands itself and must rely on user-provided logs to debug.
+- The user's goal is a fully self-contained Docker setup.
+- The application experienced a memory-related pod termination, which wiped the PostgreSQL data. The user has been informed that data in the preview environment is not persistent across restarts and that the Docker setup uses volumes for persistence.
+- The CSV import logic is a critical and complex feature. It is designed to handle large files, different delimiters, files with or without headers, and filters specific company types (SRL, SA) before creating new entries in the  table.
+
+**documents and test reports created in this job**
+- /app/memory/PRD.md
+- /app/test_reports/iteration_1.json
+- /app/test_reports/iteration_2.json
+- /app/test_reports/iteration_3.json
+- /app/test_reports/iteration_4.json
+
+**Last 10 User Messages and any pending HUMAN messages**
+1. **User:** Reports an error: . (Status: **Resolved**)
+2. **Agent:** Explains  doesn't exist and will fix the Dockerfile.
+3. **User:** Reports a pip error: . (Status: **Resolved**)
+4. **Agent:** Explains the package is internal and will remove it.
+5. **User:** Reports a yarn error: . (Status: **Resolved**)
+6. **Agent:** Explains Node 20 is needed and will update the Dockerfile.
+7. **User:** Reports a Docker daemon error: . (Status: **In Progress**)
+8. **Agent:** Explains the port is in use and will change the mapping in .
+9. **User:** . (Status: **Pending Action**) - This is the last user message, indicating they are waiting for the agent's next instruction after the proposed fix.
+10. **Agent:** Provided the updated  and is ready to give the final instructions.
+
+**Project Health Check:**
+-   **Broken:** The local Docker deployment for the user is currently non-functional and is being actively debugged.
+-   **Mocked:** None.
+
+**3rd Party Integrations**
+- **Romanian Justice Portal (portalquery.just.ro):** SOAP API for fetching case file data. Does not require an API key.
+
+**Testing status**
+- **Testing agent used after significant changes:** YES. The testing agent was used successfully after the initial build and after implementing major features like PostgreSQL migration, cron jobs, and CSV import.
+- **Troubleshoot agent used after agent stuck in loop:** NO
+- **Test files created:** 
+- **Known regressions:** None.
+
+**Credentials to test flow:**
+No external credentials are required. The default database credentials are set in  and the respective  files:
+-   **PostgreSQL User:** 
+-   **PostgreSQL Password:** 
+-   **PostgreSQL Database:** 
+
+**What agent forgot to execute**
+The agent has successfully addressed all explicit user requests. The Upcoming/Future Tasks are features suggested by the agent during  summaries that the user has not yet prioritized for implementation. The focus correctly shifted to the user's final request for a working Docker setup.</analysis>
