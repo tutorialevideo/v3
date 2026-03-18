@@ -1136,16 +1136,24 @@ async def get_diagnostics_overview():
         dosare_count = await database.fetch_one("SELECT COUNT(*) as cnt FROM dosare")
         timeline_count = await database.fetch_one("SELECT COUNT(*) as cnt FROM timeline_events")
         
-        # Table sizes (approximate)
-        table_sizes = await database.fetch_all("""
-            SELECT 
-                relname as table_name,
-                pg_size_pretty(pg_total_relation_size(relid)) as total_size,
-                pg_total_relation_size(relid) as size_bytes
-            FROM pg_catalog.pg_statio_user_tables
-            WHERE schemaname = 'public'
-            ORDER BY pg_total_relation_size(relid) DESC
-        """)
+        # Table sizes (approximate) - with fallback
+        try:
+            table_sizes = await database.fetch_all("""
+                SELECT 
+                    relname as table_name,
+                    pg_size_pretty(pg_total_relation_size(relid)) as total_size,
+                    pg_total_relation_size(relid) as size_bytes
+                FROM pg_catalog.pg_statio_user_tables
+                WHERE schemaname = 'public'
+                ORDER BY pg_total_relation_size(relid) DESC
+            """)
+            table_sizes_list = [
+                {"table": r["table_name"], "size": r["total_size"], "bytes": int(r["size_bytes"])}
+                for r in table_sizes
+            ]
+        except Exception as e:
+            logger.warning(f"Could not fetch table sizes: {e}")
+            table_sizes_list = []
         
         # Duplicate counts
         denumire_dupes = await database.fetch_one("""
@@ -1180,19 +1188,16 @@ async def get_diagnostics_overview():
         
         return {
             "counts": {
-                "firme": firme_count["cnt"] if firme_count else 0,
-                "dosare": dosare_count["cnt"] if dosare_count else 0,
-                "timeline_events": timeline_count["cnt"] if timeline_count else 0
+                "firme": int(firme_count["cnt"]) if firme_count else 0,
+                "dosare": int(dosare_count["cnt"]) if dosare_count else 0,
+                "timeline_events": int(timeline_count["cnt"]) if timeline_count else 0
             },
-            "table_sizes": [
-                {"table": r["table_name"], "size": r["total_size"], "bytes": r["size_bytes"]}
-                for r in table_sizes
-            ],
+            "table_sizes": table_sizes_list,
             "issues": {
-                "duplicate_denumiri": denumire_dupes["cnt"] if denumire_dupes else 0,
-                "duplicate_cui": cui_dupes["cnt"] if cui_dupes else 0,
-                "firme_without_cui": no_cui["cnt"] if no_cui else 0,
-                "orphaned_dosare": orphaned_dosare["cnt"] if orphaned_dosare else 0
+                "duplicate_denumiri": int(denumire_dupes["cnt"]) if denumire_dupes else 0,
+                "duplicate_cui": int(cui_dupes["cnt"]) if cui_dupes else 0,
+                "firme_without_cui": int(no_cui["cnt"]) if no_cui else 0,
+                "orphaned_dosare": int(orphaned_dosare["cnt"]) if orphaned_dosare else 0
             }
         }
     except Exception as e:
@@ -1210,7 +1215,7 @@ async def get_duplicate_denumiri(limit: int = 50):
                 COUNT(*) as count,
                 array_agg(id ORDER BY id) as ids,
                 array_agg(denumire ORDER BY id) as denumiri,
-                array_agg(cui ORDER BY id) as cui_list
+                array_agg(COALESCE(cui, '') ORDER BY id) as cui_list
             FROM firme 
             GROUP BY denumire_normalized 
             HAVING COUNT(*) > 1 
@@ -1222,9 +1227,9 @@ async def get_duplicate_denumiri(limit: int = 50):
             {
                 "denumire_normalized": r["denumire_normalized"],
                 "count": r["count"],
-                "ids": r["ids"],
-                "denumiri": r["denumiri"],
-                "cui_list": r["cui_list"]
+                "ids": list(r["ids"]) if r["ids"] else [],
+                "denumiri": list(r["denumiri"]) if r["denumiri"] else [],
+                "cui_list": list(r["cui_list"]) if r["cui_list"] else []
             }
             for r in duplicates
         ]
@@ -1255,8 +1260,8 @@ async def get_duplicate_cui(limit: int = 50):
             {
                 "cui": r["cui"],
                 "count": r["count"],
-                "ids": r["ids"],
-                "denumiri": r["denumiri"]
+                "ids": list(r["ids"]) if r["ids"] else [],
+                "denumiri": list(r["denumiri"]) if r["denumiri"] else []
             }
             for r in duplicates
         ]
