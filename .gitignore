@@ -35,3 +35,7 @@ test_reports/
 # Docker volumes (when running locally)
 postgres_data/
 mongodb_data/
+-e 
+# Environment files
+*.env
+*.env.*
