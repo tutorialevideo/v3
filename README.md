@@ -76,6 +76,17 @@ docker-compose ps
 2. Caută după denumire sau CUI
 3. Vezi dosarele asociate fiecărei firme
 
+### 4. Diagnosticare și Optimizare DB
+
+1. Click pe tab-ul "Diagnosticare DB"
+2. Vezi statisticile: număr firme, dosare, dimensiuni tabele
+3. Verifică problemele: duplicate, firme fără CUI, dosare orfane
+4. Acțiuni disponibile:
+   - **Creează Indexuri** - îmbunătățește performanța căutărilor
+   - **Optimizează DB** - rulează VACUUM ANALYZE
+   - **Șterge Duplicate** - elimină înregistrările duplicate
+   - **Șterge Dosare Orfane** - curăță dosarele fără firmă asociată
+
 ## Comenzi Docker
 
 ```bash

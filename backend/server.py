@@ -1123,6 +1123,386 @@ async def get_institutions():
     return INSTITUTII
 
 
+# ============================================
+# DATABASE DIAGNOSTICS ENDPOINTS
+# ============================================
+
+@api_router.get("/diagnostics/overview")
+async def get_diagnostics_overview():
+    """Get complete database diagnostics overview"""
+    try:
+        # Table counts
+        firme_count = await database.fetch_one("SELECT COUNT(*) as cnt FROM firme")
+        dosare_count = await database.fetch_one("SELECT COUNT(*) as cnt FROM dosare")
+        timeline_count = await database.fetch_one("SELECT COUNT(*) as cnt FROM timeline_events")
+        
+        # Table sizes (approximate)
+        table_sizes = await database.fetch_all("""
+            SELECT 
+                relname as table_name,
+                pg_size_pretty(pg_total_relation_size(relid)) as total_size,
+                pg_total_relation_size(relid) as size_bytes
+            FROM pg_catalog.pg_statio_user_tables
+            WHERE schemaname = 'public'
+            ORDER BY pg_total_relation_size(relid) DESC
+        """)
+        
+        # Duplicate counts
+        denumire_dupes = await database.fetch_one("""
+            SELECT COUNT(*) as cnt FROM (
+                SELECT denumire_normalized 
+                FROM firme 
+                GROUP BY denumire_normalized 
+                HAVING COUNT(*) > 1
+            ) as dupes
+        """)
+        
+        cui_dupes = await database.fetch_one("""
+            SELECT COUNT(*) as cnt FROM (
+                SELECT cui 
+                FROM firme 
+                WHERE cui IS NOT NULL AND cui != ''
+                GROUP BY cui 
+                HAVING COUNT(*) > 1
+            ) as dupes
+        """)
+        
+        # Firme without CUI
+        no_cui = await database.fetch_one("""
+            SELECT COUNT(*) as cnt FROM firme WHERE cui IS NULL OR cui = ''
+        """)
+        
+        # Orphaned dosare (no firma)
+        orphaned_dosare = await database.fetch_one("""
+            SELECT COUNT(*) as cnt FROM dosare 
+            WHERE firma_id NOT IN (SELECT id FROM firme)
+        """)
+        
+        return {
+            "counts": {
+                "firme": firme_count["cnt"] if firme_count else 0,
+                "dosare": dosare_count["cnt"] if dosare_count else 0,
+                "timeline_events": timeline_count["cnt"] if timeline_count else 0
+            },
+            "table_sizes": [
+                {"table": r["table_name"], "size": r["total_size"], "bytes": r["size_bytes"]}
+                for r in table_sizes
+            ],
+            "issues": {
+                "duplicate_denumiri": denumire_dupes["cnt"] if denumire_dupes else 0,
+                "duplicate_cui": cui_dupes["cnt"] if cui_dupes else 0,
+                "firme_without_cui": no_cui["cnt"] if no_cui else 0,
+                "orphaned_dosare": orphaned_dosare["cnt"] if orphaned_dosare else 0
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error in diagnostics overview: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/diagnostics/duplicates/denumire")
+async def get_duplicate_denumiri(limit: int = 50):
+    """Get list of duplicate company names"""
+    try:
+        duplicates = await database.fetch_all(f"""
+            SELECT 
+                denumire_normalized,
+                COUNT(*) as count,
+                array_agg(id ORDER BY id) as ids,
+                array_agg(denumire ORDER BY id) as denumiri,
+                array_agg(cui ORDER BY id) as cui_list
+            FROM firme 
+            GROUP BY denumire_normalized 
+            HAVING COUNT(*) > 1 
+            ORDER BY COUNT(*) DESC 
+            LIMIT {limit}
+        """)
+        
+        return [
+            {
+                "denumire_normalized": r["denumire_normalized"],
+                "count": r["count"],
+                "ids": r["ids"],
+                "denumiri": r["denumiri"],
+                "cui_list": r["cui_list"]
+            }
+            for r in duplicates
+        ]
+    except Exception as e:
+        logger.error(f"Error fetching duplicate denumiri: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/diagnostics/duplicates/cui")
+async def get_duplicate_cui(limit: int = 50):
+    """Get list of duplicate CUIs"""
+    try:
+        duplicates = await database.fetch_all(f"""
+            SELECT 
+                cui,
+                COUNT(*) as count,
+                array_agg(id ORDER BY id) as ids,
+                array_agg(denumire ORDER BY id) as denumiri
+            FROM firme 
+            WHERE cui IS NOT NULL AND cui != ''
+            GROUP BY cui 
+            HAVING COUNT(*) > 1 
+            ORDER BY COUNT(*) DESC 
+            LIMIT {limit}
+        """)
+        
+        return [
+            {
+                "cui": r["cui"],
+                "count": r["count"],
+                "ids": r["ids"],
+                "denumiri": r["denumiri"]
+            }
+            for r in duplicates
+        ]
+    except Exception as e:
+        logger.error(f"Error fetching duplicate CUIs: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/diagnostics/cleanup/duplicates-denumire")
+async def cleanup_duplicate_denumiri():
+    """Remove duplicate companies by denumire_normalized, keeping the one with CUI or lowest ID"""
+    try:
+        # First, count how many will be deleted
+        count_query = await database.fetch_one("""
+            SELECT COUNT(*) as cnt FROM firme f1
+            WHERE EXISTS (
+                SELECT 1 FROM firme f2
+                WHERE f2.denumire_normalized = f1.denumire_normalized
+                AND (
+                    (f2.cui IS NOT NULL AND f2.cui != '' AND (f1.cui IS NULL OR f1.cui = ''))
+                    OR (f2.id < f1.id AND (f2.cui IS NOT NULL OR f1.cui IS NULL))
+                )
+            )
+        """)
+        
+        # Delete duplicates, keeping the one with CUI or lowest ID
+        result = await database.execute("""
+            DELETE FROM firme 
+            WHERE id IN (
+                SELECT f1.id FROM firme f1
+                WHERE EXISTS (
+                    SELECT 1 FROM firme f2
+                    WHERE f2.denumire_normalized = f1.denumire_normalized
+                    AND f2.id < f1.id
+                    AND (
+                        (f2.cui IS NOT NULL AND f2.cui != '')
+                        OR (f1.cui IS NULL OR f1.cui = '')
+                    )
+                )
+            )
+        """)
+        
+        # Vacuum analyze
+        await database.execute("VACUUM ANALYZE firme")
+        
+        return {
+            "success": True,
+            "deleted_count": count_query["cnt"] if count_query else 0,
+            "message": f"Deleted {count_query['cnt'] if count_query else 0} duplicate entries"
+        }
+    except Exception as e:
+        logger.error(f"Error cleaning duplicates: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/diagnostics/cleanup/duplicates-cui")
+async def cleanup_duplicate_cui():
+    """Remove duplicate companies by CUI, keeping the one with lowest ID"""
+    try:
+        count_query = await database.fetch_one("""
+            SELECT COUNT(*) as cnt FROM firme f1
+            WHERE cui IS NOT NULL AND cui != ''
+            AND EXISTS (
+                SELECT 1 FROM firme f2
+                WHERE f2.cui = f1.cui
+                AND f2.id < f1.id
+            )
+        """)
+        
+        result = await database.execute("""
+            DELETE FROM firme 
+            WHERE id IN (
+                SELECT f1.id FROM firme f1
+                WHERE f1.cui IS NOT NULL AND f1.cui != ''
+                AND EXISTS (
+                    SELECT 1 FROM firme f2
+                    WHERE f2.cui = f1.cui
+                    AND f2.id < f1.id
+                )
+            )
+        """)
+        
+        await database.execute("VACUUM ANALYZE firme")
+        
+        return {
+            "success": True,
+            "deleted_count": count_query["cnt"] if count_query else 0,
+            "message": f"Deleted {count_query['cnt'] if count_query else 0} duplicate CUI entries"
+        }
+    except Exception as e:
+        logger.error(f"Error cleaning CUI duplicates: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/diagnostics/cleanup/orphaned-dosare")
+async def cleanup_orphaned_dosare():
+    """Remove dosare that have no associated firma"""
+    try:
+        count_query = await database.fetch_one("""
+            SELECT COUNT(*) as cnt FROM dosare 
+            WHERE firma_id NOT IN (SELECT id FROM firme)
+        """)
+        
+        # Delete orphaned timeline events first
+        await database.execute("""
+            DELETE FROM timeline_events 
+            WHERE dosar_id IN (
+                SELECT id FROM dosare 
+                WHERE firma_id NOT IN (SELECT id FROM firme)
+            )
+        """)
+        
+        # Delete orphaned dosare
+        await database.execute("""
+            DELETE FROM dosare 
+            WHERE firma_id NOT IN (SELECT id FROM firme)
+        """)
+        
+        await database.execute("VACUUM ANALYZE dosare")
+        await database.execute("VACUUM ANALYZE timeline_events")
+        
+        return {
+            "success": True,
+            "deleted_count": count_query["cnt"] if count_query else 0,
+            "message": f"Deleted {count_query['cnt'] if count_query else 0} orphaned dosare"
+        }
+    except Exception as e:
+        logger.error(f"Error cleaning orphaned dosare: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/diagnostics/optimize")
+async def optimize_database():
+    """Run VACUUM ANALYZE on all tables to optimize performance"""
+    try:
+        await database.execute("VACUUM ANALYZE firme")
+        await database.execute("VACUUM ANALYZE dosare")
+        await database.execute("VACUUM ANALYZE timeline_events")
+        
+        return {
+            "success": True,
+            "message": "Database optimized successfully"
+        }
+    except Exception as e:
+        logger.error(f"Error optimizing database: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/diagnostics/indexes")
+async def get_database_indexes():
+    """Get list of all indexes in the database"""
+    try:
+        indexes = await database.fetch_all("""
+            SELECT 
+                indexname,
+                tablename,
+                indexdef
+            FROM pg_indexes 
+            WHERE schemaname = 'public'
+            ORDER BY tablename, indexname
+        """)
+        
+        return [
+            {
+                "name": r["indexname"],
+                "table": r["tablename"],
+                "definition": r["indexdef"]
+            }
+            for r in indexes
+        ]
+    except Exception as e:
+        logger.error(f"Error fetching indexes: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/diagnostics/create-indexes")
+async def create_performance_indexes():
+    """Create indexes for better performance"""
+    try:
+        created = []
+        
+        # Index on firme.denumire_normalized for faster searches
+        try:
+            await database.execute("""
+                CREATE INDEX IF NOT EXISTS idx_firme_denumire_normalized 
+                ON firme(denumire_normalized)
+            """)
+            created.append("idx_firme_denumire_normalized")
+        except Exception:
+            pass
+        
+        # Index on firme.cui for faster lookups
+        try:
+            await database.execute("""
+                CREATE INDEX IF NOT EXISTS idx_firme_cui 
+                ON firme(cui) WHERE cui IS NOT NULL AND cui != ''
+            """)
+            created.append("idx_firme_cui")
+        except Exception:
+            pass
+        
+        # Index on dosare.firma_id for faster joins
+        try:
+            await database.execute("""
+                CREATE INDEX IF NOT EXISTS idx_dosare_firma_id 
+                ON dosare(firma_id)
+            """)
+            created.append("idx_dosare_firma_id")
+        except Exception:
+            pass
+        
+        # Index on dosare.numar_dosar
+        try:
+            await database.execute("""
+                CREATE INDEX IF NOT EXISTS idx_dosare_numar 
+                ON dosare(numar_dosar)
+            """)
+            created.append("idx_dosare_numar")
+        except Exception:
+            pass
+        
+        # Index on timeline_events.dosar_id
+        try:
+            await database.execute("""
+                CREATE INDEX IF NOT EXISTS idx_timeline_dosar_id 
+                ON timeline_events(dosar_id)
+            """)
+            created.append("idx_timeline_dosar_id")
+        except Exception:
+            pass
+        
+        # Run analyze after creating indexes
+        await database.execute("ANALYZE firme")
+        await database.execute("ANALYZE dosare")
+        await database.execute("ANALYZE timeline_events")
+        
+        return {
+            "success": True,
+            "created_indexes": created,
+            "message": f"Created {len(created)} indexes"
+        }
+    except Exception as e:
+        logger.error(f"Error creating indexes: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # App setup
 app.include_router(api_router)
 

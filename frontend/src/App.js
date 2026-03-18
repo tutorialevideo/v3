@@ -35,7 +35,12 @@ import {
   Zap,
   Upload,
   FileSpreadsheet,
-  AlertCircle
+  AlertCircle,
+  Database,
+  HardDrive,
+  AlertTriangle,
+  Wrench,
+  BarChart3
 } from "lucide-react";
 
 // Use relative URL - nginx will proxy to backend
@@ -68,12 +73,20 @@ function App() {
   const [importError, setImportError] = useState(null);
   
   // Firme viewer state
-  const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard' or 'firme'
+  const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard', 'firme', or 'diagnostics'
   const [firmeList, setFirmeList] = useState([]);
   const [firmeTotal, setFirmeTotal] = useState(0);
   const [firmePage, setFirmePage] = useState(0);
   const [firmeSearch, setFirmeSearch] = useState("");
   const [firmeLoading, setFirmeLoading] = useState(false);
+  
+  // Diagnostics state
+  const [diagnosticsData, setDiagnosticsData] = useState(null);
+  const [duplicateDenumiri, setDuplicateDenumiri] = useState([]);
+  const [duplicateCui, setDuplicateCui] = useState([]);
+  const [indexes, setIndexes] = useState([]);
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
+  const [cleanupLoading, setCleanupLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -262,6 +275,107 @@ function App() {
     loadFirme(0, firmeSearch);
   };
 
+  // Diagnostics functions
+  const loadDiagnostics = useCallback(async () => {
+    setDiagnosticsLoading(true);
+    try {
+      const [overviewRes, denumiriRes, cuiRes, indexesRes] = await Promise.all([
+        axios.get(`${API}/diagnostics/overview`),
+        axios.get(`${API}/diagnostics/duplicates/denumire?limit=20`),
+        axios.get(`${API}/diagnostics/duplicates/cui?limit=20`),
+        axios.get(`${API}/diagnostics/indexes`)
+      ]);
+      setDiagnosticsData(overviewRes.data);
+      setDuplicateDenumiri(denumiriRes.data);
+      setDuplicateCui(cuiRes.data);
+      setIndexes(indexesRes.data);
+    } catch (error) {
+      console.error("Error loading diagnostics:", error);
+      toast.error("Eroare la încărcarea diagnosticelor");
+    } finally {
+      setDiagnosticsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'diagnostics') {
+      loadDiagnostics();
+    }
+  }, [activeTab, loadDiagnostics]);
+
+  const cleanupDuplicateDenumiri = async () => {
+    if (!window.confirm("Sigur vrei să ștergi duplicatele după denumire? Această acțiune este ireversibilă!")) {
+      return;
+    }
+    setCleanupLoading(true);
+    try {
+      const res = await axios.post(`${API}/diagnostics/cleanup/duplicates-denumire`);
+      toast.success(res.data.message);
+      loadDiagnostics();
+    } catch (error) {
+      toast.error("Eroare la curățarea duplicatelor");
+    } finally {
+      setCleanupLoading(false);
+    }
+  };
+
+  const cleanupDuplicateCui = async () => {
+    if (!window.confirm("Sigur vrei să ștergi duplicatele după CUI? Această acțiune este ireversibilă!")) {
+      return;
+    }
+    setCleanupLoading(true);
+    try {
+      const res = await axios.post(`${API}/diagnostics/cleanup/duplicates-cui`);
+      toast.success(res.data.message);
+      loadDiagnostics();
+    } catch (error) {
+      toast.error("Eroare la curățarea duplicatelor CUI");
+    } finally {
+      setCleanupLoading(false);
+    }
+  };
+
+  const cleanupOrphanedDosare = async () => {
+    if (!window.confirm("Sigur vrei să ștergi dosarele orfane? Această acțiune este ireversibilă!")) {
+      return;
+    }
+    setCleanupLoading(true);
+    try {
+      const res = await axios.post(`${API}/diagnostics/cleanup/orphaned-dosare`);
+      toast.success(res.data.message);
+      loadDiagnostics();
+    } catch (error) {
+      toast.error("Eroare la curățarea dosarelor orfane");
+    } finally {
+      setCleanupLoading(false);
+    }
+  };
+
+  const optimizeDatabase = async () => {
+    setCleanupLoading(true);
+    try {
+      const res = await axios.post(`${API}/diagnostics/optimize`);
+      toast.success(res.data.message);
+    } catch (error) {
+      toast.error("Eroare la optimizarea bazei de date");
+    } finally {
+      setCleanupLoading(false);
+    }
+  };
+
+  const createIndexes = async () => {
+    setCleanupLoading(true);
+    try {
+      const res = await axios.post(`${API}/diagnostics/create-indexes`);
+      toast.success(`${res.data.message}: ${res.data.created_indexes.join(', ')}`);
+      loadDiagnostics();
+    } catch (error) {
+      toast.error("Eroare la crearea indexurilor");
+    } finally {
+      setCleanupLoading(false);
+    }
+  };
+
   const formatBytes = (bytes) => {
     if (bytes === 0) return '0 B';
     const k = 1024;
@@ -316,6 +430,14 @@ function App() {
           >
             <Building2 size={18} />
             Firme ({dbStats?.firme_total?.toLocaleString() || 0})
+          </button>
+          <button 
+            className={`tab-btn ${activeTab === 'diagnostics' ? 'active' : ''}`}
+            onClick={() => setActiveTab('diagnostics')}
+            data-testid="tab-diagnostics"
+          >
+            <Database size={18} />
+            Diagnosticare DB
           </button>
         </div>
       </header>
@@ -823,7 +945,7 @@ function App() {
           </Card>
         </div>
           </>
-        ) : (
+        ) : activeTab === 'firme' ? (
           /* Firme Tab */
           <div className="firme-container" data-testid="firme-section">
             <Card className="firme-card">
@@ -922,7 +1044,290 @@ function App() {
               </CardContent>
             </Card>
           </div>
-        )}
+        ) : activeTab === 'diagnostics' ? (
+          /* Diagnostics Tab */
+          <div className="diagnostics-section" data-testid="diagnostics-section">
+            {/* Overview Card */}
+            <Card className="diagnostics-overview" data-testid="diagnostics-overview">
+              <CardHeader>
+                <div className="card-header-with-action">
+                  <div>
+                    <CardTitle className="card-title">
+                      <Database size={20} />
+                      Diagnosticare Bază de Date
+                    </CardTitle>
+                    <CardDescription>
+                      Verifică starea bazei de date, duplicatele și optimizează performanța
+                    </CardDescription>
+                  </div>
+                  <div className="header-actions">
+                    <Button 
+                      variant="outline" 
+                      onClick={loadDiagnostics}
+                      disabled={diagnosticsLoading}
+                    >
+                      <RefreshCw size={16} className={diagnosticsLoading ? 'animate-spin' : ''} />
+                      Reîncarcă
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {diagnosticsLoading && !diagnosticsData ? (
+                  <div className="loading-center">
+                    <Loader2 className="animate-spin" size={32} />
+                    <p>Se încarcă diagnosticele...</p>
+                  </div>
+                ) : diagnosticsData ? (
+                  <div className="diagnostics-grid">
+                    {/* Table Counts */}
+                    <div className="diag-card">
+                      <h4><BarChart3 size={18} /> Statistici Tabele</h4>
+                      <div className="diag-stats">
+                        <div className="diag-stat">
+                          <span className="stat-value">{diagnosticsData.counts.firme?.toLocaleString() || 0}</span>
+                          <span className="stat-label">Firme</span>
+                        </div>
+                        <div className="diag-stat">
+                          <span className="stat-value">{diagnosticsData.counts.dosare?.toLocaleString() || 0}</span>
+                          <span className="stat-label">Dosare</span>
+                        </div>
+                        <div className="diag-stat">
+                          <span className="stat-value">{diagnosticsData.counts.timeline_events?.toLocaleString() || 0}</span>
+                          <span className="stat-label">Evenimente</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Table Sizes */}
+                    <div className="diag-card">
+                      <h4><HardDrive size={18} /> Dimensiune pe Disc</h4>
+                      <div className="diag-sizes">
+                        {diagnosticsData.table_sizes?.map((t, i) => (
+                          <div key={i} className="size-row">
+                            <span className="table-name">{t.table}</span>
+                            <span className="table-size">{t.size}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Issues */}
+                    <div className="diag-card issues-card">
+                      <h4><AlertTriangle size={18} /> Probleme Detectate</h4>
+                      <div className="issues-list">
+                        <div className={`issue-row ${diagnosticsData.issues.duplicate_denumiri > 0 ? 'has-issue' : 'no-issue'}`}>
+                          <span>Denumiri duplicate:</span>
+                          <Badge variant={diagnosticsData.issues.duplicate_denumiri > 0 ? "destructive" : "secondary"}>
+                            {diagnosticsData.issues.duplicate_denumiri}
+                          </Badge>
+                        </div>
+                        <div className={`issue-row ${diagnosticsData.issues.duplicate_cui > 0 ? 'has-issue' : 'no-issue'}`}>
+                          <span>CUI duplicate:</span>
+                          <Badge variant={diagnosticsData.issues.duplicate_cui > 0 ? "destructive" : "secondary"}>
+                            {diagnosticsData.issues.duplicate_cui}
+                          </Badge>
+                        </div>
+                        <div className={`issue-row ${diagnosticsData.issues.firme_without_cui > 0 ? 'has-warning' : 'no-issue'}`}>
+                          <span>Firme fără CUI:</span>
+                          <Badge variant={diagnosticsData.issues.firme_without_cui > 0 ? "outline" : "secondary"}>
+                            {diagnosticsData.issues.firme_without_cui}
+                          </Badge>
+                        </div>
+                        <div className={`issue-row ${diagnosticsData.issues.orphaned_dosare > 0 ? 'has-issue' : 'no-issue'}`}>
+                          <span>Dosare orfane:</span>
+                          <Badge variant={diagnosticsData.issues.orphaned_dosare > 0 ? "destructive" : "secondary"}>
+                            {diagnosticsData.issues.orphaned_dosare}
+                          </Badge>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="diag-card actions-card">
+                      <h4><Wrench size={18} /> Acțiuni de Întreținere</h4>
+                      <div className="actions-list">
+                        <Button 
+                          variant="outline" 
+                          onClick={createIndexes}
+                          disabled={cleanupLoading}
+                          className="action-btn"
+                        >
+                          <Zap size={16} />
+                          Creează Indexuri
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          onClick={optimizeDatabase}
+                          disabled={cleanupLoading}
+                          className="action-btn"
+                        >
+                          <RefreshCw size={16} />
+                          Optimizează DB
+                        </Button>
+                        <Button 
+                          variant="destructive" 
+                          onClick={cleanupDuplicateDenumiri}
+                          disabled={cleanupLoading || !diagnosticsData?.issues?.duplicate_denumiri}
+                          className="action-btn"
+                        >
+                          <Trash2 size={16} />
+                          Șterge Duplicate Denumiri
+                        </Button>
+                        <Button 
+                          variant="destructive" 
+                          onClick={cleanupDuplicateCui}
+                          disabled={cleanupLoading || !diagnosticsData?.issues?.duplicate_cui}
+                          className="action-btn"
+                        >
+                          <Trash2 size={16} />
+                          Șterge Duplicate CUI
+                        </Button>
+                        <Button 
+                          variant="destructive" 
+                          onClick={cleanupOrphanedDosare}
+                          disabled={cleanupLoading || !diagnosticsData?.issues?.orphaned_dosare}
+                          className="action-btn"
+                        >
+                          <Trash2 size={16} />
+                          Șterge Dosare Orfane
+                        </Button>
+                      </div>
+                      {cleanupLoading && (
+                        <div className="cleanup-loading">
+                          <Loader2 className="animate-spin" size={16} />
+                          <span>Se procesează...</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <p>Nu s-au putut încărca diagnosticele.</p>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Duplicate Denumiri */}
+            {duplicateDenumiri.length > 0 && (
+              <Card className="duplicates-card" data-testid="duplicate-denumiri-card">
+                <CardHeader>
+                  <CardTitle className="card-title">
+                    <AlertTriangle size={20} className="text-warning" />
+                    Denumiri Duplicate ({duplicateDenumiri.length})
+                  </CardTitle>
+                  <CardDescription>
+                    Firme cu aceeași denumire normalizată
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="duplicates-table-container">
+                    <table className="duplicates-table">
+                      <thead>
+                        <tr>
+                          <th>Denumire</th>
+                          <th>Duplicări</th>
+                          <th>IDs</th>
+                          <th>CUI-uri</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {duplicateDenumiri.map((dup, i) => (
+                          <tr key={i}>
+                            <td className="denumire-cell">{dup.denumire_normalized}</td>
+                            <td><Badge variant="destructive">{dup.count}</Badge></td>
+                            <td className="ids-cell">{dup.ids?.slice(0, 5).join(', ')}{dup.ids?.length > 5 ? '...' : ''}</td>
+                            <td className="cui-cell">
+                              {dup.cui_list?.filter(c => c).slice(0, 3).map((c, j) => (
+                                <Badge key={j} variant="outline" className="mr-1">{c}</Badge>
+                              ))}
+                              {dup.cui_list?.filter(c => c).length > 3 ? '...' : ''}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Duplicate CUI */}
+            {duplicateCui.length > 0 && (
+              <Card className="duplicates-card" data-testid="duplicate-cui-card">
+                <CardHeader>
+                  <CardTitle className="card-title">
+                    <AlertTriangle size={20} className="text-danger" />
+                    CUI Duplicate ({duplicateCui.length})
+                  </CardTitle>
+                  <CardDescription>
+                    Firme cu același CUI (ar trebui să fie unic)
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="duplicates-table-container">
+                    <table className="duplicates-table">
+                      <thead>
+                        <tr>
+                          <th>CUI</th>
+                          <th>Duplicări</th>
+                          <th>IDs</th>
+                          <th>Denumiri</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {duplicateCui.map((dup, i) => (
+                          <tr key={i}>
+                            <td><Badge variant="outline">{dup.cui}</Badge></td>
+                            <td><Badge variant="destructive">{dup.count}</Badge></td>
+                            <td className="ids-cell">{dup.ids?.slice(0, 5).join(', ')}{dup.ids?.length > 5 ? '...' : ''}</td>
+                            <td className="denumire-cell">
+                              {dup.denumiri?.slice(0, 2).join(', ')}{dup.denumiri?.length > 2 ? '...' : ''}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Indexes */}
+            <Card className="indexes-card" data-testid="indexes-card">
+              <CardHeader>
+                <CardTitle className="card-title">
+                  <Zap size={20} />
+                  Indexuri ({indexes.length})
+                </CardTitle>
+                <CardDescription>
+                  Indexurile existente în baza de date pentru performanță
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="indexes-table-container">
+                  <table className="indexes-table">
+                    <thead>
+                      <tr>
+                        <th>Tabel</th>
+                        <th>Index</th>
+                        <th>Definiție</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {indexes.map((idx, i) => (
+                        <tr key={i}>
+                          <td><Badge variant="secondary">{idx.table}</Badge></td>
+                          <td className="index-name">{idx.name}</td>
+                          <td className="index-def"><code>{idx.definition}</code></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        ) : null}
       </main>
 
       <footer className="app-footer">
