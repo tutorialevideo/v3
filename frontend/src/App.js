@@ -196,53 +196,120 @@ function App() {
   };
 
   const handleCsvImport = async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
 
     setImportLoading(true);
     setImportResult(null);
     setImportError(null);
+    
+    const fileList = Array.from(files);
+    const totalSize = fileList.reduce((acc, f) => acc + f.size, 0);
+    
     setImportLog([
-      `[${new Date().toLocaleTimeString()}] Fișier selectat: ${file.name}`,
-      `[${new Date().toLocaleTimeString()}] Dimensiune: ${(file.size / 1024 / 1024).toFixed(2)} MB`,
-      `[${new Date().toLocaleTimeString()}] Se încarcă fișierul...`
+      `[${new Date().toLocaleTimeString()}] 📁 ${fileList.length} fișier(e) selectat(e)`,
+      `[${new Date().toLocaleTimeString()}] 📊 Dimensiune totală: ${(totalSize / 1024 / 1024).toFixed(2)} MB`,
+      `[${new Date().toLocaleTimeString()}] ─────────────────────────────`
+    ]);
+
+    let grandTotal = {
+      total_rows: 0,
+      processed: 0,
+      created_new: 0,
+      updated: 0,
+      skipped_not_company: 0,
+      skipped_no_cui: 0
+    };
+
+    for (let i = 0; i < fileList.length; i++) {
+      const file = fileList[i];
+      
+      setImportLog(prev => [
+        ...prev,
+        ``,
+        `[${new Date().toLocaleTimeString()}] 📄 Fișier ${i + 1}/${fileList.length}: ${file.name}`,
+        `[${new Date().toLocaleTimeString()}]    Dimensiune: ${(file.size / 1024 / 1024).toFixed(2)} MB`,
+        `[${new Date().toLocaleTimeString()}]    Se încarcă...`
+      ]);
+      
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        // Start progress polling
+        const progressInterval = setInterval(async () => {
+          try {
+            const progressRes = await axios.get(`${API}/db/import-progress`);
+            if (progressRes.data && progressRes.data.processed > 0) {
+              setImportLog(prev => {
+                // Update the last progress line or add new one
+                const lastLine = prev[prev.length - 1];
+                const progressLine = `[${new Date().toLocaleTimeString()}]    ⏳ Procesat: ${progressRes.data.processed.toLocaleString()} rânduri, ${progressRes.data.created_new.toLocaleString()} firme create...`;
+                
+                if (lastLine && lastLine.includes('⏳ Procesat:')) {
+                  return [...prev.slice(0, -1), progressLine];
+                } else {
+                  return [...prev, progressLine];
+                }
+              });
+            }
+          } catch (e) {
+            // Progress endpoint might not exist or no active import
+          }
+        }, 2000);
+        
+        const res = await axios.post(`${API}/db/import-cui`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          timeout: 1800000 // 30 minute timeout pentru fișiere foarte mari
+        });
+        
+        clearInterval(progressInterval);
+        
+        // Accumulate totals
+        grandTotal.total_rows += res.data.total_rows || 0;
+        grandTotal.processed += res.data.processed || 0;
+        grandTotal.created_new += res.data.created_new || 0;
+        grandTotal.updated += res.data.updated || 0;
+        grandTotal.skipped_not_company += res.data.skipped_not_company || 0;
+        grandTotal.skipped_no_cui += res.data.skipped_no_cui || 0;
+        
+        setImportLog(prev => [
+          ...prev.filter(line => !line.includes('⏳ Procesat:')),
+          `[${new Date().toLocaleTimeString()}]    ✅ ${file.name} - GATA!`,
+          `[${new Date().toLocaleTimeString()}]       Rânduri: ${res.data.total_rows?.toLocaleString()}`,
+          `[${new Date().toLocaleTimeString()}]       Create: ${res.data.created_new?.toLocaleString()} | Actualizate: ${res.data.updated?.toLocaleString()}`,
+          `[${new Date().toLocaleTimeString()}]       Sărite (PFA/II): ${res.data.skipped_not_company?.toLocaleString()}`
+        ]);
+        
+      } catch (error) {
+        const errorMsg = error.response?.data?.detail || error.message || "Eroare necunoscută";
+        setImportLog(prev => [
+          ...prev.filter(line => !line.includes('⏳ Procesat:')),
+          `[${new Date().toLocaleTimeString()}]    ❌ ${file.name} - EROARE: ${errorMsg}`
+        ]);
+      }
+    }
+
+    // Final summary
+    setImportLog(prev => [
+      ...prev,
+      ``,
+      `[${new Date().toLocaleTimeString()}] ═══════════════════════════════`,
+      `[${new Date().toLocaleTimeString()}] 📊 SUMAR TOTAL:`,
+      `[${new Date().toLocaleTimeString()}]    Rânduri procesate: ${grandTotal.total_rows.toLocaleString()}`,
+      `[${new Date().toLocaleTimeString()}]    Firme create: ${grandTotal.created_new.toLocaleString()}`,
+      `[${new Date().toLocaleTimeString()}]    Firme actualizate: ${grandTotal.updated.toLocaleString()}`,
+      `[${new Date().toLocaleTimeString()}]    Sărite (PFA/II): ${grandTotal.skipped_not_company.toLocaleString()}`,
+      `[${new Date().toLocaleTimeString()}]    Sărite (fără CUI): ${grandTotal.skipped_no_cui.toLocaleString()}`,
+      `[${new Date().toLocaleTimeString()}] ═══════════════════════════════`
     ]);
     
-    const formData = new FormData();
-    formData.append('file', file);
-
-    try {
-      setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Se procesează pe server...`]);
-      
-      const res = await axios.post(`${API}/db/import-cui`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-        timeout: 600000 // 10 minute timeout pentru fișiere mari
-      });
-      
-      setImportResult(res.data);
-      setImportLog(prev => [
-        ...prev,
-        `[${new Date().toLocaleTimeString()}] ✓ Import finalizat cu succes!`,
-        `[${new Date().toLocaleTimeString()}] Rânduri procesate: ${res.data.total_rows?.toLocaleString()}`,
-        `[${new Date().toLocaleTimeString()}] Firme create: ${res.data.created_new?.toLocaleString()}`,
-        `[${new Date().toLocaleTimeString()}] PFA/II sărite: ${res.data.skipped_not_company?.toLocaleString()}`
-      ]);
-      toast.success(`Import finalizat: ${res.data.created_new || 0} firme create`);
-      fetchData();
-    } catch (error) {
-      const errorMsg = error.response?.data?.detail || error.message || "Eroare necunoscută";
-      setImportError(errorMsg);
-      setImportLog(prev => [
-        ...prev,
-        `[${new Date().toLocaleTimeString()}] ✗ EROARE: ${errorMsg}`,
-        `[${new Date().toLocaleTimeString()}] Status: ${error.response?.status || 'N/A'}`,
-        `[${new Date().toLocaleTimeString()}] Verifică dacă fișierul are format corect (delimitator ^)`
-      ]);
-      toast.error("Eroare la importul fișierului");
-    } finally {
-      setImportLoading(false);
-      event.target.value = '';
-    }
+    setImportResult(grandTotal);
+    toast.success(`Import finalizat: ${grandTotal.created_new.toLocaleString()} firme create din ${fileList.length} fișier(e)`);
+    fetchData();
+    
+    setImportLoading(false);
+    event.target.value = '';
   };
 
   const exportFirme = () => {
@@ -485,6 +552,7 @@ function App() {
                   <input
                     type="file"
                     accept="*/*"
+                    multiple
                     onChange={handleCsvImport}
                     disabled={importLoading}
                     style={{ display: 'none' }}
@@ -497,7 +565,7 @@ function App() {
                       ) : (
                         <Upload size={16} />
                       )}
-                      {importLoading ? 'Se importă...' : 'Import CSV'}
+                      {importLoading ? 'Se importă...' : 'Import CSV (multiple)'}
                     </span>
                   </Button>
                 </label>

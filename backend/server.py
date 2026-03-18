@@ -154,6 +154,19 @@ api_router = APIRouter(prefix="/api")
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Import progress tracking (global state)
+import_progress = {
+    "active": False,
+    "filename": "",
+    "total_rows": 0,
+    "processed": 0,
+    "created_new": 0,
+    "updated": 0,
+    "skipped_not_company": 0,
+    "skipped_no_cui": 0,
+    "last_update": None
+}
+
 # Scheduler
 scheduler = AsyncIOScheduler()
 
@@ -923,6 +936,12 @@ async def get_db_stats():
         db.close()
 
 
+@api_router.get("/db/import-progress")
+async def get_import_progress():
+    """Get current import progress"""
+    return import_progress
+
+
 @api_router.post("/db/import-cui")
 async def import_cui_csv(
     file: UploadFile = File(...),
@@ -983,6 +1002,20 @@ async def import_cui_csv(
     
     start_row = 1 if has_header else 0
     
+    # Initialize progress tracking
+    global import_progress
+    import_progress = {
+        "active": True,
+        "filename": file.filename,
+        "total_rows": len(lines) - start_row,
+        "processed": 0,
+        "created_new": 0,
+        "updated": 0,
+        "skipped_not_company": 0,
+        "skipped_no_cui": 0,
+        "last_update": datetime.utcnow().isoformat()
+    }
+    
     db = SessionLocal()
     results = {
         "total_rows": 0,
@@ -1011,6 +1044,16 @@ async def import_cui_csv(
             val = cols[idx].strip() if cols[idx] else None
             return val if val else default
         return default
+    
+    def update_progress():
+        """Update global progress for polling"""
+        global import_progress
+        import_progress["processed"] = results["total_rows"]
+        import_progress["created_new"] = results["created_new"]
+        import_progress["updated"] = results["updated"]
+        import_progress["skipped_not_company"] = results["skipped_not_company"]
+        import_progress["skipped_no_cui"] = results["skipped_no_cui"]
+        import_progress["last_update"] = datetime.utcnow().isoformat()
     
     try:
         batch_count = 0
@@ -1128,20 +1171,26 @@ async def import_cui_csv(
                     })
             
             batch_count += 1
-            if batch_count >= 1000:
+            
+            # Commit and log every 5000 rows
+            if batch_count >= 5000:
                 db.commit()
                 batch_count = 0
-                logger.info(f"Processed {results['total_rows']} rows, created {results['created_new']} new firms")
+                update_progress()
+                logger.info(f"[PROGRESS] {results['total_rows']:,} rânduri | {results['created_new']:,} create | {results['updated']:,} actualizate | {results['skipped_not_company']:,} PFA/II sărite")
         
         db.commit()
-        logger.info(f"Import complete: {results}")
+        update_progress()
+        logger.info(f"[COMPLETE] Import finalizat: {results['total_rows']:,} rânduri, {results['created_new']:,} firme create, {results['updated']:,} actualizate")
         
     except Exception as e:
         db.rollback()
         logger.error(f"Error processing file: {e}")
+        import_progress["active"] = False
         raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
     finally:
         db.close()
+        import_progress["active"] = False
     
     return results
 
