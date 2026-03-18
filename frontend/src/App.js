@@ -38,8 +38,13 @@ import {
   AlertCircle
 } from "lucide-react";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+// Use relative URL - nginx will proxy to backend
+// This eliminates CORS issues completely
+const BACKEND_URL = "";
+const API = "/api";
+
+// Debug: Log the API URL (remove in production)
+console.log("[DEBUG] API URL:", API);
 
 function App() {
   const [config, setConfig] = useState(null);
