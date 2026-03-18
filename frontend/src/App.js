@@ -214,24 +214,24 @@ function App() {
           
           <Card className="stat-card">
             <CardContent className="stat-content">
-              <div className="stat-icon blue">
-                <FileJson size={24} />
+              <div className="stat-icon purple">
+                <Building2 size={24} />
               </div>
               <div className="stat-info">
-                <span className="stat-value">{stats?.total_files || 0}</span>
-                <span className="stat-label">Fișiere salvate</span>
+                <span className="stat-value">{stats?.db_firme || 0}</span>
+                <span className="stat-label">Firme în DB</span>
               </div>
             </CardContent>
           </Card>
           
           <Card className="stat-card">
             <CardContent className="stat-content">
-              <div className="stat-icon purple">
-                <Activity size={24} />
+              <div className="stat-icon blue">
+                <FileJson size={24} />
               </div>
               <div className="stat-info">
-                <span className="stat-value">{stats?.total_size_mb || 0} MB</span>
-                <span className="stat-label">Spațiu total</span>
+                <span className="stat-value">{stats?.db_dosare || 0}</span>
+                <span className="stat-label">Dosare în DB</span>
               </div>
             </CardContent>
           </Card>

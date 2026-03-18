@@ -1,0 +1,2043 @@
+{
+  "search_term": "DEDEMAN",
+  "date_start": "2026-02-16",
+  "date_end": "2026-03-18",
+  "stats": {
+    "firme_new": 287,
+    "firme_existing": 13,
+    "dosare_new": 298,
+    "timeline_new": 547
+  },
+  "total_records": 19,
+  "dosare": [
+    {
+      "parti": [
+        {
+          "nume": "FEROMET M SRL PRIN ADMINISTRATOR  JUDICIAR MANAGEMENT REORGANIZARE LICHIDARE IAŞI S.P.R.L. FILALA BACĂU",
+          "calitateParte": "Intimat"
+        },
+        {
+          "nume": "MANAGEMENT REORGANIZARE LICHIDARE IAŞI S.P.R.L.- FILIALA BACĂU",
+          "calitateParte": "Intimat ADMINISTRATOR AL RESTRUCTURĂRII"
+        },
+        {
+          "nume": "BANCA TRANSILVANIA S.A. CLUJ NAPOCA  - SEDIUL DIN PIATRA NEAMŢ",
+          "calitateParte": "Intimat AFECTAT"
+        },
+        {
+          "nume": "GARANTI BANK S.A.",
+          "calitateParte": "Apelant AFECTAT"
+        },
+        {
+          "nume": "ELECTRICA FURNIZARE S.A.",
+          "calitateParte": "Intimat AFECTAT"
+        },
+        {
+          "nume": "BAMESA OŢEL SA",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "CONI-TRANS EXPORTPACKAGING SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "LIO-METAL SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "GALANTHUS FOREST SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "PORCHE LEASING ROMÂNIA IFN SA",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "KOBER SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "RYWAL RHC ROMANIA SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "HIDROELECTRICA SA",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "FOCUS CONTA XXI SRL",
+          "calitateParte": "Intimat"
+        },
+        {
+          "nume": "VESTEL SRL",
+          "calitateParte": "Intimat"
+        },
+        {
+          "nume": "RATZ WOOD SRL",
+          "calitateParte": "Intimat"
+        },
+        {
+          "nume": "KIESOW MAGYARORSZAG",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "SOCAR PETROLEUM SA",
+          "calitateParte": "Intimat"
+        },
+        {
+          "nume": "DSU MUREŞ SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "RENOVATIO TRADING SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "MIRAS STEEL TRADE SRL",
+          "calitateParte": "Intimat"
+        },
+        {
+          "nume": "SOS SECURITY SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "GASTROMET SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "ROSECOS VADURI SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "HELLO COMPUTER SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "RECCA METAL WORKSHOP SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "BAUROM CONSTRUCT SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "DEDEMAN SRL",
+          "calitateParte": "Intimat NE"
+        },
+        {
+          "nume": "LAZĂR TRANS SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "UNIPAK SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "LEMETAL COM SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "OLTEAN PRODLEMN SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "TRUTZI SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "AUTOMATION IND.MACHINE SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "MOLDOPLAST - DEPOZITUL DE FOLIE SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "VOESTALPINE HIGH PERFORMANCE METALS ROMANIA SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "SOCIETATEA DE TRANSPORT PUBLIC NEAMŢ SA",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "TRANS DAN MIR SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "METALDISC SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "FLORADIS COMPANY SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "HAREX SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "VODAFONE ROMÂNIA SA",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "EUROTRAVEL SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "FEMININ STYLE SRL",
+          "calitateParte": "Intimat"
+        },
+        {
+          "nume": "INFOTEC SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "ADCON SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "PANAUTO SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "ALCROMAL SERVICE SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "TEHNIK WOOD SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "ONIX HI-FI SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "MESER ROMÂNIA GAZ SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "CIROMAX  PAN SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "MAXIM TOOLS INTERNATIONAL SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "MELINDA-IMPEX STEEL SA",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "ARHIPRINT SRL",
+          "calitateParte": "Intimat"
+        },
+        {
+          "nume": "ARC STORE SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "RTC PROFFICE EXPERIENCE SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "ALFA CLUJ SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "NANO CLOUD ROMÂNIA SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "IFPTR SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "DSC EXPRES LOGISTIC SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "EURIAL EST DISTRIBUŢIE SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "PROTEHNIC ART SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "ORANGE ROMÂNIA SA",
+          "calitateParte": "Intimat"
+        },
+        {
+          "nume": "ROMSILVA SA",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "ADMINISTRAŢIA BAZINALĂ DE APĂ SIRET",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "P & T VEST CONSTRUCT SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "FAN COURIER EXPRESS SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "DUO CRIS SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "CANDY ANTO SRL",
+          "calitateParte": "Intimat"
+        },
+        {
+          "nume": "C.I.T.GRUP SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "MATICOM SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "GRUPPO PADANA ORTOFLORICOLTURA DEI F.LLI GAZZOLA S.S.",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "CARGUS SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "AMAZON.CO.UK",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "SEA ROMÂNIA SRL",
+          "calitateParte": "Intimat"
+        },
+        {
+          "nume": "ALSAFIX SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "ECO SYNERGY SA",
+          "calitateParte": "Intimat NEAFECTAT"
+        },
+        {
+          "nume": "LOGITRANS SRL",
+          "calitateParte": "Intimat NEAFECTAT"
+        }
+      ],
+      "caiAtac": [
+        {
+          "dataDeclarare": "2026-02-20T00:00:00",
+          "parteDeclaratoare": " GARANTI BANK S.A., ",
+          "tipCaleAtac": "Apel"
+        }
+      ],
+      "numar": "227/103/2026",
+      "numarVechi": "",
+      "data": "2026-03-05T14:11:00",
+      "institutie": "CurteadeApelBACAU",
+      "departament": "Secţia a II-a civilă, de contencios administrativ şi fiscal",
+      "categorieCaz": "Faliment",
+      "stadiuProcesual": "Apel",
+      "obiect": "alte cereri",
+      "dataModificare": "2026-03-12T12:10:13.74",
+      "categorieCazNume": "Faliment",
+      "stadiuProcesualNume": "Apel"
+    },
+    {
+      "parti": [
+        {
+          "nume": "ADMINISTRAŢIA JUDEŢEANĂ A FINANŢELOR PUBLICE BRAŞOV PRIN REP LEGAL",
+          "calitateParte": "Intimat Creditor"
+        },
+        {
+          "nume": "CII ALEXANDRU SAIDUFIS - ADMINISTRATOR JUDICIAR AL DEBITOAREI SC AGETAPS CONSTRUCT SRL, PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Apelant ADMINISTRATOR JUDICIAR"
+        },
+        {
+          "nume": "AD UTILAJ LOGISTIC SRL, PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC AGETAPS CONSTRUCT SRL, PRIN ADMINISTRATOR SPECIAL MUNTEAN ANDREI",
+          "calitateParte": "Intimat Debitor"
+        },
+        {
+          "nume": "SC ANVELO SRL, PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ALUKONIGSTAHL SISTEME DE ALUMINIU, O?EL ?I PLASTIC SRL PRIN REPREZENTANT LEGAL CORINA RADU J40/913/1995 CUI RO 7025541/",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SIDERPLAST ROMÂNIA SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "STRATTON INTERNATIONAL SRL, PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "FESTBAU TECHNOLOGIE SRL, PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "MARIAND IMPEX SRL, PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "IDEAL PAVICONS SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "HAUSTORE SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "LOADING SD SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC ARC ELECTRONIC SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "DIRECTIA FISCALA BRASOV PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "CITADELLE EXPERT SRL PRIN REPREZENTANT",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC AQUA SERVICE SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SILNEF SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ORANGE ROMANIA SA PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC GEOCON GLOBAL CONSULTING SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "DEDEMAN SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC RESORT DISTRIBUTION SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "TRANSGAT SORT SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "UNIOR TEPID SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "AIR  LIQUIDE ROMANIA SRL PRIN REPEREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "MTR AUTO SERVICE SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC TPS CONSTRUCTII VEST SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC TURISANNIO SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "PROENERGY CINTRACTOR DIVISION SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC DUVENBEK LOGISTIK SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "MCAT TECHNOLOGY SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "VERESS ERNO INTREPRINDERE INDIVIDUALA",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "TIR INC SRL PRIN AVOCAT",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "DEMAMETAL SRL PRIN LICHIDATOR",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC J.A.  PETROL SRL PRIN REPREZENTANT",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "AGETAPS PAZA SRL PRIN LICHIDATOR",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ADMINISTRATIA JUDETEANA A FINANTELOR PUBLICE BRASOV",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC CEMPLUS RO SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC DFR SYSTEMS SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC  GRAELLS & LLONCH ADMINISTRARE PARC INDUSTRIAL SA",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "RS ACTIV SRL PRIN AV. OVIDIU MAZILU",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC POLARIS M HOLDING SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC VBH ROMCOM SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC EUROECOLOGIC SRL PRIN AV FORI I GYORGYI",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SVC VILLEX SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC IZODOMSTAR SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC SEDA INVEST SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC ALICO PARTS SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "T.T.H. LABS SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC ANTREPRIZA CONSTRUCTII MONTAJ NR. 4 BUCURESTI SA PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "LICEUL  STEFAN PROCOPIU  PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC RAMI TEHNIC TRANS SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC LUMBET SRL  PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "COMPANIA NATIONALA PENTRU CONTROLUL CAZANELOR INSTALATIILOR DE RIDICAT SI RECIPIENTELOR SUB PRESIUNE  SA CNCIR",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "MECODIS COMPANY SRL  PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "RENEVIA SERV SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "CLIMASON CONSULTING SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ELECTROTERM  PRODSERV SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ENERGI ROMANIA SA PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "VIA STRADE INTERNATIONAL SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "VECTRA SERVICE SRL PRIN AV ADELA MARIA DANCU",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ANKRYST IMPEX SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "METALCARS GRUP SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SYMMETRICA SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "MANOLEA NECULAI",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC GAZ EST SA PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "TERMENE JUST SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "WORLS CLASS DISTRIBUTION SRL PRI REPREZENTANT  LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC RAMOSS COM SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC TONG CONSTRUCT PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC RENEVIA SERV SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ASOCIATIA PROMO FACTORY  PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC BEZO  SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "GREENPLACE&BRIKS SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC ALMAR BETON SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC GOTIC SA PRIN ADMINISTRATOR JUDICIAR",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC SALAUTA CONSTRUCT SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC TECHNO PRO SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC AGETAPS SRL PRIN ADMINISTRATOR JUDICIAR",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC ASFAROM CONSTRUCTII DRUMURI SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ISOPAN EST SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "VLADIMIR TRANS SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "LICEUL STEFAN PROCOPIU PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC ACTIV METAL GAZ SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ASOCIATIA CENTRU REZIDENTIAL PENTRU VARSTNICI MARIA PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC CONPRIF SA  PRI REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ALACLIMA SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC AGRA TRANSILVANIA SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ETANCO  FASTENING SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC SIDES TECH SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "FELBERMAYR ROMANIA SRL  PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "VERTICAL DESIGN SRL PRIN REPREZENTANT LEGAL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "U.A.T. BUDILA, PRIN PRIMAR IRIMIA MARSAVELA",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ADMINISTRATOR SPECIAL MUNTEAN ANDREI",
+          "calitateParte": "Intimat administrator special"
+        }
+      ],
+      "sedinte": [
+        {
+          "complet": "C3A insolvenţă*",
+          "data": "2026-04-03T00:00:00",
+          "ora": "10:30",
+          "solutie": "",
+          "solutieSumar": "",
+          "dataPronuntare": "",
+          "documentSedinta": "",
+          "numarDocument": "",
+          "dataDocument": ""
+        },
+        {
+          "complet": "C3A insolvenţă*",
+          "data": "2026-03-17T00:00:00",
+          "ora": "10:30",
+          "solutie": "Amână pronunţarea",
+          "solutieSumar": "Având nevoie de timp pentru a delibera, în temeiul art.396 alin.1 Cod procedură civilă, amână pronunţarea la  03 aprilie 2026.\nÎn temeiul art.396 alin.2 Cod de procedură civilă pronunţarea hotărârii se va face prin punerea soluţiei la dispoziţia părţilor prin mijlocirea grefei instanţei. \n",
+          "dataPronuntare": "2026-03-17T00:00:00",
+          "documentSedinta": "incheiereAmanareinitialaapronuntarii",
+          "numarDocument": "",
+          "dataDocument": "2026-03-17T00:00:00"
+        }
+      ],
+      "caiAtac": [
+        {
+          "dataDeclarare": "2026-01-15T00:00:00",
+          "parteDeclaratoare": " CII ALEXANDRU SAIDUFIS - ADMINISTRATOR JUDICIAR AL DEBITOAREI SC AGETAPS CONSTRUCT SRL, PRIN REPREZENTANT LEGAL, ",
+          "tipCaleAtac": "Apel"
+        }
+      ],
+      "numar": "516/62/2021/a1.3",
+      "numarVechi": "",
+      "data": "2026-02-24T08:00:00",
+      "institutie": "CurteadeApelBRASOV",
+      "departament": "Sectia Civilă",
+      "categorieCaz": "Faliment",
+      "stadiuProcesual": "Apel",
+      "obiect": "contestaţie",
+      "dataModificare": "2026-03-17T13:31:18.023",
+      "categorieCazNume": "Faliment",
+      "stadiuProcesualNume": "Apel"
+    },
+    {
+      "parti": [
+        {
+          "nume": "DEDEMAN SRL",
+          "calitateParte": "Reclamant"
+        },
+        {
+          "nume": "INSPECTORATUL TERITORIAL DE MUNCA BUZAU",
+          "calitateParte": "Pârât"
+        }
+      ],
+      "numar": "731/110/2026",
+      "numarVechi": "",
+      "data": "2026-03-03T13:44:00",
+      "institutie": "TribunalulBACAU",
+      "departament": "Secţia a II-a civilă şi de contencios administrativ şi fiscal",
+      "categorieCaz": "Contenciosadministrativsifiscal",
+      "stadiuProcesual": "Fond",
+      "obiect": "anulare act administrativ",
+      "dataModificare": "2026-03-18T10:45:29.66",
+      "categorieCazNume": "Contencios administrativ şi fiscal",
+      "stadiuProcesualNume": "Fond"
+    },
+    {
+      "parti": [
+        {
+          "nume": "GHEORGHE IONUŢ",
+          "calitateParte": "Reclamant"
+        },
+        {
+          "nume": "SC DEDEMAN SRL BACĂU",
+          "calitateParte": "Pârât"
+        },
+        {
+          "nume": "SC DEDEMAN SRL - PUNCT DE LUCRU BUZĂU - MAGAZINE NR. 48",
+          "calitateParte": "Pârât"
+        }
+      ],
+      "numar": "482/114/2026",
+      "numarVechi": "",
+      "data": "2026-02-27T11:50:00",
+      "institutie": "TribunalulBUZAU",
+      "departament": "Secţia I civilă",
+      "categorieCaz": "Litigiidemunca",
+      "stadiuProcesual": "Fond",
+      "obiect": "acţiune în răspundere patrimonială",
+      "dataModificare": "2026-03-18T14:02:14.83",
+      "categorieCazNume": "Litigii de muncă",
+      "stadiuProcesualNume": "Fond"
+    },
+    {
+      "parti": [
+        {
+          "nume": "ADISS SA",
+          "calitateParte": "Debitor"
+        },
+        {
+          "nume": "TRUE IPURL - ADMINISTRATOR CONCORDATAR",
+          "calitateParte": "Lichidator"
+        },
+        {
+          "nume": "OFICIUL REGISTRULUI COMERŢULUI DE PE LÂNGĂ TRIBUNALUL MARAMUREŞ",
+          "calitateParte": "Intimat"
+        },
+        {
+          "nume": "DOVEXIM SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "CLARITY FINANCIAL SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "COMPANIA DE APĂ SOMEŞ SA",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "PRIMĂRIA TĂUŢII MĂGHERĂUŞ",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "COMPANIA AQUASERV SA",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "NOMIS 2003 SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "VAN DER HANN SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "GEOMARCO CONSTRUCT SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC ADIX TECHNIX SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "AMOROM GRUP SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC AERZEN ROMÂNIA SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC ALESS CONCEPT SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "BOIA PETRU-DAN PFA",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC ALFA COM SRL PRIN LICHIDATOR CABINET INDIVIDUAL DE INSOLVENŢĂ LUCIA AUGUSTIN",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ARMAX SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC ALRICH PLAST SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC AMINODAN 2004 SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC ANAMAR IMPEX SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "BIFA AUTOMATIZĂRI SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC AQUA D&P TECHONOLIES SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC ARCHISTRUCTURE SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "CEC BANK SA",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC ARCINNA DYNAMIC SOLUTION SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "DAFAR CONSULTING SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC ASCOMI TRADE COMPANY SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC ASIO ROMÂNIA SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "EXPERTISSA CONSTANTA SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ASOCIAŢIA GS1 ROMÂNIA",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ADMINISTRAŢIA JUDEŢEANĂ A FINANŢELOR PUBLICE MARAMUREŞ",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ASOCIAŢIA ROMANA A APEI (A.R.A.)",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ROCREDIT IFN SA",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "NELTIN CONSTR SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC ATLAS COPCO ROMÂNIA SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC ATV&MOTO EXTREM SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC AUTO BECORO SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "POPESCU DUMITRU GABRIEL PFA",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "AUTODESK IRELAND OPERATIONS UC",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC AUTOMATIC CONCEPT SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "PETPOP EXPERT SECURITY SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC AUTOMATIC GRUP SA",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC BARNA INTERVENŢII SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "TREVIRA IMPEX SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC BEESPEED AUTOMATIZĂRI SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "BEJENARU & PARTENERII",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "PRONED CONTROL SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC BETANIA IMPEX SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC BIBUS SES SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "GLOSPESPED INTERNAŢIONAL SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC BIG - WELD SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ZELENCZ FLORIN ALEXANDRU PFA",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC BLACK GOAT MEDIA SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "CABINET DE AVOCAT HERŢA V. CĂLIN VIOREL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "PECOLIN ART SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "CABINET DE AVOCAT LUŢAŞ VASILE HORAŢIU",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "CAMERA DE COMERŢ ŞI INDUSTIE MARAMUREŞ",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC CANTABRIA IMPEX SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC CARADIMA PROIECT SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC CASA AUTO SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "CCF TRANS LINE EXCLUSIV SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC CENTRAL SERVICE INSTAL SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC CM METAL TRADING SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC COMPLEX DESERVIRE SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC COMPLEX MARA SA",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC CONTERM INTERNAŢIONAL SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "CONTINENTAL HOTELS SA",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "CABINET INDIVIDUAL DE INSOLVENŢĂ CORDOVAN SILVIU SORIN",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC CRISTAL SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC CUMPĂNA 1993 SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC DAFI INDUSTRIAL SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "DB CLEAN BAIA-MARE SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "DEDEMAN SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC DELTA SCOPE SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC DENIRA SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "DEPOZITARUL CENTRAL SA",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC DIAFAN SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "RAJA SA",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "DIODOR IMPORT EXPERT SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ADISS NOVA SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "DIRECT LINE INOX IMPEX SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ADISS ASSET MANAGEMENT SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "DOCOM ELECTRONIC SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "DRILLING WALTER INDUSTRY SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "COZA IOAN PFA",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SC ECO MOLD INVEST SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "IGUT SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ECOVADIS SAS",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ELCONET SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "JAEGER UMWELT TECHNIK GMBH",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SIAD ROMANIA SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "DATCOMP SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ALFRED SOLAQUA SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SICA GUARD SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SOCOT SA",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ELECTRO CENTER SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ELECTROMEC SA",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ELFI GROUP INTERNAŢIONAL SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ENDRESS HAUSER",
+          "calitateParte": "Creditor"
+        }
+      ],
+      "sedinte": [
+        {
+          "complet": "NCPC Complet specializat Falimente nr.12",
+          "data": "2026-02-17T00:00:00",
+          "ora": "8:30",
+          "solutie": "Admis",
+          "solutieSumar": "Dosar nr. 1494/100/2025\n\n\n\t\t\t\t\tHOTĂRĂŞTE:\n\n\nRespinge ca inadmisibilă opoziţia formulată de către Compania Aquaserv SA Tg. Mureş.\nAdmite cererea formulată de către TRUE IPURL cu sediul în ... judeţul Cluj, în calitate de administrator concordatar al debitoarei ADISS SA cu sediul în ... judeţul Maramureş.\n\tOmologhează planul de restructurare al debitoarei ADISS SA aprobat de creditori conform Procesului verbal de constatare a votului creditorilor nr. 1077 din 29.12.2025.\n\tPune în vedere administratorului concordatar că are obligaţia de a comunica planul de restructurare, aprobat de creditori şi omologat de judecătorul-sindic, creditorilor afectaţi şi creditorilor titulari ai unor creanţe neafectate, în termen de 48 de ore de la pronunţarea încheierii, şi să ceară menţionarea în registrul în care este înregistrat debitorul. \n\tDe la data pronunţării prezentei hotărâri, se suspendă de drept executările silite individuale asupra debitoarei, ce au ca obiect recuperarea unor creanţe afectate, şi curgerea prescripţiei dreptului de a cere executarea silită a creanţelor acestora. \n\tPune în vedere administratorului concordatar că are obligaţia de a comunica creditorilor afectaţi de planul de restructurare un raport de analiză trimestrial prin care se va prezenta modalitatea de îndeplinire a planului de restructurare, precum şi faptul că, prin derularea acestuia, se menţine viabilitatea afacerii.\n\tPune în vedere debitoarei că are obligaţia de a transmite administratorului concordatar toate informaţiile necesare întocmirii raportului de analiză, în termen de cel mult 15 zile de la data încheierii situaţiilor financiare aferente trimestrului monitorizat. Necomunicarea informaţiilor de către debitor se prezumă că reprezintă eşuarea planului de restructurare.\nStabileşte termen pentru examinarea stadiului procedurii, în baza rapoartelor întocmite de administratorul concordatar, la data de 02.06.2026, în camera de consiliu, sala 76, ora 10.00.\nExecutorie. \nCu drept de apel în termen de 7 zile de la comunicare. \nCererea de apel se va depune la Tribunalul Maramureş, secţia a II-a civilă de contencios administrativ şi fiscal. \nPronunţată azi 17.02.2026, prin punerea soluţiei la dispoziţia părţilor prin grefa instanţei.\nŞedinţa camerei de consiliu. \n\n",
+          "dataPronuntare": "2026-02-17T00:00:00",
+          "documentSedinta": "",
+          "numarDocument": "",
+          "dataDocument": ""
+        }
+      ],
+      "caiAtac": [
+        {
+          "dataDeclarare": "2026-02-23T00:00:00",
+          "parteDeclaratoare": "",
+          "tipCaleAtac": "Apel"
+        }
+      ],
+      "numar": "1494/100/2025/a2",
+      "numarVechi": "",
+      "data": "2026-03-16T15:22:00",
+      "institutie": "TribunalulMARAMURES",
+      "departament": "Secţia a II-a civilă de contencios administrativ şi fiscal",
+      "categorieCaz": "Faliment",
+      "stadiuProcesual": "Fond",
+      "obiect": "concordat preventiv",
+      "dataModificare": "2026-03-16T15:33:02.09",
+      "categorieCazNume": "Faliment",
+      "stadiuProcesualNume": "Fond"
+    },
+    {
+      "parti": [
+        {
+          "nume": "DARCONS S.R.L.",
+          "calitateParte": "Debitor"
+        },
+        {
+          "nume": "BANCA TRANSILVANIA SA- SUCURSALA NEAMŢ",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "CONSTEEL COMPANY SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ADMINISTRAŢIA  JUDEŢEANĂ A FINANŢELOR PUBLICE NEAMŢ",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "MUNICIPIUL ROMAN PRIN PRIMAR",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ASIGURAREA ROMÂNEASCĂ - ASIROM VIENNA INSURANCE SA (ASIROM)",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "BCR LEASING IFN SA",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "BRD SOGELEASE IFN S.A.- LA RĂDULESCU &MUŞOI SPARL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "BT LEASING TRANSILVANIA IFN S.A.",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "CATERPILLAR FINANCIAL SERVICES POLAND SP ZOO - SUCURSALA ROMÂNIA IFN",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "IMPULS LEASING ROMÂNIA IFN S.A.",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "PORCHE BANK ROMÂNIA S.A.-LA CAB.AVOCAT CRIANA MACARESCU",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "PORCHE LEASING ROMÂNIA IFN SA ŞI PORCHE BROKER DE ASIGURARE S.R.L.-LA CRIANA MACARESCU",
+          "calitateParte": "Creditor RENUNŢARE-CREDITOR SCOS DIN CITATIV"
+        },
+        {
+          "nume": "UNICREDIT BANK S.A.- LA MOLDOVEANU ŞI ASOCIAŢII SCA",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "CONSILIUL JUDEŢEAN NEAMŢ",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "C.P.P.I.",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "UAT BÎRA",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "UAT BOTEŞTI",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "UAT PÂNCEŞTI",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ABC INSURANCE SA",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ACMCIP MAGDALENA S.R.L",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ALCRO TRADE S.R.L",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "APRICOT S.R.L",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ASTRAL TRADING S.R.L",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ARTOIL S.R.L",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "AXA ROAD CONSTRUCŢII CFDP S.R.L",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "CAIUS S.R.L",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "CHRYSO ROMÂNIA S.R.L",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "CJ APA SERV S.A.",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "CONDOR S.R.L",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "COSTIA OCTAVIAN",
+          "calitateParte": "Contestator Creditor"
+        },
+        {
+          "nume": "CYBERNET AUTO CENTER S.R.L - SUCURSALA NEAMŢ",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "DANLIN XXL S.R.L",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "DEDEMAN S.R.L",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "DRUM CONSTRUCT S.R.L- CREANŢĂ CESIONATĂ CĂTRE CONDOR SRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "DURO INVEST S.R.L",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "EKY-SAM S.R.L",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "FIN TRANS S.R.L - LA GRUP SERVICII INSOLV SPRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "FOX  INFRA CONS S.R.L.",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ISEO S.R.L.",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "KONICA MINOLTA BUSINESS SOLUTIONS ROMÂNIA S.R.L.",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "LC BEST MEDICAL S.R.L.",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "MAV PROFIT CONSTRUCT S.R.L.",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "MHS TRUCK SERVICE S.R.L.",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "MITHRAS BUILD S.R.L.",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "NECCONSULTING S.R.L.",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "NEGOTRAD FOOD S.R.L.",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "OLARIU CONSTRUCT S.R.L.",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "RAD TRANS S.R.L.",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "AXA ROAD CONSTRUCŢII CFDP  SRL - CREANŢĂ PRELUATĂ PRIN CONTR. 1/19.05.2023 PENTRU ROA REISEN TOUR S.R.L.",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ROSSAL S.R.L.",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SERGIU AGROTRANS S.R.L.",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SIDER FIER S.R.L.",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SOCAR PETROLEUM S.A. - LA RUS&ASOCIAŢII SPRL",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "SOCIETATEA CIVILĂ PROFESIONALĂ DE PSIHOLOGIE ŞARAMET MARIUS ŞI ASOCIAŢII",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "TRANSMIR S.R.L.- LA CAB. AVOCAT ZĂPODEANU CĂTĂLIN",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "VIACON ROMÂNIA S.R.L.",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "VICTORY EXECUTIVE S.R.L.",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "VITALMOTOR S.R.L.",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "WOODEN STORAGE LH S.R.L",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "YSP CONSULT CONSULTING S.R.L.",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ZZZ CLIM CONST S.R.L.",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "2K OKTOGON S.R.L.",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "ROTARU ALEXANDRU",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "VIACON GEOTECHNICAL SOLUTION S.R.L",
+          "calitateParte": "Creditor"
+        },
+        {
+          "nume": "BANCA TRANSILVANIA SA- SUCURSALA NEAMŢ",
+          "calitateParte": "Creditor COMITET CREDITORI - preşedinte"
+        },
+        {
+          "nume": "UNICREDIT BANK S.A.- LA MOLDOVEANU ŞI ASOCIAŢII SCA",
+          "calitateParte": "Creditor COMITET CREDITORI - membru"
+        },
+        {
+          "nume": "DRUM CONSTRUCT S.R.L",
+          "calitateParte": "Creditor COMITET CREDITORI - membru"
+        },
+        {
+          "nume": "IDEVO SPRL",
+          "calitateParte": "Lichidator Administrator judiciar"
+        }
+      ],
+      "sedinte": [
+        {
+          "complet": "F3",
+          "data": "2026-03-25T00:00:00",
+          "ora": "11:00",
+          "solutie": "",
+          "solutieSumar": "",
+          "dataPronuntare": "",
+          "documentSedinta": "",
+          "numarDocument": "",
+          "dataDocument": ""
+        }
+      ],
+      "numar": "3406/103/2022/a7",
+      "numarVechi": "",
+      "data": "2026-03-10T13:39:00",
+      "institutie": "TribunalulNEAMT",
+      "departament": "Sectia a II-a Civilă de Contencios Administrativ şi Fiscal",
+      "categorieCaz": "Faliment",
+      "stadiuProcesual": "Fond",
+      "obiect": "contestaţie împotriva hotărârii comitetului/adunarii creditorilor procesului-verbal al adunării creditorilor din data de 02.03.2026",
+      "dataModificare": "2026-03-11T10:57:56.53",
+      "categorieCazNume": "Faliment",
+      "stadiuProcesualNume": "Fond"
+    },
+    {
+      "parti": [
+        {
+          "nume": "HANTI NICOLAE PETRU",
+          "calitateParte": "Intimat"
+        },
+        {
+          "nume": "BORDEAN ILIE STELIAN",
+          "calitateParte": "Intimat"
+        },
+        {
+          "nume": "SC DEDEMAN SRL",
+          "calitateParte": "Intimat"
+        }
+      ],
+      "sedinte": [
+        {
+          "complet": "C1-CCD",
+          "data": "2026-04-28T00:00:00",
+          "ora": "8:30",
+          "solutie": "",
+          "solutieSumar": "",
+          "dataPronuntare": "",
+          "documentSedinta": "",
+          "numarDocument": "",
+          "dataDocument": ""
+        },
+        {
+          "complet": "C1-CCD",
+          "data": "2026-04-14T00:00:00",
+          "ora": "8:30",
+          "solutie": "Termen preschimbat",
+          "solutieSumar": " Termen preschimbat la data de 28.04.2026",
+          "dataPronuntare": "2026-04-14T00:00:00",
+          "documentSedinta": "",
+          "numarDocument": "",
+          "dataDocument": ""
+        }
+      ],
+      "numar": "1960/176/2026",
+      "numarVechi": "",
+      "data": "2026-03-09T09:31:00",
+      "institutie": "JudecatoriaALBAIULIA",
+      "departament": "SECŢIA PENALĂ",
+      "categorieCaz": "Penal",
+      "stadiuProcesual": "Fond",
+      "obiect": "confirmare renunţare urmărire penală (art. 318 alin. 12 NCPP)",
+      "dataModificare": "2026-03-11T08:46:33.263",
+      "categorieCazNume": "Penal",
+      "stadiuProcesualNume": "Fond"
+    },
+    {
+      "parti": [
+        {
+          "nume": "DEDEMAN SRL PRIN CORDOŞ ADINA",
+          "calitateParte": "Intimat"
+        }
+      ],
+      "sedinte": [
+        {
+          "complet": "NCPP P5 - dosare cu termen",
+          "data": "2026-03-26T00:00:00",
+          "ora": "09:00",
+          "solutie": "",
+          "solutieSumar": "",
+          "dataPronuntare": "",
+          "documentSedinta": "",
+          "numarDocument": "",
+          "dataDocument": ""
+        }
+      ],
+      "numar": "4504/211/2026",
+      "numarVechi": "",
+      "data": "2026-02-18T11:28:00",
+      "institutie": "JudecatoriaCLUJNAPOCA",
+      "departament": "Penal",
+      "categorieCaz": "Penal",
+      "stadiuProcesual": "Fond",
+      "obiect": "confirmare renunţare urmărire penală (art. 318 alin. 12 NCPP)",
+      "dataModificare": "2026-02-18T15:34:41.767",
+      "categorieCazNume": "Penal",
+      "stadiuProcesualNume": "Fond"
+    },
+    {
+      "parti": [
+        {
+          "nume": "SC DEDEMAN SRL",
+          "calitateParte": "Intimat"
+        }
+      ],
+      "sedinte": [
+        {
+          "complet": "NCPP P9 - dosare cu termen",
+          "data": "2026-03-19T00:00:00",
+          "ora": "09:00",
+          "solutie": "",
+          "solutieSumar": "",
+          "dataPronuntare": "",
+          "documentSedinta": "",
+          "numarDocument": "",
+          "dataDocument": ""
+        }
+      ],
+      "numar": "4507/211/2026",
+      "numarVechi": "",
+      "data": "2026-02-18T11:36:00",
+      "institutie": "JudecatoriaCLUJNAPOCA",
+      "departament": "Penal",
+      "categorieCaz": "Penal",
+      "stadiuProcesual": "Fond",
+      "obiect": "confirmare renunţare urmărire penală (art. 318 alin. 12 NCPP)",
+      "dataModificare": "2026-02-18T15:34:44.83",
+      "categorieCazNume": "Penal",
+      "stadiuProcesualNume": "Fond"
+    },
+    {
+      "parti": [
+        {
+          "nume": "PARCHETUL DE PE LANGA JUDECATORIA DEVA",
+          "calitateParte": "Petent"
+        },
+        {
+          "nume": "SC DEDEMAN DEVA",
+          "calitateParte": "Intimat"
+        }
+      ],
+      "sedinte": [
+        {
+          "complet": "C7-F-JCP penal",
+          "data": "2026-06-16T00:00:00",
+          "ora": "09:00",
+          "solutie": "",
+          "solutieSumar": "",
+          "dataPronuntare": "",
+          "documentSedinta": "",
+          "numarDocument": "",
+          "dataDocument": ""
+        }
+      ],
+      "numar": "1387/221/2026",
+      "numarVechi": "",
+      "data": "2026-02-18T10:01:00",
+      "institutie": "JudecatoriaDEVA",
+      "departament": "Sectia Penala",
+      "categorieCaz": "Penal",
+      "stadiuProcesual": "Fond",
+      "obiect": "confiscare specială (art.315 lit. c  NCPP) 836/92/P/2018",
+      "dataModificare": "2026-03-17T12:54:55.883",
+      "categorieCazNume": "Penal",
+      "stadiuProcesualNume": "Fond"
+    },
+    {
+      "parti": [
+        {
+          "nume": "MESZAROŞ MONICA ROZALIA",
+          "calitateParte": "Inculpat"
+        },
+        {
+          "nume": "DEDEMAN SRL",
+          "calitateParte": "Parte vătămată"
+        },
+        {
+          "nume": "BRICOSTORE ROMÂNIA S.A",
+          "calitateParte": "Parte vătămată"
+        }
+      ],
+      "numar": "4149/271/2026",
+      "numarVechi": "",
+      "data": "2026-03-05T00:00:00",
+      "institutie": "JudecatoriaORADEA",
+      "departament": "SECŢIA PENALĂ",
+      "categorieCaz": "Penal",
+      "stadiuProcesual": "Fond",
+      "obiect": "furtul calificat (art.229 NCP)",
+      "dataModificare": "2026-03-09T11:34:28.983",
+      "categorieCazNume": "Penal",
+      "stadiuProcesualNume": "Fond"
+    },
+    {
+      "parti": [
+        {
+          "nume": "MESZAROŞ MONICA ROZALIA",
+          "calitateParte": "Inculpat"
+        },
+        {
+          "nume": "DEDEMAN SRL",
+          "calitateParte": "Parte vătămată"
+        },
+        {
+          "nume": "BRICOSTORE ROMÂNIA S.A",
+          "calitateParte": "Parte vătămată"
+        }
+      ],
+      "numar": "4149/271/2026/a1",
+      "numarVechi": "",
+      "data": "2026-03-09T11:32:00",
+      "institutie": "JudecatoriaORADEA",
+      "departament": "SECŢIA PENALĂ",
+      "categorieCaz": "Penal",
+      "stadiuProcesual": "Fond",
+      "obiect": "măsuri şi excepţii dispuse de judecătorul de cameră preliminară",
+      "dataModificare": "2026-03-09T11:48:00.73",
+      "categorieCazNume": "Penal",
+      "stadiuProcesualNume": "Fond"
+    },
+    {
+      "parti": [
+        {
+          "nume": "PARCHETUL DE PE LÂNGĂ JUDECĂTORIA PLOIEŞTI",
+          "calitateParte": "Petent"
+        },
+        {
+          "nume": "DEDEMAN SRL",
+          "calitateParte": "Intimat"
+        },
+        {
+          "nume": "STAMATE MARIUS",
+          "calitateParte": "Intimat"
+        }
+      ],
+      "sedinte": [
+        {
+          "complet": "PENAL 12",
+          "data": "2026-03-26T00:00:00",
+          "ora": "09:00",
+          "solutie": "",
+          "solutieSumar": "",
+          "dataPronuntare": "",
+          "documentSedinta": "",
+          "numarDocument": "",
+          "dataDocument": ""
+        }
+      ],
+      "numar": "4463/281/2026",
+      "numarVechi": "",
+      "data": "2026-02-25T15:15:00",
+      "institutie": "JudecatoriaPLOIESTI",
+      "departament": "Secţia Penală",
+      "categorieCaz": "Penal",
+      "stadiuProcesual": "Fond",
+      "obiect": "confirmare renunţare urmărire penală (art. 318 alin. 12 NCPP)",
+      "dataModificare": "2026-03-11T13:02:42.8",
+      "categorieCazNume": "Penal",
+      "stadiuProcesualNume": "Fond"
+    },
+    {
+      "parti": [
+        {
+          "nume": "PARCHETUL DE PE LÂNGĂ JUDECĂTORIA PLOIEŞTI",
+          "calitateParte": "Petent"
+        },
+        {
+          "nume": "SC  DEDEMAN SRL",
+          "calitateParte": "Intimat"
+        },
+        {
+          "nume": "DINIŢĂ MIHAI  BOGDAN",
+          "calitateParte": "Intimat"
+        },
+        {
+          "nume": "DRAGOMIR LAURENŢIU CĂTĂLIN",
+          "calitateParte": "Intimat"
+        }
+      ],
+      "sedinte": [
+        {
+          "complet": "PENAL 12",
+          "data": "2026-04-09T00:00:00",
+          "ora": "10:00",
+          "solutie": "",
+          "solutieSumar": "",
+          "dataPronuntare": "",
+          "documentSedinta": "",
+          "numarDocument": "",
+          "dataDocument": ""
+        }
+      ],
+      "numar": "4468/281/2026",
+      "numarVechi": "",
+      "data": "2026-02-25T15:16:00",
+      "institutie": "JudecatoriaPLOIESTI",
+      "departament": "Secţia Penală",
+      "categorieCaz": "Penal",
+      "stadiuProcesual": "Fond",
+      "obiect": "confirmare renunţare urmărire penală (art. 318 alin. 12 NCPP)",
+      "dataModificare": "2026-03-05T16:32:09.893",
+      "categorieCazNume": "Penal",
+      "stadiuProcesualNume": "Fond"
+    },
+    {
+      "parti": [
+        {
+          "nume": "PARCHETUL DE PE LÂNGA JUDECĂTORIA RÂMNICU VÂLCEA",
+          "calitateParte": "Petent"
+        },
+        {
+          "nume": "PORUMBESCU MIHAI LAURENŢIU",
+          "calitateParte": "Intimat"
+        },
+        {
+          "nume": "S.C. DEDEMAN S.R.L.PUNCT DE LUCRU DIN RÂMNICU VÂLCEA",
+          "calitateParte": "Parte vătămată"
+        }
+      ],
+      "sedinte": [
+        {
+          "complet": "P1 - Camera preliminara",
+          "data": "2026-04-06T00:00:00",
+          "ora": "09:30",
+          "solutie": "",
+          "solutieSumar": "",
+          "dataPronuntare": "",
+          "documentSedinta": "",
+          "numarDocument": "",
+          "dataDocument": ""
+        }
+      ],
+      "numar": "1967/288/2026",
+      "numarVechi": "",
+      "data": "2026-02-20T13:53:00",
+      "institutie": "JudecatoriaRAMNICUVALCEA",
+      "departament": "PENALA",
+      "categorieCaz": "Penal",
+      "stadiuProcesual": "Fond",
+      "obiect": "confirmare renunţare urmărire penală (art. 318 alin. 12 NCPP)",
+      "dataModificare": "2026-02-25T11:04:15.373",
+      "categorieCazNume": "Penal",
+      "stadiuProcesualNume": "Fond"
+    },
+    {
+      "parti": [
+        {
+          "nume": "DEDEMAN SRL",
+          "calitateParte": "Intimat"
+        }
+      ],
+      "sedinte": [
+        {
+          "complet": "C8 PENAL Camera Preliminara",
+          "data": "2026-03-26T00:00:00",
+          "ora": "09:00",
+          "solutie": "",
+          "solutieSumar": "",
+          "dataPronuntare": "",
+          "documentSedinta": "",
+          "numarDocument": "",
+          "dataDocument": ""
+        }
+      ],
+      "numar": "5430/4/2026",
+      "numarVechi": "",
+      "data": "2026-02-23T16:02:00",
+      "institutie": "JudecatoriaSECTORUL4BUCURESTI",
+      "departament": "....",
+      "categorieCaz": "Penal",
+      "stadiuProcesual": "Fond",
+      "obiect": "confirmare renunţare urmărire penală (art. 318 alin. 12 NCPP)",
+      "dataModificare": "2026-03-17T14:01:50.417",
+      "categorieCazNume": "Penal",
+      "stadiuProcesualNume": "Fond"
+    },
+    {
+      "parti": [
+        {
+          "nume": "DEDEMAN",
+          "calitateParte": "Intimat"
+        },
+        {
+          "nume": "SC DEDEMAN SRL",
+          "calitateParte": "Intimat"
+        }
+      ],
+      "sedinte": [
+        {
+          "complet": "C5 PENAL Camera Preliminara",
+          "data": "2026-03-23T00:00:00",
+          "ora": "09:00",
+          "solutie": "",
+          "solutieSumar": "",
+          "dataPronuntare": "",
+          "documentSedinta": "",
+          "numarDocument": "",
+          "dataDocument": ""
+        }
+      ],
+      "numar": "5432/4/2026",
+      "numarVechi": "",
+      "data": "2026-02-23T16:04:00",
+      "institutie": "JudecatoriaSECTORUL4BUCURESTI",
+      "departament": "....",
+      "categorieCaz": "Penal",
+      "stadiuProcesual": "Fond",
+      "obiect": "confirmare renunţare urmărire penală (art. 318 alin. 12 NCPP)",
+      "dataModificare": "2026-03-17T11:00:42.8",
+      "categorieCazNume": "Penal",
+      "stadiuProcesualNume": "Fond"
+    },
+    {
+      "parti": [
+        {
+          "nume": "PARCHETUL DE  PE LANGA JUDECATORIA SIBIU",
+          "calitateParte": "Petent"
+        },
+        {
+          "nume": "DEDEMAN SRL",
+          "calitateParte": "Intimat"
+        }
+      ],
+      "sedinte": [
+        {
+          "complet": "C2 PENAL - camera preliminara si fond",
+          "data": "2026-04-06T00:00:00",
+          "ora": "09:00",
+          "solutie": "Termen preschimbat",
+          "solutieSumar": "termen preschimbat la data de 30.03.2026, ora 9.00",
+          "dataPronuntare": "2026-04-06T00:00:00",
+          "documentSedinta": "",
+          "numarDocument": "",
+          "dataDocument": ""
+        },
+        {
+          "complet": "C2 PENAL - camera preliminara si fond",
+          "data": "2026-03-30T00:00:00",
+          "ora": "09:00",
+          "solutie": "",
+          "solutieSumar": "",
+          "dataPronuntare": "",
+          "documentSedinta": "",
+          "numarDocument": "",
+          "dataDocument": ""
+        }
+      ],
+      "numar": "2694/306/2026",
+      "numarVechi": "",
+      "data": "2026-02-24T12:24:00",
+      "institutie": "JudecatoriaSIBIU",
+      "departament": "Sectia Penala",
+      "categorieCaz": "Penal",
+      "stadiuProcesual": "Fond",
+      "obiect": "confirmare renunţare urmărire penală (art. 318 alin. 12 NCPP)",
+      "dataModificare": "2026-02-26T11:04:00.37",
+      "categorieCazNume": "Penal",
+      "stadiuProcesualNume": "Fond"
+    },
+    {
+      "parti": [
+        {
+          "nume": "BUHUŞ EMANUEL",
+          "calitateParte": "Intimat"
+        },
+        {
+          "nume": "SC DEDEMAN SRL",
+          "calitateParte": "Intimat"
+        }
+      ],
+      "sedinte": [
+        {
+          "complet": "C 3",
+          "data": "2026-04-08T00:00:00",
+          "ora": "09:00",
+          "solutie": "",
+          "solutieSumar": "",
+          "dataPronuntare": "",
+          "documentSedinta": "",
+          "numarDocument": "",
+          "dataDocument": ""
+        }
+      ],
+      "numar": "4027/318/2026",
+      "numarVechi": "",
+      "data": "2026-03-11T14:44:00",
+      "institutie": "JudecatoriaTARGUJIU",
+      "departament": "Secţia PENALĂ",
+      "categorieCaz": "Penal",
+      "stadiuProcesual": "Fond",
+      "obiect": "confirmare renunţare urmărire penală (art. 318 alin. 12 NCPP)",
+      "dataModificare": "2026-03-11T16:22:49.263",
+      "categorieCazNume": "Penal",
+      "stadiuProcesualNume": "Fond"
+    }
+  ]
+}

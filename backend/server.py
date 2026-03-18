@@ -5,13 +5,18 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey, JSON, Boolean, BigInteger
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, relationship
+from databases import Database
 import os
+import re
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional
 import uuid
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone
 import asyncio
 import aiohttp
 import xml.etree.ElementTree as ET
@@ -20,45 +25,107 @@ import json
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# MongoDB connection
+# MongoDB connection (for config/job runs)
 mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+mongo_client = AsyncIOMotorClient(mongo_url)
+mongo_db = mongo_client[os.environ['DB_NAME']]
 
-# Create downloads directory
+# PostgreSQL connection
+POSTGRES_URL = os.environ.get('POSTGRES_URL', 'postgresql://justapp:justapp123@localhost:5432/justportal')
+DATABASE_URL = POSTGRES_URL.replace('postgresql://', 'postgresql+asyncpg://')
+
+database = Database(DATABASE_URL)
+engine = create_engine(POSTGRES_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+# Create downloads directory (for backup JSON)
 DOWNLOADS_DIR = ROOT_DIR / 'downloads'
 DOWNLOADS_DIR.mkdir(exist_ok=True)
 
+# SQLAlchemy Models
+class Firma(Base):
+    __tablename__ = "firme"
+    
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    cui = Column(String(20), unique=True, nullable=True, index=True)
+    denumire = Column(String(500), nullable=False, index=True)
+    denumire_normalized = Column(String(500), index=True)  # For search
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    dosare = relationship("Dosar", back_populates="firma")
+
+
+class Dosar(Base):
+    __tablename__ = "dosare"
+    
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    firma_id = Column(BigInteger, ForeignKey("firme.id"), nullable=False, index=True)
+    numar_dosar = Column(String(100), index=True)
+    institutie = Column(String(200))
+    obiect = Column(Text)
+    data_dosar = Column(DateTime, nullable=True)
+    stadiu = Column(String(100))
+    categorie = Column(String(200))
+    materie = Column(String(200))
+    raw_data = Column(JSON)  # Store original data
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    firma = relationship("Firma", back_populates="dosare")
+    timeline = relationship("TimelineEvent", back_populates="dosar")
+
+
+class TimelineEvent(Base):
+    __tablename__ = "timeline"
+    
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    dosar_id = Column(BigInteger, ForeignKey("dosare.id"), nullable=False, index=True)
+    tip = Column(String(50))  # sedinta, hotarare, cale_atac, parte
+    data = Column(DateTime, nullable=True)
+    descriere = Column(Text)
+    detalii = Column(JSON)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    dosar = relationship("Dosar", back_populates="timeline")
+
+
+# Create tables
+Base.metadata.create_all(bind=engine)
+
 # Create the main app
 app = FastAPI()
-
-# Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Scheduler for cron jobs
+# Scheduler
 scheduler = AsyncIOScheduler()
 
 # SOAP Configuration
 SOAP_URL = "http://portalquery.just.ro/query.asmx"
 SOAP_ACTION_DOSARE2 = "portalquery.just.ro/CautareDosare2"
 
-# Complete list of all 246 institutions from WSDL
+# Pattern to match companies (SC, SRL, SA, etc.)
+COMPANY_PATTERNS = [
+    r'\bSC\b', r'\bSRL\b', r'\bSA\b', r'\bSCS\b', r'\bSNC\b', r'\bSCA\b',
+    r'\bSPRL\b', r'\bGMBH\b', r'\bLTD\b', r'\bLLC\b', r'\bINC\b',
+    r'\bPFA\b', r'\bII\b', r'\bIF\b', r'\bONG\b', r'\bASSOC\b',
+    r'S\.R\.L\.', r'S\.A\.', r'S\.C\.', r'S\.C\.S\.', r'S\.N\.C\.'
+]
+COMPANY_REGEX = re.compile('|'.join(COMPANY_PATTERNS), re.IGNORECASE)
+
+# Complete list of all 246 institutions
 INSTITUTII = [
-    # Curți de Apel (16)
     "CurteaMilitaradeApelBUCURESTI", "CurteadeApelALBAIULIA", "CurteadeApelBACAU",
     "CurteadeApelBRASOV", "CurteadeApelBUCURESTI", "CurteadeApelCLUJ",
     "CurteadeApelCONSTANTA", "CurteadeApelCRAIOVA", "CurteadeApelGALATI",
     "CurteadeApelIASI", "CurteadeApelORADEA", "CurteadeApelPITESTI",
     "CurteadeApelPLOIESTI", "CurteadeApelSUCEAVA", "CurteadeApelTARGUMURES",
     "CurteadeApelTIMISOARA",
-    # Tribunale (52)
     "TribunalulALBA", "TribunalulARAD", "TribunalulARGES", "TribunalulBACAU",
     "TribunalulBIHOR", "TribunalulBISTRITANASAUD", "TribunalulBOTOSANI",
     "TribunalulBRAILA", "TribunalulBRASOV", "TribunalulBUCURESTI",
@@ -76,7 +143,6 @@ INSTITUTII = [
     "TribunalulSUCEAVA", "TribunalulTELEORMAN", "TribunalulTIMIS",
     "TribunalulTULCEA", "TribunalulVALCEA", "TribunalulVASLUI",
     "TribunalulVRANCEA", "TribunalulpentruminoriSifamilieBRASOV",
-    # Judecătorii (178)
     "JudecatoriaADJUD", "JudecatoriaAGNITA", "JudecatoriaAIUD", "JudecatoriaALBAIULIA",
     "JudecatoriaALESD", "JudecatoriaALEXANDRIA", "JudecatoriaARAD", "JudecatoriaAVRIG",
     "JudecatoriaBABADAG", "JudecatoriaBACAU", "JudecatoriaBAIADEARAMA", "JudecatoriaBAIAMARE",
@@ -127,16 +193,16 @@ INSTITUTII = [
 ]
 
 
-# Models
+# Pydantic Models
 class JobConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    schedule_hour: int = 2  # Default 2 AM
+    schedule_hour: int = 2
     schedule_minute: int = 0
-    search_term: str = ""  # Company name to search
-    date_start: Optional[str] = None  # Format: YYYY-MM-DD
-    date_end: Optional[str] = None  # Format: YYYY-MM-DD
-    cron_enabled: bool = False  # Cron job enabled
+    search_term: str = ""
+    date_start: Optional[str] = None
+    date_end: Optional[str] = None
+    cron_enabled: bool = False
     is_active: bool = True
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -157,12 +223,15 @@ class JobRun(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     finished_at: Optional[datetime] = None
-    status: str = "running"  # running, completed, failed
+    status: str = "running"
     total_records: int = 0
     records_downloaded: int = 0
+    firme_count: int = 0
+    dosare_count: int = 0
+    timeline_count: int = 0
     error_message: Optional[str] = None
     files_created: List[str] = []
-    triggered_by: str = "manual"  # manual or cron
+    triggered_by: str = "manual"
 
 
 class SearchRequest(BaseModel):
@@ -172,10 +241,62 @@ class SearchRequest(BaseModel):
     date_end: Optional[str] = None
 
 
+class FirmaCreate(BaseModel):
+    cui: Optional[str] = None
+    denumire: str
+
+
+class FirmaUpdate(BaseModel):
+    cui: Optional[str] = None
+    denumire: Optional[str] = None
+
+
 # Helper functions
-def build_soap_request_with_dates(nume_parte: str, institutie: str, date_start: str = "", date_end: str = "") -> str:
-    """Build SOAP request for CautareDosare2 with date filtering"""
-    # Format dates for SOAP (needs to be YYYY-MM-DD format)
+def normalize_company_name(name: str) -> str:
+    """Normalize company name for matching"""
+    name = name.upper().strip()
+    name = re.sub(r'\s+', ' ', name)
+    name = re.sub(r'[^\w\s]', '', name)
+    return name
+
+
+def is_company(name: str) -> bool:
+    """Check if the name is a company (not a person)"""
+    return bool(COMPANY_REGEX.search(name))
+
+
+def extract_companies_from_parti(parti: list) -> List[dict]:
+    """Extract company names from parti list"""
+    companies = []
+    for parte in parti:
+        nume = parte.get('nume', '')
+        if nume and is_company(nume):
+            companies.append({
+                'denumire': nume.strip(),
+                'denumire_normalized': normalize_company_name(nume),
+                'calitate': parte.get('calitateParte', '')
+            })
+    return companies
+
+
+def parse_date(date_str: str) -> Optional[datetime]:
+    """Parse date string to datetime"""
+    if not date_str:
+        return None
+    try:
+        # Try common formats
+        for fmt in ['%Y-%m-%d', '%d.%m.%Y', '%d/%m/%Y', '%Y-%m-%dT%H:%M:%S']:
+            try:
+                return datetime.strptime(date_str, fmt)
+            except ValueError:
+                continue
+    except Exception:
+        pass
+    return None
+
+
+def build_soap_request(nume_parte: str, institutie: str, date_start: str = "", date_end: str = "") -> str:
+    """Build SOAP request for CautareDosare2"""
     data_start = f"<dataStart>{date_start}</dataStart>" if date_start else "<dataStart xsi:nil=\"true\" />"
     data_stop = f"<dataStop>{date_end}</dataStop>" if date_end else "<dataStop xsi:nil=\"true\" />"
     
@@ -199,23 +320,18 @@ def build_soap_request_with_dates(nume_parte: str, institutie: str, date_start: 
 
 
 def parse_soap_response(xml_content: str) -> List[dict]:
-    """Parse SOAP response and extract dosare data"""
+    """Parse SOAP response"""
     try:
         root = ET.fromstring(xml_content)
-        namespaces = {
-            'soap': 'http://schemas.xmlsoap.org/soap/envelope/',
-            'pq': 'portalquery.just.ro'
-        }
+        namespaces = {'soap': 'http://schemas.xmlsoap.org/soap/envelope/', 'pq': 'portalquery.just.ro'}
         
         dosare = []
-        # Find all Dosar elements
         for dosar in root.findall('.//pq:Dosar', namespaces):
             dosar_dict = {}
             for child in dosar:
                 tag = child.tag.replace('{portalquery.just.ro}', '')
                 dosar_dict[tag] = child.text or ""
                 
-                # Handle nested elements like Sedinte, Parti, CaiAtac
                 if len(child) > 0:
                     nested_items = []
                     for nested in child:
@@ -230,7 +346,6 @@ def parse_soap_response(xml_content: str) -> List[dict]:
             
             if dosar_dict:
                 dosare.append(dosar_dict)
-        
         return dosare
     except ET.ParseError as e:
         logger.error(f"XML Parse error: {e}")
@@ -239,64 +354,154 @@ def parse_soap_response(xml_content: str) -> List[dict]:
 
 async def fetch_dosare(session: aiohttp.ClientSession, nume_parte: str, institutie: str, 
                        date_start: str = "", date_end: str = "") -> List[dict]:
-    """Fetch dosare from portal with optional date filtering"""
-    soap_body = build_soap_request_with_dates(nume_parte, institutie, date_start, date_end)
-    headers = {
-        'Content-Type': 'text/xml; charset=utf-8',
-        'SOAPAction': f'"{SOAP_ACTION_DOSARE2}"'
-    }
+    """Fetch dosare from portal"""
+    soap_body = build_soap_request(nume_parte, institutie, date_start, date_end)
+    headers = {'Content-Type': 'text/xml; charset=utf-8', 'SOAPAction': f'"{SOAP_ACTION_DOSARE2}"'}
     
     try:
         async with session.post(SOAP_URL, data=soap_body, headers=headers, timeout=60) as response:
             if response.status == 200:
-                content = await response.text()
-                return parse_soap_response(content)
-            else:
-                logger.error(f"HTTP Error {response.status} for {institutie}")
-                return []
-    except asyncio.TimeoutError:
-        logger.error(f"Timeout for {institutie}")
-        return []
+                return parse_soap_response(await response.text())
     except Exception as e:
         logger.error(f"Error fetching from {institutie}: {e}")
-        return []
+    return []
+
+
+async def save_to_postgres(dosare: List[dict], search_term: str) -> dict:
+    """Save dosare to PostgreSQL, extracting only companies"""
+    db = SessionLocal()
+    stats = {'firme_new': 0, 'firme_existing': 0, 'dosare_new': 0, 'timeline_new': 0}
+    
+    try:
+        for dosar_data in dosare:
+            # Extract companies from parti
+            parti = dosar_data.get('parti', [])
+            if not isinstance(parti, list):
+                continue
+                
+            companies = extract_companies_from_parti(parti)
+            if not companies:
+                continue  # Skip if no companies found
+            
+            # Process each company
+            for company in companies:
+                # Find or create firma
+                firma = db.query(Firma).filter(
+                    Firma.denumire_normalized == company['denumire_normalized']
+                ).first()
+                
+                if not firma:
+                    firma = Firma(
+                        denumire=company['denumire'],
+                        denumire_normalized=company['denumire_normalized']
+                    )
+                    db.add(firma)
+                    db.flush()
+                    stats['firme_new'] += 1
+                else:
+                    stats['firme_existing'] += 1
+                
+                # Check if dosar already exists for this firma
+                numar_dosar = dosar_data.get('numar', '')
+                existing_dosar = db.query(Dosar).filter(
+                    Dosar.firma_id == firma.id,
+                    Dosar.numar_dosar == numar_dosar
+                ).first()
+                
+                if existing_dosar:
+                    continue  # Skip duplicate
+                
+                # Create dosar
+                dosar = Dosar(
+                    firma_id=firma.id,
+                    numar_dosar=numar_dosar,
+                    institutie=dosar_data.get('institutie', ''),
+                    obiect=dosar_data.get('obiect', ''),
+                    data_dosar=parse_date(dosar_data.get('data', '')),
+                    stadiu=dosar_data.get('stadiuProcesual', ''),
+                    categorie=dosar_data.get('categorieCaz', ''),
+                    materie=dosar_data.get('materie', ''),
+                    raw_data=dosar_data
+                )
+                db.add(dosar)
+                db.flush()
+                stats['dosare_new'] += 1
+                
+                # Add timeline events from sedinte
+                sedinte = dosar_data.get('sedinte', [])
+                if isinstance(sedinte, list):
+                    for sedinta in sedinte:
+                        event = TimelineEvent(
+                            dosar_id=dosar.id,
+                            tip='sedinta',
+                            data=parse_date(sedinta.get('data', '')),
+                            descriere=sedinta.get('solutie', '') or sedinta.get('complet', ''),
+                            detalii=sedinta
+                        )
+                        db.add(event)
+                        stats['timeline_new'] += 1
+                
+                # Add timeline events from caiAtac
+                cai_atac = dosar_data.get('caiAtac', [])
+                if isinstance(cai_atac, list):
+                    for cale in cai_atac:
+                        event = TimelineEvent(
+                            dosar_id=dosar.id,
+                            tip='cale_atac',
+                            data=parse_date(cale.get('dataDeclarare', '')),
+                            descriere=cale.get('tipCaleAtac', ''),
+                            detalii=cale
+                        )
+                        db.add(event)
+                        stats['timeline_new'] += 1
+        
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error saving to PostgreSQL: {e}")
+        raise
+    finally:
+        db.close()
+    
+    return stats
 
 
 async def run_download_job(search_term: str, job_run_id: str, date_start: str = "", 
                            date_end: str = "", triggered_by: str = "manual"):
-    """Run the download job for all institutions"""
-    logger.info(f"Starting download job for: {search_term} (period: {date_start} to {date_end})")
+    """Run the download job"""
+    logger.info(f"Starting download job for: {search_term}")
     
     all_dosare = []
-    files_created = []
-    processed_institutions = 0
+    processed = 0
+    total_stats = {'firme_new': 0, 'firme_existing': 0, 'dosare_new': 0, 'timeline_new': 0}
     
     async with aiohttp.ClientSession() as session:
-        # Iterate through all institutions
         for institutie in INSTITUTII:
-            logger.info(f"Searching in {institutie}...")
             dosare = await fetch_dosare(session, search_term, institutie, date_start, date_end)
-            all_dosare.extend(dosare)
-            processed_institutions += 1
             
-            # Update progress
-            await db.job_runs.update_one(
+            if dosare:
+                # Save to PostgreSQL
+                stats = await save_to_postgres(dosare, search_term)
+                for key in total_stats:
+                    total_stats[key] += stats[key]
+                all_dosare.extend(dosare)
+            
+            processed += 1
+            await mongo_db.job_runs.update_one(
                 {"id": job_run_id},
                 {"$set": {
                     "records_downloaded": len(all_dosare),
-                    "progress_message": f"Procesare {processed_institutions}/{len(INSTITUTII)} instituții"
+                    "firme_count": total_stats['firme_new'],
+                    "dosare_count": total_stats['dosare_new'],
+                    "timeline_count": total_stats['timeline_new'],
+                    "progress_message": f"Procesare {processed}/{len(INSTITUTII)} instituții"
                 }}
             )
-            
-            # Small delay to be nice to the server
             await asyncio.sleep(0.5)
     
-    # Save results
+    # Also save JSON backup
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    period_str = ""
-    if date_start or date_end:
-        period_str = f"_{date_start or 'start'}_{date_end or 'end'}"
-    filename = f"dosare_{search_term.replace(' ', '_')}{period_str}_{timestamp}.json"
+    filename = f"dosare_{search_term.replace(' ', '_')}_{timestamp}.json"
     filepath = DOWNLOADS_DIR / filename
     
     with open(filepath, 'w', encoding='utf-8') as f:
@@ -304,203 +509,289 @@ async def run_download_job(search_term: str, job_run_id: str, date_start: str = 
             "search_term": search_term,
             "date_start": date_start,
             "date_end": date_end,
-            "downloaded_at": datetime.now(timezone.utc).isoformat(),
+            "stats": total_stats,
             "total_records": len(all_dosare),
-            "triggered_by": triggered_by,
             "dosare": all_dosare
         }, f, ensure_ascii=False, indent=2)
     
-    files_created.append(filename)
-    logger.info(f"Saved {len(all_dosare)} records to {filename}")
-    
     # Update job run
-    await db.job_runs.update_one(
+    await mongo_db.job_runs.update_one(
         {"id": job_run_id},
-        {
-            "$set": {
-                "status": "completed",
-                "finished_at": datetime.now(timezone.utc).isoformat(),
-                "total_records": len(all_dosare),
-                "records_downloaded": len(all_dosare),
-                "files_created": files_created
-            }
-        }
+        {"$set": {
+            "status": "completed",
+            "finished_at": datetime.now(timezone.utc).isoformat(),
+            "total_records": len(all_dosare),
+            "firme_count": total_stats['firme_new'],
+            "dosare_count": total_stats['dosare_new'],
+            "timeline_count": total_stats['timeline_new'],
+            "files_created": [filename]
+        }}
     )
     
-    return len(all_dosare)
+    logger.info(f"Job completed: {total_stats}")
+    return total_stats
 
 
 async def scheduled_job():
-    """Job that runs on schedule"""
-    logger.info("Cron job triggered!")
-    
-    config = await db.job_config.find_one({}, {"_id": 0})
-    if not config or not config.get('search_term'):
-        logger.warning("No search term configured, skipping scheduled job")
+    """Scheduled cron job"""
+    config = await mongo_db.job_config.find_one({}, {"_id": 0})
+    if not config or not config.get('search_term') or not config.get('cron_enabled'):
         return
     
-    if not config.get('cron_enabled', False):
-        logger.info("Cron is disabled, skipping")
-        return
-    
-    # Check if there's already a running job
-    running = await db.job_runs.find_one({"status": "running"}, {"_id": 0})
+    running = await mongo_db.job_runs.find_one({"status": "running"}, {"_id": 0})
     if running:
-        logger.warning("A job is already running, skipping scheduled run")
         return
     
-    # Create new job run
     job_run = JobRun(triggered_by="cron")
     job_run_dict = job_run.model_dump()
     job_run_dict['started_at'] = job_run_dict['started_at'].isoformat()
-    await db.job_runs.insert_one(job_run_dict)
+    await mongo_db.job_runs.insert_one(job_run_dict)
     
-    # Run the job
-    await run_download_job(
-        config['search_term'], 
-        job_run.id,
-        config.get('date_start', ''),
-        config.get('date_end', ''),
-        "cron"
-    )
+    await run_download_job(config['search_term'], job_run.id, 
+                           config.get('date_start', ''), config.get('date_end', ''), "cron")
 
 
 def update_scheduler(hour: int, minute: int, enabled: bool):
-    """Update the scheduler with new time"""
-    # Remove existing job if any
+    """Update scheduler"""
     if scheduler.get_job('daily_download'):
         scheduler.remove_job('daily_download')
     
     if enabled:
-        # Add new job with updated time
-        scheduler.add_job(
-            scheduled_job,
-            CronTrigger(hour=hour, minute=minute),
-            id='daily_download',
-            replace_existing=True
-        )
-        logger.info(f"Scheduler updated: job will run daily at {hour:02d}:{minute:02d}")
-    else:
-        logger.info("Scheduler disabled")
+        scheduler.add_job(scheduled_job, CronTrigger(hour=hour, minute=minute),
+                         id='daily_download', replace_existing=True)
 
 
 # API Endpoints
 @api_router.get("/")
 async def root():
-    return {"message": "Portal JUST Downloader API"}
+    return {"message": "Portal JUST Downloader API - PostgreSQL Edition"}
 
 
 @api_router.get("/config")
 async def get_config():
-    """Get current job configuration"""
-    config = await db.job_config.find_one({}, {"_id": 0})
+    config = await mongo_db.job_config.find_one({}, {"_id": 0})
     if not config:
-        # Create default config
         default_config = JobConfig().model_dump()
         default_config['created_at'] = default_config['created_at'].isoformat()
         default_config['updated_at'] = default_config['updated_at'].isoformat()
-        await db.job_config.insert_one(default_config)
+        await mongo_db.job_config.insert_one(default_config)
         return default_config
     return config
 
 
 @api_router.put("/config")
 async def update_config(update: JobConfigUpdate):
-    """Update job configuration"""
     update_data = {k: v for k, v in update.model_dump().items() if v is not None}
     update_data['updated_at'] = datetime.now(timezone.utc).isoformat()
     
-    result = await db.job_config.find_one_and_update(
-        {},
-        {"$set": update_data},
-        return_document=True,
-        projection={"_id": 0}
+    result = await mongo_db.job_config.find_one_and_update(
+        {}, {"$set": update_data}, return_document=True, projection={"_id": 0}
     )
     
     if not result:
-        # Create new config with updates
         config = JobConfig(**update_data)
         config_dict = config.model_dump()
         config_dict['created_at'] = config_dict['created_at'].isoformat()
         config_dict['updated_at'] = config_dict['updated_at'].isoformat()
-        await db.job_config.insert_one(config_dict)
+        await mongo_db.job_config.insert_one(config_dict)
         result = config_dict
     
-    # Update scheduler if cron settings changed
-    if 'schedule_hour' in update_data or 'schedule_minute' in update_data or 'cron_enabled' in update_data:
-        update_scheduler(
-            result.get('schedule_hour', 2),
-            result.get('schedule_minute', 0),
-            result.get('cron_enabled', False)
-        )
+    if any(k in update_data for k in ['schedule_hour', 'schedule_minute', 'cron_enabled']):
+        update_scheduler(result.get('schedule_hour', 2), result.get('schedule_minute', 0),
+                        result.get('cron_enabled', False))
     
     return result
 
 
 @api_router.post("/run")
 async def trigger_run(background_tasks: BackgroundTasks):
-    """Manually trigger a download job"""
-    config = await db.job_config.find_one({}, {"_id": 0})
-    
+    config = await mongo_db.job_config.find_one({}, {"_id": 0})
     if not config or not config.get('search_term'):
-        raise HTTPException(status_code=400, detail="No search term configured. Please set a company name first.")
+        raise HTTPException(status_code=400, detail="No search term configured")
     
-    # Check if there's already a running job
-    running = await db.job_runs.find_one({"status": "running"}, {"_id": 0})
+    running = await mongo_db.job_runs.find_one({"status": "running"}, {"_id": 0})
     if running:
         raise HTTPException(status_code=409, detail="A job is already running")
     
-    # Create new job run
     job_run = JobRun(triggered_by="manual")
     job_run_dict = job_run.model_dump()
     job_run_dict['started_at'] = job_run_dict['started_at'].isoformat()
-    await db.job_runs.insert_one(job_run_dict)
+    await mongo_db.job_runs.insert_one(job_run_dict)
     
-    # Start background job
-    background_tasks.add_task(
-        run_download_job, 
-        config['search_term'], 
-        job_run.id,
-        config.get('date_start', ''),
-        config.get('date_end', ''),
-        "manual"
-    )
+    background_tasks.add_task(run_download_job, config['search_term'], job_run.id,
+                              config.get('date_start', ''), config.get('date_end', ''), "manual")
     
     return {"message": "Job started", "job_id": job_run.id}
 
 
 @api_router.get("/runs")
 async def get_runs():
-    """Get job run history"""
-    runs = await db.job_runs.find({}, {"_id": 0}).sort("started_at", -1).to_list(50)
-    return runs
+    return await mongo_db.job_runs.find({}, {"_id": 0}).sort("started_at", -1).to_list(50)
 
 
 @api_router.get("/runs/current")
 async def get_current_run():
-    """Get currently running job"""
-    running = await db.job_runs.find_one({"status": "running"}, {"_id": 0})
-    return running
+    return await mongo_db.job_runs.find_one({"status": "running"}, {"_id": 0})
+
+
+@api_router.post("/search")
+async def search_dosare(request: SearchRequest):
+    async with aiohttp.ClientSession() as session:
+        if not request.institutie:
+            all_dosare = []
+            for inst in ["TribunalulBUCURESTI", "CurteadeApelBUCURESTI", "TribunalulCLUJ"]:
+                dosare = await fetch_dosare(session, request.company_name, inst,
+                                           request.date_start or "", request.date_end or "")
+                all_dosare.extend(dosare)
+                if len(all_dosare) >= 20:
+                    break
+            return {"total": len(all_dosare), "dosare": all_dosare[:20]}
+        else:
+            dosare = await fetch_dosare(session, request.company_name, request.institutie,
+                                       request.date_start or "", request.date_end or "")
+            return {"total": len(dosare), "dosare": dosare[:20]}
+
+
+# PostgreSQL Data Endpoints
+@api_router.get("/db/firme")
+async def get_firme(skip: int = 0, limit: int = 100, search: str = None):
+    """Get all companies from PostgreSQL"""
+    db = SessionLocal()
+    try:
+        query = db.query(Firma)
+        if search:
+            query = query.filter(Firma.denumire_normalized.contains(normalize_company_name(search)))
+        total = query.count()
+        firme = query.order_by(Firma.created_at.desc()).offset(skip).limit(limit).all()
+        return {
+            "total": total,
+            "firme": [{"id": f.id, "cui": f.cui, "denumire": f.denumire, 
+                      "created_at": f.created_at.isoformat() if f.created_at else None} for f in firme]
+        }
+    finally:
+        db.close()
+
+
+@api_router.get("/db/firme/{firma_id}")
+async def get_firma(firma_id: int):
+    """Get firma details with dosare"""
+    db = SessionLocal()
+    try:
+        firma = db.query(Firma).filter(Firma.id == firma_id).first()
+        if not firma:
+            raise HTTPException(status_code=404, detail="Firma not found")
+        
+        dosare = db.query(Dosar).filter(Dosar.firma_id == firma_id).all()
+        return {
+            "id": firma.id,
+            "cui": firma.cui,
+            "denumire": firma.denumire,
+            "created_at": firma.created_at.isoformat() if firma.created_at else None,
+            "dosare_count": len(dosare),
+            "dosare": [{
+                "id": d.id,
+                "numar_dosar": d.numar_dosar,
+                "institutie": d.institutie,
+                "obiect": d.obiect,
+                "stadiu": d.stadiu,
+                "data_dosar": d.data_dosar.isoformat() if d.data_dosar else None
+            } for d in dosare]
+        }
+    finally:
+        db.close()
+
+
+@api_router.put("/db/firme/{firma_id}")
+async def update_firma(firma_id: int, update: FirmaUpdate):
+    """Update firma CUI"""
+    db = SessionLocal()
+    try:
+        firma = db.query(Firma).filter(Firma.id == firma_id).first()
+        if not firma:
+            raise HTTPException(status_code=404, detail="Firma not found")
+        
+        if update.cui is not None:
+            firma.cui = update.cui
+        if update.denumire is not None:
+            firma.denumire = update.denumire
+            firma.denumire_normalized = normalize_company_name(update.denumire)
+        
+        firma.updated_at = datetime.utcnow()
+        db.commit()
+        
+        return {"id": firma.id, "cui": firma.cui, "denumire": firma.denumire}
+    finally:
+        db.close()
+
+
+@api_router.get("/db/dosare/{dosar_id}")
+async def get_dosar(dosar_id: int):
+    """Get dosar with timeline"""
+    db = SessionLocal()
+    try:
+        dosar = db.query(Dosar).filter(Dosar.id == dosar_id).first()
+        if not dosar:
+            raise HTTPException(status_code=404, detail="Dosar not found")
+        
+        timeline = db.query(TimelineEvent).filter(TimelineEvent.dosar_id == dosar_id).order_by(TimelineEvent.data).all()
+        firma = db.query(Firma).filter(Firma.id == dosar.firma_id).first()
+        
+        return {
+            "id": dosar.id,
+            "numar_dosar": dosar.numar_dosar,
+            "firma": {"id": firma.id, "cui": firma.cui, "denumire": firma.denumire} if firma else None,
+            "institutie": dosar.institutie,
+            "obiect": dosar.obiect,
+            "stadiu": dosar.stadiu,
+            "categorie": dosar.categorie,
+            "materie": dosar.materie,
+            "data_dosar": dosar.data_dosar.isoformat() if dosar.data_dosar else None,
+            "timeline": [{
+                "id": t.id,
+                "tip": t.tip,
+                "data": t.data.isoformat() if t.data else None,
+                "descriere": t.descriere,
+                "detalii": t.detalii
+            } for t in timeline]
+        }
+    finally:
+        db.close()
+
+
+@api_router.get("/db/stats")
+async def get_db_stats():
+    """Get PostgreSQL database statistics"""
+    db = SessionLocal()
+    try:
+        firme_count = db.query(Firma).count()
+        firme_with_cui = db.query(Firma).filter(Firma.cui.isnot(None)).count()
+        dosare_count = db.query(Dosar).count()
+        timeline_count = db.query(TimelineEvent).count()
+        
+        return {
+            "firme_total": firme_count,
+            "firme_with_cui": firme_with_cui,
+            "firme_without_cui": firme_count - firme_with_cui,
+            "dosare_total": dosare_count,
+            "timeline_events": timeline_count
+        }
+    finally:
+        db.close()
 
 
 @api_router.get("/files")
 async def list_files():
-    """List downloaded files"""
     files = []
     for f in DOWNLOADS_DIR.iterdir():
         if f.is_file() and f.suffix == '.json':
             stat = f.stat()
-            files.append({
-                "name": f.name,
-                "size": stat.st_size,
-                "created": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat()
-            })
+            files.append({"name": f.name, "size": stat.st_size,
+                         "created": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat()})
     return sorted(files, key=lambda x: x['created'], reverse=True)
 
 
 @api_router.get("/files/{filename}")
 async def download_file(filename: str):
-    """Download a specific file"""
     filepath = DOWNLOADS_DIR / filename
     if not filepath.exists():
         raise HTTPException(status_code=404, detail="File not found")
@@ -509,7 +800,6 @@ async def download_file(filename: str):
 
 @api_router.delete("/files/{filename}")
 async def delete_file(filename: str):
-    """Delete a specific file"""
     filepath = DOWNLOADS_DIR / filename
     if not filepath.exists():
         raise HTTPException(status_code=404, detail="File not found")
@@ -517,97 +807,58 @@ async def delete_file(filename: str):
     return {"message": "File deleted"}
 
 
-@api_router.post("/search")
-async def search_dosare(request: SearchRequest):
-    """Search dosare by company name (preview without saving)"""
-    async with aiohttp.ClientSession() as session:
-        # If no specific institution, search in a few major ones for preview
-        if not request.institutie:
-            all_dosare = []
-            preview_institutions = ["TribunalulBUCURESTI", "CurteadeApelBUCURESTI", "TribunalulCLUJ", "TribunalulTIMIS"]
-            for inst in preview_institutions:
-                dosare = await fetch_dosare(
-                    session, 
-                    request.company_name, 
-                    inst,
-                    request.date_start or "",
-                    request.date_end or ""
-                )
-                all_dosare.extend(dosare)
-                if len(all_dosare) >= 20:
-                    break
-            return {"total": len(all_dosare), "dosare": all_dosare[:20]}
-        else:
-            dosare = await fetch_dosare(
-                session, 
-                request.company_name, 
-                request.institutie,
-                request.date_start or "",
-                request.date_end or ""
-            )
-            return {"total": len(dosare), "dosare": dosare[:20]}
-
-
-@api_router.get("/institutions")
-async def get_institutions():
-    """Get list of available institutions"""
-    return INSTITUTII
-
-
 @api_router.get("/stats")
 async def get_stats():
-    """Get download statistics"""
-    total_runs = await db.job_runs.count_documents({})
-    completed_runs = await db.job_runs.count_documents({"status": "completed"})
-    failed_runs = await db.job_runs.count_documents({"status": "failed"})
-    cron_runs = await db.job_runs.count_documents({"triggered_by": "cron"})
+    total_runs = await mongo_db.job_runs.count_documents({})
+    completed_runs = await mongo_db.job_runs.count_documents({"status": "completed"})
+    config = await mongo_db.job_config.find_one({}, {"_id": 0})
+    last_run = await mongo_db.job_runs.find_one({}, {"_id": 0}, sort=[("started_at", -1)])
     
-    # Count total files and size
-    total_files = 0
-    total_size = 0
-    for f in DOWNLOADS_DIR.iterdir():
-        if f.is_file() and f.suffix == '.json':
-            total_files += 1
-            total_size += f.stat().st_size
+    total_files = sum(1 for f in DOWNLOADS_DIR.iterdir() if f.is_file() and f.suffix == '.json')
+    total_size = sum(f.stat().st_size for f in DOWNLOADS_DIR.iterdir() if f.is_file() and f.suffix == '.json')
     
-    last_run = await db.job_runs.find_one({}, {"_id": 0}, sort=[("started_at", -1)])
-    config = await db.job_config.find_one({}, {"_id": 0})
-    
-    # Get next scheduled run
-    next_run = None
     job = scheduler.get_job('daily_download')
-    if job and job.next_run_time:
-        next_run = job.next_run_time.isoformat()
+    next_run = job.next_run_time.isoformat() if job and job.next_run_time else None
+    
+    # Get PostgreSQL stats
+    db = SessionLocal()
+    try:
+        firme_count = db.query(Firma).count()
+        dosare_count = db.query(Dosar).count()
+    finally:
+        db.close()
     
     return {
         "total_runs": total_runs,
         "completed_runs": completed_runs,
-        "failed_runs": failed_runs,
-        "cron_runs": cron_runs,
         "total_files": total_files,
         "total_size_mb": round(total_size / (1024 * 1024), 2),
-        "last_run": last_run,
         "cron_enabled": config.get('cron_enabled', False) if config else False,
-        "next_scheduled_run": next_run
+        "next_scheduled_run": next_run,
+        "last_run": last_run,
+        "db_firme": firme_count,
+        "db_dosare": dosare_count
     }
 
 
 @api_router.get("/cron/status")
 async def get_cron_status():
-    """Get cron job status"""
     job = scheduler.get_job('daily_download')
-    config = await db.job_config.find_one({}, {"_id": 0})
-    
+    config = await mongo_db.job_config.find_one({}, {"_id": 0})
     return {
         "enabled": config.get('cron_enabled', False) if config else False,
         "schedule_hour": config.get('schedule_hour', 2) if config else 2,
         "schedule_minute": config.get('schedule_minute', 0) if config else 0,
-        "next_run": job.next_run_time.isoformat() if job and job.next_run_time else None,
-        "job_active": job is not None
+        "next_run": job.next_run_time.isoformat() if job and job.next_run_time else None
     }
 
 
-# Include the router in the main app
+@api_router.get("/institutions")
+async def get_institutions():
+    return INSTITUTII
+
+
+# App setup
 app.include_router(api_router)
 
 app.add_middleware(
@@ -621,22 +872,16 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize scheduler on startup"""
+    await database.connect()
     scheduler.start()
-    logger.info("Scheduler started")
-    
-    # Load config and set up scheduler
-    config = await db.job_config.find_one({}, {"_id": 0})
+    config = await mongo_db.job_config.find_one({}, {"_id": 0})
     if config and config.get('cron_enabled'):
-        update_scheduler(
-            config.get('schedule_hour', 2),
-            config.get('schedule_minute', 0),
-            True
-        )
+        update_scheduler(config.get('schedule_hour', 2), config.get('schedule_minute', 0), True)
+    logger.info("Application started with PostgreSQL support")
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """Cleanup on shutdown"""
+    await database.disconnect()
     scheduler.shutdown()
-    client.close()
+    mongo_client.close()

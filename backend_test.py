@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Backend API Testing for Portal JUST Downloader
-Tests all API endpoints and functionality
+Backend API Testing for Portal JUST Downloader - PostgreSQL Edition
+Tests all API endpoints and functionality for Romanian company data extraction
 """
 
 import requests
@@ -11,7 +11,7 @@ import time
 from datetime import datetime, timezone
 from typing import Dict, List, Any
 
-class PortalJustAPITester:
+class JustPortalAPITester:
     def __init__(self, base_url="https://auto-portal-fetch.preview.emergentagent.com"):
         self.base_url = base_url
         self.api_url = f"{base_url}/api"
@@ -21,7 +21,7 @@ class PortalJustAPITester:
         self.session = requests.Session()
         self.session.headers.update({
             'Content-Type': 'application/json',
-            'User-Agent': 'Portal-JUST-API-Tester/1.0'
+            'User-Agent': 'Portal-JUST-API-Tester-PostgreSQL/1.0'
         })
 
     def log_result(self, name: str, success: bool, details: str = "", response_data: Any = None):
@@ -463,6 +463,226 @@ class PortalJustAPITester:
             self.log_result("Search with Date Filter", False, f"Exception: {str(e)}")
             return False
 
+    def test_db_stats(self) -> bool:
+        """Test GET /api/db/stats - PostgreSQL statistics"""
+        try:
+            response = self.session.get(f"{self.api_url}/db/stats", timeout=30)
+            success = response.status_code == 200
+            
+            if success:
+                data = response.json()
+                required_fields = ['firme_total', 'firme_with_cui', 'firme_without_cui', 
+                                  'dosare_total', 'timeline_events']
+                missing_fields = [f for f in required_fields if f not in data]
+                
+                if not missing_fields:
+                    details = f"Firme: {data['firme_total']}, Dosare: {data['dosare_total']}, Timeline: {data['timeline_events']}"
+                    self.log_result("DB Stats", True, details)
+                    return True
+                else:
+                    self.log_result("DB Stats", False, f"Missing fields: {missing_fields}")
+                    return False
+            else:
+                self.log_result("DB Stats", False, f"Status code: {response.status_code}")
+                return False
+                
+        except Exception as e:
+            self.log_result("DB Stats", False, f"Exception: {str(e)}")
+            return False
+
+    def test_db_firme_list(self) -> Dict[str, Any]:
+        """Test GET /api/db/firme - List companies from PostgreSQL"""
+        try:
+            response = self.session.get(f"{self.api_url}/db/firme?limit=10", timeout=30)
+            success = response.status_code == 200
+            
+            if success:
+                data = response.json()
+                if 'total' in data and 'firme' in data:
+                    total = data['total']
+                    returned = len(data['firme'])
+                    details = f"Total: {total}, Returned: {returned}"
+                    
+                    # Check structure of first company
+                    if data['firme']:
+                        first_company = data['firme'][0]
+                        required_fields = ['id', 'cui', 'denumire', 'created_at']
+                        missing_fields = [f for f in required_fields if f not in first_company]
+                        if missing_fields:
+                            self.log_result("DB Firme List", False, f"Missing fields in company: {missing_fields}")
+                            return {}
+                    
+                    self.log_result("DB Firme List", True, details)
+                    return data
+                else:
+                    self.log_result("DB Firme List", False, "Invalid response structure")
+                    return {}
+            else:
+                self.log_result("DB Firme List", False, f"Status code: {response.status_code}")
+                return {}
+                
+        except Exception as e:
+            self.log_result("DB Firme List", False, f"Exception: {str(e)}")
+            return {}
+
+    def test_db_firma_details_and_update(self) -> bool:
+        """Test GET /api/db/firme/{id} and PUT /api/db/firme/{id}"""
+        try:
+            # First get a company to test
+            firme_data = self.test_db_firme_list()
+            if not firme_data.get('firme'):
+                self.log_result("DB Firma Details & Update", False, "No companies available to test")
+                return False
+            
+            company_id = firme_data['firme'][0]['id']
+            
+            # Test GET company details
+            response = self.session.get(f"{self.api_url}/db/firme/{company_id}", timeout=30)
+            if response.status_code != 200:
+                self.log_result("DB Firma Details & Update", False, f"GET failed: {response.status_code}")
+                return False
+            
+            company_data = response.json()
+            required_fields = ['id', 'cui', 'denumire', 'dosare_count', 'dosare']
+            missing_fields = [f for f in required_fields if f not in company_data]
+            if missing_fields:
+                self.log_result("DB Firma Details & Update", False, f"Missing fields: {missing_fields}")
+                return False
+            
+            # Test PUT company update
+            original_cui = company_data.get('cui')
+            test_cui = f"TEST{company_id}123"
+            
+            update_response = self.session.put(
+                f"{self.api_url}/db/firme/{company_id}",
+                json={"cui": test_cui},
+                timeout=30
+            )
+            
+            if update_response.status_code != 200:
+                self.log_result("DB Firma Details & Update", False, f"PUT failed: {update_response.status_code}")
+                return False
+            
+            updated_data = update_response.json()
+            if updated_data.get('cui') != test_cui:
+                self.log_result("DB Firma Details & Update", False, "CUI not updated correctly")
+                return False
+            
+            # Restore original CUI
+            if original_cui:
+                self.session.put(
+                    f"{self.api_url}/db/firme/{company_id}",
+                    json={"cui": original_cui},
+                    timeout=30
+                )
+            
+            details = f"Company ID: {company_id}, Dosare: {company_data['dosare_count']}, CUI updated successfully"
+            self.log_result("DB Firma Details & Update", True, details)
+            return True
+            
+        except Exception as e:
+            self.log_result("DB Firma Details & Update", False, f"Exception: {str(e)}")
+            return False
+
+    def test_db_dosar_details(self) -> bool:
+        """Test GET /api/db/dosare/{id} - File details with timeline"""
+        try:
+            # First get a company with dosare
+            firme_data = self.test_db_firme_list()
+            if not firme_data.get('firme'):
+                self.log_result("DB Dosar Details", False, "No companies available to test")
+                return False
+            
+            # Find a company with dosare
+            company_with_dosare = None
+            for company in firme_data['firme'][:5]:  # Check first 5
+                company_details_response = self.session.get(f"{self.api_url}/db/firme/{company['id']}", timeout=30)
+                if company_details_response.status_code == 200:
+                    company_details = company_details_response.json()
+                    if company_details.get('dosare') and len(company_details['dosare']) > 0:
+                        company_with_dosare = company_details
+                        break
+            
+            if not company_with_dosare:
+                self.log_result("DB Dosar Details", False, "No companies with dosare found")
+                return False
+            
+            dosar_id = company_with_dosare['dosare'][0]['id']
+            
+            # Test dosar details
+            response = self.session.get(f"{self.api_url}/db/dosare/{dosar_id}", timeout=30)
+            if response.status_code != 200:
+                self.log_result("DB Dosar Details", False, f"Status code: {response.status_code}")
+                return False
+            
+            dosar_data = response.json()
+            required_fields = ['id', 'numar_dosar', 'firma', 'institutie', 'timeline']
+            missing_fields = [f for f in required_fields if f not in dosar_data]
+            
+            if missing_fields:
+                self.log_result("DB Dosar Details", False, f"Missing fields: {missing_fields}")
+                return False
+            
+            timeline_count = len(dosar_data['timeline']) if dosar_data['timeline'] else 0
+            details = f"Dosar: {dosar_data['numar_dosar']}, Timeline events: {timeline_count}"
+            self.log_result("DB Dosar Details", True, details)
+            return True
+            
+        except Exception as e:
+            self.log_result("DB Dosar Details", False, f"Exception: {str(e)}")
+            return False
+
+    def test_company_filtering(self) -> bool:
+        """Test that only companies (SC, SRL, SA, etc.) are extracted, not individuals"""
+        try:
+            response = self.session.get(f"{self.api_url}/db/firme?limit=10", timeout=30)
+            if response.status_code != 200:
+                self.log_result("Company Filtering", False, f"Failed to get companies: {response.status_code}")
+                return False
+            
+            data = response.json()
+            companies = data.get('firme', [])
+            
+            if not companies:
+                self.log_result("Company Filtering", False, "No companies found to test filtering")
+                return False
+            
+            # Company patterns that indicate business entities (not individuals)
+            company_patterns = [
+                'SC', 'SRL', 'SA', 'SCS', 'SNC', 'SCA', 'SPRL', 'GMBH', 'LTD', 'LLC', 'INC',
+                'PFA', 'II', 'IF', 'ONG', 'ASSOC', 'S.R.L.', 'S.A.', 'S.C.'
+            ]
+            
+            valid_companies = 0
+            total_checked = 0
+            
+            for company in companies[:5]:  # Check first 5
+                name = company.get('denumire', '').upper()
+                total_checked += 1
+                
+                # Check if name contains any company pattern
+                if any(pattern in name for pattern in company_patterns):
+                    valid_companies += 1
+            
+            if total_checked == 0:
+                self.log_result("Company Filtering", False, "No companies to check")
+                return False
+            
+            # We expect most companies to have valid patterns
+            success_rate = valid_companies / total_checked
+            if success_rate >= 0.8:  # At least 80% should be valid companies
+                details = f"Valid companies: {valid_companies}/{total_checked} ({success_rate:.0%})"
+                self.log_result("Company Filtering", True, details)
+                return True
+            else:
+                details = f"Too many individuals found: {valid_companies}/{total_checked} ({success_rate:.0%}) valid companies"
+                self.log_result("Company Filtering", False, details)
+                return False
+                
+        except Exception as e:
+            self.log_result("Company Filtering", False, f"Exception: {str(e)}")
+            return False
+
     def run_all_tests(self) -> Dict[str, Any]:
         """Run all API tests"""
         print("🚀 Starting Portal JUST API Tests")
@@ -491,6 +711,13 @@ class PortalJustAPITester:
         runs = self.test_get_runs()
         self.test_get_current_run()
         self.test_get_institutions()
+        
+        # PostgreSQL Database Tests (new requirements)
+        self.test_db_stats()  # GET /api/db/stats
+        self.test_db_firme_list()  # GET /api/db/firme  
+        self.test_db_firma_details_and_update()  # GET /api/db/firme/{id} and PUT /api/db/firme/{id}
+        self.test_db_dosar_details()  # GET /api/db/dosare/{id}
+        self.test_company_filtering()  # Verify only companies extracted
         
         # File operations (if files exist)
         self.test_file_download(files)
@@ -522,7 +749,7 @@ class PortalJustAPITester:
 
 def main():
     """Main test execution"""
-    tester = PortalJustAPITester()
+    tester = JustPortalAPITester()
     
     try:
         results = tester.run_all_tests()
