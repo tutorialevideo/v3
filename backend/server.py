@@ -3,13 +3,15 @@ from fastapi.responses import FileResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 import asyncio
 import aiohttp
 import xml.etree.ElementTree as ET
@@ -40,9 +42,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Scheduler for cron jobs
+scheduler = AsyncIOScheduler()
+
 # SOAP Configuration
 SOAP_URL = "http://portalquery.just.ro/query.asmx"
-SOAP_ACTION = "portalquery.just.ro/CautareDosare"
+SOAP_ACTION_DOSARE2 = "portalquery.just.ro/CautareDosare2"
 
 # Complete list of all 246 institutions from WSDL
 INSTITUTII = [
@@ -129,6 +134,9 @@ class JobConfig(BaseModel):
     schedule_hour: int = 2  # Default 2 AM
     schedule_minute: int = 0
     search_term: str = ""  # Company name to search
+    date_start: Optional[str] = None  # Format: YYYY-MM-DD
+    date_end: Optional[str] = None  # Format: YYYY-MM-DD
+    cron_enabled: bool = False  # Cron job enabled
     is_active: bool = True
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -138,6 +146,9 @@ class JobConfigUpdate(BaseModel):
     schedule_hour: Optional[int] = None
     schedule_minute: Optional[int] = None
     search_term: Optional[str] = None
+    date_start: Optional[str] = None
+    date_end: Optional[str] = None
+    cron_enabled: Optional[bool] = None
     is_active: Optional[bool] = None
 
 
@@ -151,27 +162,38 @@ class JobRun(BaseModel):
     records_downloaded: int = 0
     error_message: Optional[str] = None
     files_created: List[str] = []
+    triggered_by: str = "manual"  # manual or cron
 
 
 class SearchRequest(BaseModel):
     company_name: str
     institutie: Optional[str] = None
+    date_start: Optional[str] = None
+    date_end: Optional[str] = None
 
 
 # Helper functions
-def build_soap_request(nume_parte: str, institutie: str = "") -> str:
-    """Build SOAP request for CautareDosare - simpler endpoint"""
+def build_soap_request_with_dates(nume_parte: str, institutie: str, date_start: str = "", date_end: str = "") -> str:
+    """Build SOAP request for CautareDosare2 with date filtering"""
+    # Format dates for SOAP (needs to be YYYY-MM-DD format)
+    data_start = f"<dataStart>{date_start}</dataStart>" if date_start else "<dataStart xsi:nil=\"true\" />"
+    data_stop = f"<dataStop>{date_end}</dataStop>" if date_end else "<dataStop xsi:nil=\"true\" />"
+    
     return f'''<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
                xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
                xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
   <soap:Body>
-    <CautareDosare xmlns="portalquery.just.ro">
+    <CautareDosare2 xmlns="portalquery.just.ro">
       <numarDosar xsi:nil="true" />
       <obiectDosar xsi:nil="true" />
       <numeParte>{nume_parte}</numeParte>
       <institutie>{institutie}</institutie>
-    </CautareDosare>
+      {data_start}
+      {data_stop}
+      <dataUltimaModificareStart xsi:nil="true" />
+      <dataUltimaModificareStop xsi:nil="true" />
+    </CautareDosare2>
   </soap:Body>
 </soap:Envelope>'''
 
@@ -215,12 +237,13 @@ def parse_soap_response(xml_content: str) -> List[dict]:
         return []
 
 
-async def fetch_dosare(session: aiohttp.ClientSession, nume_parte: str, institutie: str = "") -> List[dict]:
-    """Fetch dosare from portal"""
-    soap_body = build_soap_request(nume_parte, institutie)
+async def fetch_dosare(session: aiohttp.ClientSession, nume_parte: str, institutie: str, 
+                       date_start: str = "", date_end: str = "") -> List[dict]:
+    """Fetch dosare from portal with optional date filtering"""
+    soap_body = build_soap_request_with_dates(nume_parte, institutie, date_start, date_end)
     headers = {
         'Content-Type': 'text/xml; charset=utf-8',
-        'SOAPAction': f'"{SOAP_ACTION}"'
+        'SOAPAction': f'"{SOAP_ACTION_DOSARE2}"'
     }
     
     try:
@@ -239,9 +262,10 @@ async def fetch_dosare(session: aiohttp.ClientSession, nume_parte: str, institut
         return []
 
 
-async def run_download_job(search_term: str, job_run_id: str):
+async def run_download_job(search_term: str, job_run_id: str, date_start: str = "", 
+                           date_end: str = "", triggered_by: str = "manual"):
     """Run the download job for all institutions"""
-    logger.info(f"Starting download job for: {search_term}")
+    logger.info(f"Starting download job for: {search_term} (period: {date_start} to {date_end})")
     
     all_dosare = []
     files_created = []
@@ -251,7 +275,7 @@ async def run_download_job(search_term: str, job_run_id: str):
         # Iterate through all institutions
         for institutie in INSTITUTII:
             logger.info(f"Searching in {institutie}...")
-            dosare = await fetch_dosare(session, search_term, institutie)
+            dosare = await fetch_dosare(session, search_term, institutie, date_start, date_end)
             all_dosare.extend(dosare)
             processed_institutions += 1
             
@@ -269,14 +293,20 @@ async def run_download_job(search_term: str, job_run_id: str):
     
     # Save results
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"dosare_{search_term.replace(' ', '_')}_{timestamp}.json"
+    period_str = ""
+    if date_start or date_end:
+        period_str = f"_{date_start or 'start'}_{date_end or 'end'}"
+    filename = f"dosare_{search_term.replace(' ', '_')}{period_str}_{timestamp}.json"
     filepath = DOWNLOADS_DIR / filename
     
     with open(filepath, 'w', encoding='utf-8') as f:
         json.dump({
             "search_term": search_term,
+            "date_start": date_start,
+            "date_end": date_end,
             "downloaded_at": datetime.now(timezone.utc).isoformat(),
             "total_records": len(all_dosare),
+            "triggered_by": triggered_by,
             "dosare": all_dosare
         }, f, ensure_ascii=False, indent=2)
     
@@ -298,6 +328,60 @@ async def run_download_job(search_term: str, job_run_id: str):
     )
     
     return len(all_dosare)
+
+
+async def scheduled_job():
+    """Job that runs on schedule"""
+    logger.info("Cron job triggered!")
+    
+    config = await db.job_config.find_one({}, {"_id": 0})
+    if not config or not config.get('search_term'):
+        logger.warning("No search term configured, skipping scheduled job")
+        return
+    
+    if not config.get('cron_enabled', False):
+        logger.info("Cron is disabled, skipping")
+        return
+    
+    # Check if there's already a running job
+    running = await db.job_runs.find_one({"status": "running"}, {"_id": 0})
+    if running:
+        logger.warning("A job is already running, skipping scheduled run")
+        return
+    
+    # Create new job run
+    job_run = JobRun(triggered_by="cron")
+    job_run_dict = job_run.model_dump()
+    job_run_dict['started_at'] = job_run_dict['started_at'].isoformat()
+    await db.job_runs.insert_one(job_run_dict)
+    
+    # Run the job
+    await run_download_job(
+        config['search_term'], 
+        job_run.id,
+        config.get('date_start', ''),
+        config.get('date_end', ''),
+        "cron"
+    )
+
+
+def update_scheduler(hour: int, minute: int, enabled: bool):
+    """Update the scheduler with new time"""
+    # Remove existing job if any
+    if scheduler.get_job('daily_download'):
+        scheduler.remove_job('daily_download')
+    
+    if enabled:
+        # Add new job with updated time
+        scheduler.add_job(
+            scheduled_job,
+            CronTrigger(hour=hour, minute=minute),
+            id='daily_download',
+            replace_existing=True
+        )
+        logger.info(f"Scheduler updated: job will run daily at {hour:02d}:{minute:02d}")
+    else:
+        logger.info("Scheduler disabled")
 
 
 # API Endpoints
@@ -340,7 +424,15 @@ async def update_config(update: JobConfigUpdate):
         config_dict['created_at'] = config_dict['created_at'].isoformat()
         config_dict['updated_at'] = config_dict['updated_at'].isoformat()
         await db.job_config.insert_one(config_dict)
-        return config_dict
+        result = config_dict
+    
+    # Update scheduler if cron settings changed
+    if 'schedule_hour' in update_data or 'schedule_minute' in update_data or 'cron_enabled' in update_data:
+        update_scheduler(
+            result.get('schedule_hour', 2),
+            result.get('schedule_minute', 0),
+            result.get('cron_enabled', False)
+        )
     
     return result
 
@@ -359,13 +451,20 @@ async def trigger_run(background_tasks: BackgroundTasks):
         raise HTTPException(status_code=409, detail="A job is already running")
     
     # Create new job run
-    job_run = JobRun()
+    job_run = JobRun(triggered_by="manual")
     job_run_dict = job_run.model_dump()
     job_run_dict['started_at'] = job_run_dict['started_at'].isoformat()
     await db.job_runs.insert_one(job_run_dict)
     
     # Start background job
-    background_tasks.add_task(run_download_job, config['search_term'], job_run.id)
+    background_tasks.add_task(
+        run_download_job, 
+        config['search_term'], 
+        job_run.id,
+        config.get('date_start', ''),
+        config.get('date_end', ''),
+        "manual"
+    )
     
     return {"message": "Job started", "job_id": job_run.id}
 
@@ -427,13 +526,25 @@ async def search_dosare(request: SearchRequest):
             all_dosare = []
             preview_institutions = ["TribunalulBUCURESTI", "CurteadeApelBUCURESTI", "TribunalulCLUJ", "TribunalulTIMIS"]
             for inst in preview_institutions:
-                dosare = await fetch_dosare(session, request.company_name, inst)
+                dosare = await fetch_dosare(
+                    session, 
+                    request.company_name, 
+                    inst,
+                    request.date_start or "",
+                    request.date_end or ""
+                )
                 all_dosare.extend(dosare)
                 if len(all_dosare) >= 20:
                     break
             return {"total": len(all_dosare), "dosare": all_dosare[:20]}
         else:
-            dosare = await fetch_dosare(session, request.company_name, request.institutie)
+            dosare = await fetch_dosare(
+                session, 
+                request.company_name, 
+                request.institutie,
+                request.date_start or "",
+                request.date_end or ""
+            )
             return {"total": len(dosare), "dosare": dosare[:20]}
 
 
@@ -449,6 +560,7 @@ async def get_stats():
     total_runs = await db.job_runs.count_documents({})
     completed_runs = await db.job_runs.count_documents({"status": "completed"})
     failed_runs = await db.job_runs.count_documents({"status": "failed"})
+    cron_runs = await db.job_runs.count_documents({"triggered_by": "cron"})
     
     # Count total files and size
     total_files = 0
@@ -459,14 +571,39 @@ async def get_stats():
             total_size += f.stat().st_size
     
     last_run = await db.job_runs.find_one({}, {"_id": 0}, sort=[("started_at", -1)])
+    config = await db.job_config.find_one({}, {"_id": 0})
+    
+    # Get next scheduled run
+    next_run = None
+    job = scheduler.get_job('daily_download')
+    if job and job.next_run_time:
+        next_run = job.next_run_time.isoformat()
     
     return {
         "total_runs": total_runs,
         "completed_runs": completed_runs,
         "failed_runs": failed_runs,
+        "cron_runs": cron_runs,
         "total_files": total_files,
         "total_size_mb": round(total_size / (1024 * 1024), 2),
-        "last_run": last_run
+        "last_run": last_run,
+        "cron_enabled": config.get('cron_enabled', False) if config else False,
+        "next_scheduled_run": next_run
+    }
+
+
+@api_router.get("/cron/status")
+async def get_cron_status():
+    """Get cron job status"""
+    job = scheduler.get_job('daily_download')
+    config = await db.job_config.find_one({}, {"_id": 0})
+    
+    return {
+        "enabled": config.get('cron_enabled', False) if config else False,
+        "schedule_hour": config.get('schedule_hour', 2) if config else 2,
+        "schedule_minute": config.get('schedule_minute', 0) if config else 0,
+        "next_run": job.next_run_time.isoformat() if job and job.next_run_time else None,
+        "job_active": job is not None
     }
 
 
@@ -482,6 +619,24 @@ app.add_middleware(
 )
 
 
+@app.on_event("startup")
+async def startup_event():
+    """Initialize scheduler on startup"""
+    scheduler.start()
+    logger.info("Scheduler started")
+    
+    # Load config and set up scheduler
+    config = await db.job_config.find_one({}, {"_id": 0})
+    if config and config.get('cron_enabled'):
+        update_scheduler(
+            config.get('schedule_hour', 2),
+            config.get('schedule_minute', 0),
+            True
+        )
+
+
 @app.on_event("shutdown")
-async def shutdown_db_client():
+async def shutdown_event():
+    """Cleanup on shutdown"""
+    scheduler.shutdown()
     client.close()

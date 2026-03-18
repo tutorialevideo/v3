@@ -10,7 +10,11 @@ import { Switch } from "./components/ui/switch";
 import { ScrollArea } from "./components/ui/scroll-area";
 import { Separator } from "./components/ui/separator";
 import { Progress } from "./components/ui/progress";
+import { Calendar } from "./components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "./components/ui/popover";
 import { Toaster, toast } from "sonner";
+import { format } from "date-fns";
+import { ro } from "date-fns/locale";
 import { 
   Play, 
   Settings, 
@@ -25,7 +29,10 @@ import {
   Loader2,
   Building2,
   FolderDown,
-  Activity
+  Activity,
+  CalendarIcon,
+  Timer,
+  Zap
 } from "lucide-react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -41,7 +48,9 @@ function App() {
   const [searchTerm, setSearchTerm] = useState("");
   const [scheduleHour, setScheduleHour] = useState(2);
   const [scheduleMinute, setScheduleMinute] = useState(0);
-  const [isActive, setIsActive] = useState(true);
+  const [cronEnabled, setCronEnabled] = useState(false);
+  const [dateStart, setDateStart] = useState(null);
+  const [dateEnd, setDateEnd] = useState(null);
   const [searchPreview, setSearchPreview] = useState(null);
   const [searchLoading, setSearchLoading] = useState(false);
 
@@ -65,7 +74,13 @@ function App() {
         setSearchTerm(configRes.data.search_term || "");
         setScheduleHour(configRes.data.schedule_hour || 2);
         setScheduleMinute(configRes.data.schedule_minute || 0);
-        setIsActive(configRes.data.is_active !== false);
+        setCronEnabled(configRes.data.cron_enabled || false);
+        if (configRes.data.date_start) {
+          setDateStart(new Date(configRes.data.date_start));
+        }
+        if (configRes.data.date_end) {
+          setDateEnd(new Date(configRes.data.date_end));
+        }
       }
     } catch (error) {
       console.error("Error fetching data:", error);
@@ -87,7 +102,9 @@ function App() {
         search_term: searchTerm,
         schedule_hour: scheduleHour,
         schedule_minute: scheduleMinute,
-        is_active: isActive
+        cron_enabled: cronEnabled,
+        date_start: dateStart ? format(dateStart, 'yyyy-MM-dd') : null,
+        date_end: dateEnd ? format(dateEnd, 'yyyy-MM-dd') : null
       });
       toast.success("Configurație salvată cu succes!");
       fetchData();
@@ -114,7 +131,11 @@ function App() {
     
     setSearchLoading(true);
     try {
-      const res = await axios.post(`${API}/search`, { company_name: searchTerm });
+      const res = await axios.post(`${API}/search`, { 
+        company_name: searchTerm,
+        date_start: dateStart ? format(dateStart, 'yyyy-MM-dd') : null,
+        date_end: dateEnd ? format(dateEnd, 'yyyy-MM-dd') : null
+      });
       setSearchPreview(res.data);
       toast.success(`Găsite ${res.data.total} dosare`);
     } catch (error) {
@@ -172,7 +193,7 @@ function App() {
             <FolderDown size={32} />
             <h1>Portal JUST Downloader</h1>
           </div>
-          <p className="header-subtitle">Descărcare automată dosare firme din portalquery.just.ro</p>
+          <p className="header-subtitle">Descărcare automată dosare firme din portalquery.just.ro • 246 instituții</p>
         </div>
       </header>
 
@@ -217,12 +238,12 @@ function App() {
           
           <Card className="stat-card">
             <CardContent className="stat-content">
-              <div className="stat-icon orange">
-                <Clock size={24} />
+              <div className={`stat-icon ${cronEnabled ? 'green' : 'orange'}`}>
+                <Timer size={24} />
               </div>
               <div className="stat-info">
-                <span className="stat-value">{stats?.total_runs || 0}</span>
-                <span className="stat-label">Total rulări</span>
+                <span className="stat-value">{cronEnabled ? 'Activ' : 'Inactiv'}</span>
+                <span className="stat-label">Cron zilnic</span>
               </div>
             </CardContent>
           </Card>
@@ -260,41 +281,126 @@ function App() {
                 </div>
               </div>
 
-              <div className="form-row">
-                <div className="form-group">
-                  <Label htmlFor="hour">Ora</Label>
-                  <Input
-                    id="hour"
-                    data-testid="schedule-hour-input"
-                    type="number"
-                    min="0"
-                    max="23"
-                    value={scheduleHour}
-                    onChange={(e) => setScheduleHour(parseInt(e.target.value) || 0)}
-                  />
-                </div>
-                <div className="form-group">
-                  <Label htmlFor="minute">Minut</Label>
-                  <Input
-                    id="minute"
-                    data-testid="schedule-minute-input"
-                    type="number"
-                    min="0"
-                    max="59"
-                    value={scheduleMinute}
-                    onChange={(e) => setScheduleMinute(parseInt(e.target.value) || 0)}
-                  />
+              {/* Date Range Selection */}
+              <div className="form-group">
+                <Label>Perioada dosarelor</Label>
+                <div className="date-range-group">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className="date-picker-btn" data-testid="date-start-btn">
+                        <CalendarIcon size={16} />
+                        {dateStart ? format(dateStart, 'dd.MM.yyyy') : 'Data început'}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="calendar-popover" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={dateStart}
+                        onSelect={setDateStart}
+                        locale={ro}
+                        initialFocus
+                      />
+                      {dateStart && (
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="clear-date-btn"
+                          onClick={() => setDateStart(null)}
+                        >
+                          Șterge data
+                        </Button>
+                      )}
+                    </PopoverContent>
+                  </Popover>
+
+                  <span className="date-separator">→</span>
+
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className="date-picker-btn" data-testid="date-end-btn">
+                        <CalendarIcon size={16} />
+                        {dateEnd ? format(dateEnd, 'dd.MM.yyyy') : 'Data sfârșit'}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="calendar-popover" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={dateEnd}
+                        onSelect={setDateEnd}
+                        locale={ro}
+                        initialFocus
+                      />
+                      {dateEnd && (
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="clear-date-btn"
+                          onClick={() => setDateEnd(null)}
+                        >
+                          Șterge data
+                        </Button>
+                      )}
+                    </PopoverContent>
+                  </Popover>
                 </div>
               </div>
 
-              <div className="form-group switch-group">
-                <Label htmlFor="active">Job Activ</Label>
-                <Switch
-                  id="active"
-                  data-testid="job-active-switch"
-                  checked={isActive}
-                  onCheckedChange={setIsActive}
-                />
+              <Separator className="my-4" />
+
+              {/* Cron Configuration */}
+              <div className="cron-section">
+                <div className="form-group switch-group cron-toggle">
+                  <div className="cron-label">
+                    <Zap size={18} />
+                    <div>
+                      <Label>Cron Zilnic Activ</Label>
+                      <p className="cron-description">Rulează automat în fiecare zi</p>
+                    </div>
+                  </div>
+                  <Switch
+                    id="cronEnabled"
+                    data-testid="cron-enabled-switch"
+                    checked={cronEnabled}
+                    onCheckedChange={setCronEnabled}
+                  />
+                </div>
+
+                <div className={`cron-time-config ${!cronEnabled ? 'disabled' : ''}`}>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <Label htmlFor="hour">Ora</Label>
+                      <Input
+                        id="hour"
+                        data-testid="schedule-hour-input"
+                        type="number"
+                        min="0"
+                        max="23"
+                        value={scheduleHour}
+                        onChange={(e) => setScheduleHour(parseInt(e.target.value) || 0)}
+                        disabled={!cronEnabled}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <Label htmlFor="minute">Minut</Label>
+                      <Input
+                        id="minute"
+                        data-testid="schedule-minute-input"
+                        type="number"
+                        min="0"
+                        max="59"
+                        value={scheduleMinute}
+                        onChange={(e) => setScheduleMinute(parseInt(e.target.value) || 0)}
+                        disabled={!cronEnabled}
+                      />
+                    </div>
+                  </div>
+                  {cronEnabled && stats?.next_scheduled_run && (
+                    <p className="next-run-info">
+                      <Clock size={14} />
+                      Următoarea rulare: {formatDate(stats.next_scheduled_run)}
+                    </p>
+                  )}
+                </div>
               </div>
 
               <div className="button-group">
@@ -348,6 +454,7 @@ function App() {
                 <div className="run-status">
                   <p>Descărcare în curs...</p>
                   <p className="run-count">{currentRun.records_downloaded} dosare descărcate</p>
+                  <p className="run-progress">{currentRun.progress_message || ''}</p>
                   <Progress value={50} className="mt-2" />
                 </div>
               </CardContent>
@@ -447,6 +554,12 @@ function App() {
                             Eșuat
                           </Badge>
                         )}
+                        {run.triggered_by === 'cron' && (
+                          <Badge variant="outline" className="badge-cron">
+                            <Timer size={10} />
+                            Cron
+                          </Badge>
+                        )}
                       </div>
                       <div className="history-info">
                         <span className="history-date">{formatDate(run.started_at)}</span>
@@ -462,7 +575,7 @@ function App() {
       </main>
 
       <footer className="app-footer">
-        <p>Portal JUST Downloader • Descărcare automată dosare firme</p>
+        <p>Portal JUST Downloader • Descărcare automată dosare firme • 246 instituții</p>
       </footer>
     </div>
   );

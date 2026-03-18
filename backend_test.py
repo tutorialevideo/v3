@@ -157,11 +157,12 @@ class PortalJustAPITester:
             
             if success:
                 data = response.json()
-                required_fields = ['total_runs', 'completed_runs', 'failed_runs', 'total_files', 'total_size_mb']
+                required_fields = ['total_runs', 'completed_runs', 'failed_runs', 'total_files', 'total_size_mb', 'cron_enabled']
                 missing_fields = [field for field in required_fields if field not in data]
                 
                 if not missing_fields:
-                    self.log_result("Get Stats", True, f"Stats loaded: {data['total_runs']} runs, {data['total_files']} files", data)
+                    cron_status = "Active" if data.get('cron_enabled') else "Inactive"
+                    self.log_result("Get Stats", True, f"Stats loaded: {data['total_runs']} runs, {data['total_files']} files, Cron: {cron_status}", data)
                     return data
                 else:
                     self.log_result("Get Stats", False, f"Missing fields: {missing_fields}")
@@ -329,6 +330,139 @@ class PortalJustAPITester:
             self.log_result("Trigger Run", False, f"Exception: {str(e)}")
             return False
 
+    def test_cron_status(self) -> Dict[str, Any]:
+        """Test GET /api/cron/status endpoint"""
+        try:
+            response = self.session.get(f"{self.api_url}/cron/status", timeout=30)
+            success = response.status_code == 200
+            
+            if success:
+                data = response.json()
+                required_fields = ['enabled', 'schedule_hour', 'schedule_minute', 'job_active']
+                missing_fields = [field for field in required_fields if field not in data]
+                
+                if not missing_fields:
+                    cron_status = "Active" if data.get('enabled') else "Inactive"
+                    next_run = data.get('next_run', 'Not scheduled')
+                    schedule = f"{data.get('schedule_hour', 0):02d}:{data.get('schedule_minute', 0):02d}"
+                    self.log_result("Cron Status", True, f"Cron: {cron_status}, Schedule: {schedule}, Next: {next_run}", data)
+                    return data
+                else:
+                    self.log_result("Cron Status", False, f"Missing fields: {missing_fields}")
+                    return {}
+            else:
+                self.log_result("Cron Status", False, f"Status code: {response.status_code}")
+                return {}
+                
+        except Exception as e:
+            self.log_result("Cron Status", False, f"Exception: {str(e)}")
+            return {}
+
+    def test_config_cron_enable_disable(self) -> bool:
+        """Test enabling and disabling cron via PUT /api/config"""
+        try:
+            # First enable cron
+            enable_data = {"cron_enabled": True}
+            response = self.session.put(f"{self.api_url}/config", json=enable_data, timeout=30)
+            if response.status_code != 200:
+                self.log_result("Config Cron Enable", False, f"Status code: {response.status_code}")
+                return False
+            
+            data = response.json()
+            if not data.get('cron_enabled'):
+                self.log_result("Config Cron Enable", False, f"Cron not enabled: {data.get('cron_enabled')}")
+                return False
+            
+            # Test disable cron
+            disable_data = {"cron_enabled": False}
+            response = self.session.put(f"{self.api_url}/config", json=disable_data, timeout=30)
+            if response.status_code != 200:
+                self.log_result("Config Cron Disable", False, f"Status code: {response.status_code}")
+                return False
+                
+            data = response.json()
+            if data.get('cron_enabled'):
+                self.log_result("Config Cron Disable", False, f"Cron not disabled: {data.get('cron_enabled')}")
+                return False
+            
+            self.log_result("Config Cron Enable/Disable", True, "Successfully enabled and disabled cron via config")
+            return True
+                
+        except Exception as e:
+            self.log_result("Config Cron Enable/Disable", False, f"Exception: {str(e)}")
+            return False
+
+    def test_config_date_range(self) -> bool:
+        """Test setting date range via PUT /api/config"""
+        try:
+            from datetime import date, timedelta
+            
+            today = date.today()
+            start_date = (today - timedelta(days=30)).isoformat()
+            end_date = today.isoformat()
+            
+            date_data = {
+                "date_start": start_date,
+                "date_end": end_date
+            }
+            
+            response = self.session.put(f"{self.api_url}/config", json=date_data, timeout=30)
+            success = response.status_code == 200
+            
+            if success:
+                data = response.json()
+                if (data.get('date_start') == start_date and 
+                    data.get('date_end') == end_date):
+                    self.log_result("Config Date Range", True, f"Date range set: {start_date} to {end_date}")
+                    return True
+                else:
+                    self.log_result("Config Date Range", False, f"Date range not set properly")
+                    return False
+            else:
+                self.log_result("Config Date Range", False, f"Status code: {response.status_code}")
+                return False
+                
+        except Exception as e:
+            self.log_result("Config Date Range", False, f"Exception: {str(e)}")
+            return False
+
+    def test_search_with_date_filtering(self) -> bool:
+        """Test POST /api/search with date_start and date_end parameters"""
+        try:
+            from datetime import date, timedelta
+            
+            today = date.today()
+            start_date = (today - timedelta(days=60)).isoformat()
+            end_date = today.isoformat()
+            
+            # Test search with date filtering
+            search_data = {
+                "company_name": "SRL",
+                "date_start": start_date,
+                "date_end": end_date
+            }
+            
+            response = self.session.post(f"{self.api_url}/search", json=search_data, timeout=60)
+            success = response.status_code == 200
+            
+            if success:
+                data = response.json()
+                if "total" in data and "dosare" in data:
+                    total_results = data.get("total", 0)
+                    dosare_count = len(data.get("dosare", []))
+                    self.log_result("Search with Date Filter", True, f"Found {total_results} results with date filter ({start_date} to {end_date}), returned {dosare_count} dosare")
+                    return True
+                else:
+                    self.log_result("Search with Date Filter", False, f"Invalid response structure: {data}")
+                    return False
+            else:
+                self.log_result("Search with Date Filter", False, f"Status code: {response.status_code}")
+                return False
+                
+        except Exception as e:
+            self.log_result("Search with Date Filter", False, f"Exception: {str(e)}")
+            return False
+
     def run_all_tests(self) -> Dict[str, Any]:
         """Run all API tests"""
         print("🚀 Starting Portal JUST API Tests")
@@ -344,8 +478,14 @@ class PortalJustAPITester:
         config = self.test_get_config()
         self.test_update_config(config)
         
+        # Cron-specific tests (as required in test specs)
+        self.test_cron_status()  # GET /api/cron/status
+        self.test_config_cron_enable_disable()  # PUT /api/config with cron_enabled
+        self.test_config_date_range()  # PUT /api/config with date_start and date_end
+        
         # Search and data tests
         self.test_search_preview()
+        self.test_search_with_date_filtering()  # POST /api/search with date filtering
         stats = self.test_get_stats()
         files = self.test_get_files()
         runs = self.test_get_runs()
