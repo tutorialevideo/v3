@@ -110,20 +110,45 @@ class Firma(Base):
     anaf_last_sync = Column(DateTime, nullable=True)
     anaf_sync_status = Column(String(50), nullable=True)  # success, not_found, error
     
-    # ===== DATE MFINANTE (bilanțuri) =====
+    # ===== DATE MFINANTE (date identificare) =====
     mf_denumire = Column(String(500), nullable=True)
     mf_adresa = Column(Text, nullable=True)
+    mf_judet = Column(String(100), nullable=True)
+    mf_cod_postal = Column(String(20), nullable=True)
+    mf_telefon = Column(String(50), nullable=True)
+    mf_nr_reg_com = Column(String(50), nullable=True)
     mf_stare = Column(String(200), nullable=True)
+    
+    # ===== DATE FISCALE MFINANTE =====
+    mf_platitor_tva = Column(Boolean, nullable=True)
+    mf_tva_data = Column(String(200), nullable=True)  # Când a intrat/ieșit în/din TVA
+    mf_impozit_profit = Column(String(200), nullable=True)
+    mf_impozit_micro = Column(String(200), nullable=True)
+    mf_accize = Column(Boolean, nullable=True)
+    mf_cas_data = Column(String(200), nullable=True)
+    
+    # ===== BILANȚ CEL MAI RECENT (pentru acces rapid) =====
+    mf_an_bilant = Column(String(10), nullable=True)  # anul bilanțului cel mai recent
     mf_cifra_afaceri = Column(Float, nullable=True)
-    mf_profit = Column(Float, nullable=True)
-    mf_pierdere = Column(Float, nullable=True)
+    mf_venituri_totale = Column(Float, nullable=True)
+    mf_cheltuieli_totale = Column(Float, nullable=True)
+    mf_profit_brut = Column(Float, nullable=True)
+    mf_pierdere_bruta = Column(Float, nullable=True)
+    mf_profit_net = Column(Float, nullable=True)
+    mf_pierdere_neta = Column(Float, nullable=True)
     mf_numar_angajati = Column(Integer, nullable=True)
-    mf_capital_social = Column(Float, nullable=True)
-    mf_active_totale = Column(Float, nullable=True)
-    mf_datorii_totale = Column(Float, nullable=True)
-    mf_an_bilant = Column(String(10), nullable=True)  # anul bilanțului
+    mf_active_imobilizate = Column(Float, nullable=True)
+    mf_active_circulante = Column(Float, nullable=True)
+    mf_capitaluri_proprii = Column(Float, nullable=True)
+    mf_datorii = Column(Float, nullable=True)
+    
+    # ===== METADATA MFINANTE =====
+    mf_ani_disponibili = Column(String(200), nullable=True)  # Lista anilor disponibili (ex: "2023,2022,2021")
     mf_last_sync = Column(DateTime, nullable=True)
     mf_sync_status = Column(String(50), nullable=True)
+    
+    # Relație cu bilanțurile istorice
+    bilanturi = relationship("Bilant", back_populates="firma")
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -163,6 +188,61 @@ class TimelineEvent(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     
     dosar = relationship("Dosar", back_populates="timeline")
+
+
+class Bilant(Base):
+    """
+    Tabel pentru istoricul complet al bilanțurilor de la MFinante.
+    Fiecare firmă poate avea bilanțuri pentru mai mulți ani.
+    """
+    __tablename__ = "bilanturi"
+    
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    firma_id = Column(BigInteger, ForeignKey("firme.id"), nullable=False, index=True)
+    an = Column(String(10), nullable=False, index=True)  # Anul bilanțului (ex: "2023")
+    
+    # Indicatori principali
+    cifra_afaceri_neta = Column(Float, nullable=True)
+    venituri_totale = Column(Float, nullable=True)
+    cheltuieli_totale = Column(Float, nullable=True)
+    profit_brut = Column(Float, nullable=True)
+    pierdere_bruta = Column(Float, nullable=True)
+    profit_net = Column(Float, nullable=True)
+    pierdere_neta = Column(Float, nullable=True)
+    numar_angajati = Column(Integer, nullable=True)
+    
+    # Indicatori patrimoniali
+    active_imobilizate = Column(Float, nullable=True)
+    active_circulante = Column(Float, nullable=True)
+    stocuri = Column(Float, nullable=True)
+    creante = Column(Float, nullable=True)
+    casa_conturi_banci = Column(Float, nullable=True)
+    cheltuieli_avans = Column(Float, nullable=True)
+    
+    # Pasive
+    capitaluri_proprii = Column(Float, nullable=True)
+    capital_subscris = Column(Float, nullable=True)
+    patrimoniul_regiei = Column(Float, nullable=True)
+    provizioane = Column(Float, nullable=True)
+    datorii = Column(Float, nullable=True)
+    venituri_avans = Column(Float, nullable=True)
+    
+    # Indicatori suplimentari
+    repartizare_profit = Column(Float, nullable=True)
+    
+    # Date raw pentru orice alte câmpuri
+    raw_data = Column(JSON, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    firma = relationship("Firma", back_populates="bilanturi")
+    
+    # Unique constraint: o firmă poate avea un singur bilanț per an
+    __table_args__ = (
+        # Index compus pentru căutare rapidă
+        # Index('ix_bilanturi_firma_an', 'firma_id', 'an', unique=True),
+    )
 
 
 # Create tables
@@ -1725,18 +1805,37 @@ async def migrate_database_schema():
             ("anaf_sediu_cod_postal", "VARCHAR(20)"),
             ("anaf_last_sync", "TIMESTAMP"),
             ("anaf_sync_status", "VARCHAR(50)"),
-            # MFinante columns
+            # MFinante columns - Date identificare
             ("mf_denumire", "VARCHAR(500)"),
             ("mf_adresa", "TEXT"),
+            ("mf_judet", "VARCHAR(100)"),
+            ("mf_cod_postal", "VARCHAR(20)"),
+            ("mf_telefon", "VARCHAR(50)"),
+            ("mf_nr_reg_com", "VARCHAR(50)"),
             ("mf_stare", "VARCHAR(200)"),
-            ("mf_cifra_afaceri", "FLOAT"),
-            ("mf_profit", "FLOAT"),
-            ("mf_pierdere", "FLOAT"),
-            ("mf_numar_angajati", "INTEGER"),
-            ("mf_capital_social", "FLOAT"),
-            ("mf_active_totale", "FLOAT"),
-            ("mf_datorii_totale", "FLOAT"),
+            # MFinante columns - Date fiscale
+            ("mf_platitor_tva", "BOOLEAN"),
+            ("mf_tva_data", "VARCHAR(200)"),
+            ("mf_impozit_profit", "VARCHAR(200)"),
+            ("mf_impozit_micro", "VARCHAR(200)"),
+            ("mf_accize", "BOOLEAN"),
+            ("mf_cas_data", "VARCHAR(200)"),
+            # MFinante columns - Bilanț cel mai recent
             ("mf_an_bilant", "VARCHAR(10)"),
+            ("mf_cifra_afaceri", "FLOAT"),
+            ("mf_venituri_totale", "FLOAT"),
+            ("mf_cheltuieli_totale", "FLOAT"),
+            ("mf_profit_brut", "FLOAT"),
+            ("mf_pierdere_bruta", "FLOAT"),
+            ("mf_profit_net", "FLOAT"),
+            ("mf_pierdere_neta", "FLOAT"),
+            ("mf_numar_angajati", "INTEGER"),
+            ("mf_active_imobilizate", "FLOAT"),
+            ("mf_active_circulante", "FLOAT"),
+            ("mf_capitaluri_proprii", "FLOAT"),
+            ("mf_datorii", "FLOAT"),
+            # MFinante metadata
+            ("mf_ani_disponibili", "VARCHAR(200)"),
             ("mf_last_sync", "TIMESTAMP"),
             ("mf_sync_status", "VARCHAR(50)")
         ]
@@ -1766,6 +1865,62 @@ async def migrate_database_schema():
             """)
         except Exception as e:
             logger.warning(f"Could not create timeline_events: {e}")
+        
+        # Create bilanturi table for historical financial data
+        try:
+            await database.execute("""
+                CREATE TABLE IF NOT EXISTS bilanturi (
+                    id BIGSERIAL PRIMARY KEY,
+                    firma_id BIGINT REFERENCES firme(id) ON DELETE CASCADE,
+                    an VARCHAR(10) NOT NULL,
+                    
+                    -- Indicatori principali
+                    cifra_afaceri_neta FLOAT,
+                    venituri_totale FLOAT,
+                    cheltuieli_totale FLOAT,
+                    profit_brut FLOAT,
+                    pierdere_bruta FLOAT,
+                    profit_net FLOAT,
+                    pierdere_neta FLOAT,
+                    numar_angajati INTEGER,
+                    
+                    -- Indicatori patrimoniali (active)
+                    active_imobilizate FLOAT,
+                    active_circulante FLOAT,
+                    stocuri FLOAT,
+                    creante FLOAT,
+                    casa_conturi_banci FLOAT,
+                    cheltuieli_avans FLOAT,
+                    
+                    -- Pasive
+                    capitaluri_proprii FLOAT,
+                    capital_subscris FLOAT,
+                    patrimoniul_regiei FLOAT,
+                    provizioane FLOAT,
+                    datorii FLOAT,
+                    venituri_avans FLOAT,
+                    
+                    -- Alte
+                    repartizare_profit FLOAT,
+                    raw_data JSONB,
+                    
+                    created_at TIMESTAMP DEFAULT NOW(),
+                    updated_at TIMESTAMP DEFAULT NOW(),
+                    
+                    UNIQUE(firma_id, an)
+                )
+            """)
+            added.append("TABLE:bilanturi")
+            
+            # Create indexes for bilanturi
+            await database.execute("""
+                CREATE INDEX IF NOT EXISTS idx_bilanturi_firma_id ON bilanturi(firma_id)
+            """)
+            await database.execute("""
+                CREATE INDEX IF NOT EXISTS idx_bilanturi_an ON bilanturi(an)
+            """)
+        except Exception as e:
+            logger.warning(f"Could not create bilanturi table: {e}")
         
         # Create index on judet for filtering
         try:
@@ -2280,74 +2435,226 @@ async def fetch_mfinante_data(cui: str):
         "found": False,
         "date_identificare": {},
         "date_fiscale": {},
-        "bilanturi": [],
-        "obligatii_restante": None
+        "bilanturi_disponibili": [],
+        "raw_text": ""
     }
     
-    # Parse tables
-    tables = soup.find_all('table')
+    # Check if company was found
+    if "AGENTUL ECONOMIC CU CODUL" not in html:
+        return result
     
-    for table in tables:
-        # Try to identify table type by headers or content
-        rows = table.find_all('tr')
-        
-        for row in rows:
-            cells = row.find_all(['td', 'th'])
-            if len(cells) >= 2:
-                label = cells[0].get_text(strip=True).lower()
-                value = cells[1].get_text(strip=True) if len(cells) > 1 else ""
-                
-                # Date de identificare
-                if 'denumire' in label:
-                    result["date_identificare"]["denumire"] = value
-                    result["found"] = True
-                elif 'adresa' in label:
-                    result["date_identificare"]["adresa"] = value
-                elif 'nr. inreg' in label or 'numar inregistrare' in label:
-                    result["date_identificare"]["nr_reg_com"] = value
-                elif 'stare' in label:
-                    result["date_identificare"]["stare"] = value
-                elif 'data inregistrare' in label:
-                    result["date_identificare"]["data_inregistrare"] = value
-                    
-                # Date fiscale
-                elif 'platitor tva' in label or 'plătitor tva' in label:
-                    result["date_fiscale"]["platitor_tva"] = 'da' in value.lower()
-                elif 'tva la incasare' in label or 'tva încasare' in label:
-                    result["date_fiscale"]["tva_incasare"] = 'da' in value.lower()
-                elif 'accize' in label:
-                    result["date_fiscale"]["accize"] = 'da' in value.lower()
+    result["found"] = True
     
-    # Parse bilanturi (usually in a select or separate section)
-    # Look for balance sheet years
-    selects = soup.find_all('select')
+    # Parse all rows (col-sm-6 pairs)
+    rows = soup.find_all('div', class_='row')
+    
+    for row in rows:
+        cols = row.find_all('div', class_='col-sm-6')
+        if len(cols) >= 2:
+            label = cols[0].get_text(strip=True).lower()
+            value = cols[1].get_text(strip=True)
+            
+            # Date identificare
+            if 'denumire' in label:
+                result["date_identificare"]["denumire"] = value
+            elif 'adresa' in label and 'adresa' not in result["date_identificare"]:
+                result["date_identificare"]["adresa"] = value
+            elif 'judetul' in label:
+                result["date_identificare"]["judet"] = value
+            elif 'inmatriculare' in label or 'registrul' in label:
+                result["date_identificare"]["nr_reg_com"] = value
+            elif 'postal' in label:
+                result["date_identificare"]["cod_postal"] = value
+            elif 'telefon' in label:
+                result["date_identificare"]["telefon"] = value
+            elif 'stare societate' in label:
+                result["date_identificare"]["stare"] = value
+            
+            # Date fiscale
+            elif 'taxa pe valoarea' in label or 'tva' in label.lower():
+                result["date_fiscale"]["tva_data"] = value
+                result["date_fiscale"]["platitor_tva"] = value != 'NU' and 'NU' not in value
+            elif 'impozit pe profit' in label:
+                result["date_fiscale"]["impozit_profit"] = value
+            elif 'microintreprinderi' in label:
+                result["date_fiscale"]["micro_data"] = value
+            elif 'accize' in label:
+                result["date_fiscale"]["accize"] = value != 'NU'
+            elif 'asigurari sociale' in label and 'sanatate' not in label:
+                result["date_fiscale"]["cas_data"] = value
+    
+    # Parse available balance sheet years
+    selects = soup.find_all('select', {'name': 'an'})
     for select in selects:
         options = select.find_all('option')
         for opt in options:
             value = opt.get('value', '')
             text = opt.get_text(strip=True)
-            if value and ('20' in value or '20' in text):
-                result["bilanturi"].append({"an": text, "value": value})
-    
-    # Look for financial data in tables (cifra afaceri, profit, etc.)
-    # This is usually in a specific format
-    text_content = soup.get_text()
-    
-    # Try to extract financial indicators
-    patterns = {
-        "cifra_afaceri": r"cifr[aă]\s*(?:de\s*)?afaceri[:\s]*([0-9.,]+)",
-        "profit": r"profit[:\s]*([0-9.,]+)",
-        "pierdere": r"pierdere[:\s]*([0-9.,]+)",
-        "numar_angajati": r"num[aă]r\s*(?:mediu\s*)?(?:de\s*)?angaja[tț]i[:\s]*([0-9.,]+)",
-        "capital_social": r"capital\s*social[:\s]*([0-9.,]+)",
-    }
-    
-    for key, pattern in patterns.items():
-        match = re.search(pattern, text_content, re.IGNORECASE)
-        if match:
-            result["date_fiscale"][key] = match.group(1)
+            if value and text:
+                result["bilanturi_disponibili"].append({"an": text, "value": value})
     
     return result
+
+
+async def fetch_mfinante_bilant(cui: str, an_value: str):
+    """Fetch balance sheet for a specific year - extracts ALL available financial indicators"""
+    import re
+    from bs4 import BeautifulSoup
+    
+    url = f"{MFINANTE_URL};jsessionid={mfinante_session['jsessionid']}"
+    
+    # POST request for balance sheet
+    data = {
+        "cod": cui,
+        "an": an_value,
+        "method.bilant": "VIZUALIZARE"
+    }
+    
+    async with aiohttp.ClientSession() as session:
+        async with session.post(
+            url,
+            data=data,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Accept": "text/html,application/xhtml+xml",
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Referer": f"{MFINANTE_URL}?cod={cui}",
+            },
+            cookies=mfinante_session.get("cookies", {}),
+            timeout=aiohttp.ClientTimeout(total=30)
+        ) as response:
+            html = await response.text()
+    
+    if "Cod de validare" in html and "kaptcha" in html:
+        raise Exception("Session expired - CAPTCHA required")
+    
+    soup = BeautifulSoup(html, 'html.parser')
+    
+    bilant = {
+        "an": an_value.replace("WEB_UU_AN", "") if "WEB_UU_AN" in an_value else an_value,
+        "indicatori": {},
+        "raw_labels": []  # Pentru debugging - să vedem ce etichete există
+    }
+    
+    def parse_value(value_text):
+        """Parse a Romanian number format to float"""
+        if not value_text or value_text == '-' or value_text.strip() == '':
+            return None
+        # Remove spaces and convert
+        clean_value = re.sub(r'[^\d.,\-]', '', value_text)
+        if clean_value:
+            try:
+                # Romanian format: 1.234.567,89 -> 1234567.89
+                clean_value = clean_value.replace('.', '').replace(',', '.')
+                return float(clean_value)
+            except:
+                return None
+        return None
+    
+    # Parse financial indicators from all rows
+    rows = soup.find_all('div', class_='row')
+    for row in rows:
+        cols = row.find_all('div', class_='col-sm-6')
+        if len(cols) >= 2:
+            label = cols[0].get_text(strip=True).lower()
+            value_text = cols[1].get_text(strip=True)
+            value = parse_value(value_text)
+            
+            # Store raw label for debugging
+            if label and len(label) > 3:
+                bilant["raw_labels"].append({"label": label, "value": value_text})
+            
+            # Indicatori principali - Cont Profit și Pierdere
+            if 'cifra' in label and 'afaceri' in label and 'neta' in label:
+                bilant["indicatori"]["cifra_afaceri_neta"] = value
+            elif 'venituri totale' in label:
+                bilant["indicatori"]["venituri_totale"] = value
+            elif 'cheltuieli totale' in label:
+                bilant["indicatori"]["cheltuieli_totale"] = value
+            elif 'profit brut' in label:
+                bilant["indicatori"]["profit_brut"] = value
+            elif 'pierdere brut' in label:
+                bilant["indicatori"]["pierdere_bruta"] = value
+            elif 'profit net' in label:
+                bilant["indicatori"]["profit_net"] = value
+            elif 'pierdere net' in label:
+                bilant["indicatori"]["pierdere_neta"] = value
+            elif 'numar mediu' in label and 'salariati' in label:
+                bilant["indicatori"]["numar_angajati"] = int(value) if value else None
+            
+            # Active
+            elif 'active imobilizate' in label and 'total' not in label:
+                bilant["indicatori"]["active_imobilizate"] = value
+            elif 'active circulante' in label and 'total' not in label:
+                bilant["indicatori"]["active_circulante"] = value
+            elif 'stocuri' in label:
+                bilant["indicatori"]["stocuri"] = value
+            elif 'creante' in label:
+                bilant["indicatori"]["creante"] = value
+            elif 'casa' in label and 'banci' in label:
+                bilant["indicatori"]["casa_conturi_banci"] = value
+            elif 'cheltuieli' in label and 'avans' in label:
+                bilant["indicatori"]["cheltuieli_avans"] = value
+            
+            # Pasive
+            elif 'capitaluri proprii' in label or 'capital propriu' in label:
+                bilant["indicatori"]["capitaluri_proprii"] = value
+            elif 'capital subscris' in label or 'capital social' in label:
+                bilant["indicatori"]["capital_subscris"] = value
+            elif 'patrimoniul regiei' in label:
+                bilant["indicatori"]["patrimoniul_regiei"] = value
+            elif 'provizioane' in label:
+                bilant["indicatori"]["provizioane"] = value
+            elif 'datorii' in label and 'total' not in label:
+                bilant["indicatori"]["datorii"] = value
+            elif 'venituri' in label and 'avans' in label:
+                bilant["indicatori"]["venituri_avans"] = value
+            
+            # Alte
+            elif 'repartizare' in label and 'profit' in label:
+                bilant["indicatori"]["repartizare_profit"] = value
+    
+    return bilant
+
+
+@api_router.get("/mfinante/bilant/{cui}/{an}")
+async def get_mfinante_bilant(cui: str, an: str):
+    """Get balance sheet for a specific year"""
+    if not mfinante_session.get("jsessionid"):
+        raise HTTPException(status_code=400, detail="No session set")
+    
+    try:
+        # Format an_value
+        an_value = f"WEB_UU_AN{an}" if not an.startswith("WEB_") else an
+        bilant = await fetch_mfinante_bilant(cui, an_value)
+        return bilant
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/mfinante/full/{cui}")
+async def get_mfinante_full(cui: str):
+    """Get all available data including latest balance sheet"""
+    if not mfinante_session.get("jsessionid"):
+        raise HTTPException(status_code=400, detail="No session set")
+    
+    try:
+        # Get basic data
+        data = await fetch_mfinante_data(cui)
+        
+        # Get latest balance sheet if available
+        if data["found"] and data["bilanturi_disponibili"]:
+            # Get the most recent year
+            latest = data["bilanturi_disponibili"][-1]
+            try:
+                bilant = await fetch_mfinante_bilant(cui, latest["value"])
+                data["bilant_recent"] = bilant
+            except Exception as e:
+                data["bilant_error"] = str(e)
+        
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @api_router.post("/mfinante/sync")
@@ -2386,7 +2693,7 @@ async def start_mfinante_sync(
 
 
 async def run_mfinante_sync(limit: int, only_without_bilant: bool):
-    """Background task to sync with MFinante"""
+    """Background task to sync with MFinante - saves ALL data including historical balance sheets"""
     global mfinante_sync_progress
     
     db = SessionLocal()
@@ -2418,30 +2725,129 @@ async def run_mfinante_sync(limit: int, only_without_bilant: bool):
                 data = await fetch_mfinante_data(firma.cui)
                 
                 if data.get("found"):
-                    # Update firma with MFinante data
+                    # === Update firma with identification data ===
                     di = data.get("date_identificare", {})
                     df = data.get("date_fiscale", {})
                     
+                    # Date identificare
                     firma.mf_denumire = di.get("denumire")
                     firma.mf_adresa = di.get("adresa")
+                    firma.mf_judet = di.get("judet")
+                    firma.mf_cod_postal = di.get("cod_postal")
+                    firma.mf_telefon = di.get("telefon")
+                    firma.mf_nr_reg_com = di.get("nr_reg_com")
                     firma.mf_stare = di.get("stare")
                     
-                    # Financial data
-                    if df.get("cifra_afaceri"):
+                    # Date fiscale
+                    firma.mf_platitor_tva = df.get("platitor_tva")
+                    firma.mf_tva_data = df.get("tva_data")
+                    firma.mf_impozit_profit = df.get("impozit_profit")
+                    firma.mf_impozit_micro = df.get("micro_data")
+                    firma.mf_accize = df.get("accize")
+                    firma.mf_cas_data = df.get("cas_data")
+                    
+                    # Store available years
+                    ani_disponibili = [b["an"] for b in data.get("bilanturi_disponibili", [])]
+                    firma.mf_ani_disponibili = ",".join(ani_disponibili) if ani_disponibili else None
+                    
+                    # === Fetch ALL available balance sheets ===
+                    bilanturi_disponibili = data.get("bilanturi_disponibili", [])
+                    latest_bilant = None
+                    
+                    for bilant_info in bilanturi_disponibili:
                         try:
-                            firma.mf_cifra_afaceri = float(df["cifra_afaceri"].replace(".", "").replace(",", "."))
-                        except:
-                            pass
-                    if df.get("profit"):
-                        try:
-                            firma.mf_profit = float(df["profit"].replace(".", "").replace(",", "."))
-                        except:
-                            pass
-                    if df.get("numar_angajati"):
-                        try:
-                            firma.mf_numar_angajati = int(df["numar_angajati"].replace(".", ""))
-                        except:
-                            pass
+                            await asyncio.sleep(0.5)  # Small delay between requests
+                            
+                            bilant_data = await fetch_mfinante_bilant(firma.cui, bilant_info["value"])
+                            indicatori = bilant_data.get("indicatori", {})
+                            an = bilant_data.get("an", bilant_info["an"])
+                            
+                            if indicatori:
+                                # Check if bilant already exists for this firma+year
+                                existing = db.query(Bilant).filter(
+                                    Bilant.firma_id == firma.id,
+                                    Bilant.an == an
+                                ).first()
+                                
+                                if existing:
+                                    # Update existing
+                                    existing.cifra_afaceri_neta = indicatori.get("cifra_afaceri_neta")
+                                    existing.venituri_totale = indicatori.get("venituri_totale")
+                                    existing.cheltuieli_totale = indicatori.get("cheltuieli_totale")
+                                    existing.profit_brut = indicatori.get("profit_brut")
+                                    existing.pierdere_bruta = indicatori.get("pierdere_bruta")
+                                    existing.profit_net = indicatori.get("profit_net")
+                                    existing.pierdere_neta = indicatori.get("pierdere_neta")
+                                    existing.numar_angajati = indicatori.get("numar_angajati")
+                                    existing.active_imobilizate = indicatori.get("active_imobilizate")
+                                    existing.active_circulante = indicatori.get("active_circulante")
+                                    existing.stocuri = indicatori.get("stocuri")
+                                    existing.creante = indicatori.get("creante")
+                                    existing.casa_conturi_banci = indicatori.get("casa_conturi_banci")
+                                    existing.cheltuieli_avans = indicatori.get("cheltuieli_avans")
+                                    existing.capitaluri_proprii = indicatori.get("capitaluri_proprii")
+                                    existing.capital_subscris = indicatori.get("capital_subscris")
+                                    existing.patrimoniul_regiei = indicatori.get("patrimoniul_regiei")
+                                    existing.provizioane = indicatori.get("provizioane")
+                                    existing.datorii = indicatori.get("datorii")
+                                    existing.venituri_avans = indicatori.get("venituri_avans")
+                                    existing.repartizare_profit = indicatori.get("repartizare_profit")
+                                    existing.raw_data = indicatori
+                                    existing.updated_at = datetime.utcnow()
+                                else:
+                                    # Create new bilant record
+                                    new_bilant = Bilant(
+                                        firma_id=firma.id,
+                                        an=an,
+                                        cifra_afaceri_neta=indicatori.get("cifra_afaceri_neta"),
+                                        venituri_totale=indicatori.get("venituri_totale"),
+                                        cheltuieli_totale=indicatori.get("cheltuieli_totale"),
+                                        profit_brut=indicatori.get("profit_brut"),
+                                        pierdere_bruta=indicatori.get("pierdere_bruta"),
+                                        profit_net=indicatori.get("profit_net"),
+                                        pierdere_neta=indicatori.get("pierdere_neta"),
+                                        numar_angajati=indicatori.get("numar_angajati"),
+                                        active_imobilizate=indicatori.get("active_imobilizate"),
+                                        active_circulante=indicatori.get("active_circulante"),
+                                        stocuri=indicatori.get("stocuri"),
+                                        creante=indicatori.get("creante"),
+                                        casa_conturi_banci=indicatori.get("casa_conturi_banci"),
+                                        cheltuieli_avans=indicatori.get("cheltuieli_avans"),
+                                        capitaluri_proprii=indicatori.get("capitaluri_proprii"),
+                                        capital_subscris=indicatori.get("capital_subscris"),
+                                        patrimoniul_regiei=indicatori.get("patrimoniul_regiei"),
+                                        provizioane=indicatori.get("provizioane"),
+                                        datorii=indicatori.get("datorii"),
+                                        venituri_avans=indicatori.get("venituri_avans"),
+                                        repartizare_profit=indicatori.get("repartizare_profit"),
+                                        raw_data=indicatori
+                                    )
+                                    db.add(new_bilant)
+                                
+                                # Keep track of latest (most recent year)
+                                if latest_bilant is None or an > latest_bilant["an"]:
+                                    latest_bilant = {"an": an, "indicatori": indicatori}
+                                    
+                        except Exception as e:
+                            logger.warning(f"[MFINANTE] Could not fetch bilant {bilant_info['an']} for CUI {firma.cui}: {e}")
+                            continue
+                    
+                    # === Update firma with LATEST balance sheet data for quick access ===
+                    if latest_bilant:
+                        ind = latest_bilant["indicatori"]
+                        firma.mf_an_bilant = latest_bilant["an"]
+                        firma.mf_cifra_afaceri = ind.get("cifra_afaceri_neta")
+                        firma.mf_venituri_totale = ind.get("venituri_totale")
+                        firma.mf_cheltuieli_totale = ind.get("cheltuieli_totale")
+                        firma.mf_profit_brut = ind.get("profit_brut")
+                        firma.mf_pierdere_bruta = ind.get("pierdere_bruta")
+                        firma.mf_profit_net = ind.get("profit_net")
+                        firma.mf_pierdere_neta = ind.get("pierdere_neta")
+                        firma.mf_numar_angajati = ind.get("numar_angajati")
+                        firma.mf_active_imobilizate = ind.get("active_imobilizate")
+                        firma.mf_active_circulante = ind.get("active_circulante")
+                        firma.mf_capitaluri_proprii = ind.get("capitaluri_proprii")
+                        firma.mf_datorii = ind.get("datorii")
                     
                     firma.mf_last_sync = datetime.utcnow()
                     firma.mf_sync_status = "found"
@@ -2495,16 +2901,121 @@ async def get_mfinante_stats():
         total = db.query(Firma).filter(Firma.cui.isnot(None)).count()
         synced = db.query(Firma).filter(Firma.mf_last_sync.isnot(None)).count()
         with_cifra = db.query(Firma).filter(Firma.mf_cifra_afaceri.isnot(None)).count()
+        total_bilanturi = db.query(Bilant).count()
         
         return {
             "total_firme": total,
             "synced_mfinante": synced,
             "not_synced": total - synced,
             "with_cifra_afaceri": with_cifra,
+            "total_bilanturi_istorice": total_bilanturi,
             "session_status": {
                 "has_session": mfinante_session.get("jsessionid") is not None,
                 "session_valid": mfinante_sync_progress.get("session_valid", False)
             }
+        }
+    finally:
+        db.close()
+
+
+@api_router.get("/bilanturi/firma/{firma_id}")
+async def get_bilanturi_firma(firma_id: int):
+    """Get all historical balance sheets for a company"""
+    db = SessionLocal()
+    try:
+        bilanturi = db.query(Bilant).filter(Bilant.firma_id == firma_id).order_by(Bilant.an.desc()).all()
+        
+        return [
+            {
+                "id": b.id,
+                "an": b.an,
+                "cifra_afaceri_neta": b.cifra_afaceri_neta,
+                "venituri_totale": b.venituri_totale,
+                "cheltuieli_totale": b.cheltuieli_totale,
+                "profit_brut": b.profit_brut,
+                "pierdere_bruta": b.pierdere_bruta,
+                "profit_net": b.profit_net,
+                "pierdere_neta": b.pierdere_neta,
+                "numar_angajati": b.numar_angajati,
+                "active_imobilizate": b.active_imobilizate,
+                "active_circulante": b.active_circulante,
+                "stocuri": b.stocuri,
+                "creante": b.creante,
+                "casa_conturi_banci": b.casa_conturi_banci,
+                "capitaluri_proprii": b.capitaluri_proprii,
+                "capital_subscris": b.capital_subscris,
+                "datorii": b.datorii,
+                "created_at": b.created_at.isoformat() if b.created_at else None
+            }
+            for b in bilanturi
+        ]
+    finally:
+        db.close()
+
+
+@api_router.get("/bilanturi/cui/{cui}")
+async def get_bilanturi_by_cui(cui: str):
+    """Get all historical balance sheets for a company by CUI"""
+    db = SessionLocal()
+    try:
+        firma = db.query(Firma).filter(Firma.cui == cui).first()
+        if not firma:
+            raise HTTPException(status_code=404, detail=f"Firma cu CUI {cui} nu a fost găsită")
+        
+        bilanturi = db.query(Bilant).filter(Bilant.firma_id == firma.id).order_by(Bilant.an.desc()).all()
+        
+        return {
+            "firma": {
+                "id": firma.id,
+                "cui": firma.cui,
+                "denumire": firma.denumire,
+                "mf_denumire": firma.mf_denumire,
+                "mf_stare": firma.mf_stare,
+                "mf_ani_disponibili": firma.mf_ani_disponibili
+            },
+            "bilanturi": [
+                {
+                    "id": b.id,
+                    "an": b.an,
+                    "cifra_afaceri_neta": b.cifra_afaceri_neta,
+                    "venituri_totale": b.venituri_totale,
+                    "cheltuieli_totale": b.cheltuieli_totale,
+                    "profit_brut": b.profit_brut,
+                    "pierdere_bruta": b.pierdere_bruta,
+                    "profit_net": b.profit_net,
+                    "pierdere_neta": b.pierdere_neta,
+                    "numar_angajati": b.numar_angajati,
+                    "active_imobilizate": b.active_imobilizate,
+                    "active_circulante": b.active_circulante,
+                    "capitaluri_proprii": b.capitaluri_proprii,
+                    "datorii": b.datorii
+                }
+                for b in bilanturi
+            ]
+        }
+    finally:
+        db.close()
+
+
+@api_router.get("/bilanturi/stats")
+async def get_bilanturi_stats():
+    """Get statistics about stored balance sheets"""
+    db = SessionLocal()
+    try:
+        total = db.query(Bilant).count()
+        firme_cu_bilanturi = db.query(Bilant.firma_id).distinct().count()
+        
+        # Get count by year
+        from sqlalchemy import func
+        by_year = db.query(
+            Bilant.an,
+            func.count(Bilant.id).label('count')
+        ).group_by(Bilant.an).order_by(Bilant.an.desc()).all()
+        
+        return {
+            "total_bilanturi": total,
+            "firme_cu_bilanturi": firme_cu_bilanturi,
+            "by_year": [{"an": r.an, "count": r.count} for r in by_year]
         }
     finally:
         db.close()
