@@ -825,16 +825,24 @@ async def get_db_stats():
 
 
 @api_router.post("/db/import-cui")
-async def import_cui_csv(file: UploadFile = File(...)):
+async def import_cui_csv(
+    file: UploadFile = File(...),
+    cui_column: int = None,
+    denumire_column: int = None,
+    has_header: bool = True
+):
     """
     Import file with CUI mappings from ONRC registry.
     Supports any file type (CSV, TXT, etc.)
     Supports delimiters: ^ (caret), ; (semicolon), , (comma), tab
-    Auto-detects columns: CUI, DENUMIRE
-    Handles large files (200MB+) with streaming
+    
+    If file has no header, specify column indexes (0-based):
+    - cui_column: index for CUI column
+    - denumire_column: index for DENUMIRE column
+    - has_header: set to false if file has no header row
     """
     
-    # Read content in chunks for large files
+    # Read content
     content = await file.read()
     try:
         decoded = content.decode('utf-8')
@@ -858,31 +866,49 @@ async def import_cui_csv(file: UploadFile = File(...)):
     
     logger.info(f"Detected delimiter: '{delimiter}'")
     
-    reader = csv.DictReader(io.StringIO(decoded), delimiter=delimiter)
+    lines = decoded.strip().split('\n')
     
-    # Detect columns (case-insensitive)
-    fieldnames = [f.strip() for f in reader.fieldnames] if reader.fieldnames else []
-    fieldnames_lower = [f.lower() for f in fieldnames]
-    
-    logger.info(f"Found columns: {fieldnames[:10]}...")  # Log first 10 columns
-    
-    # Find cui and denumire columns
-    cui_col = None
-    denumire_col = None
-    
-    for i, col in enumerate(fieldnames_lower):
-        if col == 'cui' or col == 'cif' or col == 'cod_fiscal':
-            cui_col = fieldnames[i]
-        elif col == 'denumire' or col == 'nume_firma' or col == 'company_name':
-            denumire_col = fieldnames[i]
-    
-    if not cui_col or not denumire_col:
-        raise HTTPException(
-            status_code=400, 
-            detail=f"CSV must have columns for CUI and DENUMIRE. Found columns: {fieldnames[:15]}"
-        )
-    
-    logger.info(f"Using columns: CUI='{cui_col}', DENUMIRE='{denumire_col}'")
+    # If manual column indexes are provided, use them
+    if cui_column is not None and denumire_column is not None:
+        # Manual mode - use column indexes
+        cui_col_idx = cui_column
+        denumire_col_idx = denumire_column
+        start_row = 1 if has_header else 0
+        use_manual = True
+        logger.info(f"Using manual columns: CUI={cui_col_idx}, DENUMIRE={denumire_col_idx}, start_row={start_row}")
+    else:
+        # Auto-detect mode
+        use_manual = False
+        if has_header:
+            header = lines[0].split(delimiter)
+            header_lower = [h.strip().lower() for h in header]
+            
+            cui_col_idx = None
+            denumire_col_idx = None
+            
+            for i, col in enumerate(header_lower):
+                if col in ['cui', 'cif', 'cod_fiscal', 'cod']:
+                    cui_col_idx = i
+                elif col in ['denumire', 'nume_firma', 'company_name', 'nume', 'firma']:
+                    denumire_col_idx = i
+            
+            if cui_col_idx is None or denumire_col_idx is None:
+                # Return column info for user to specify
+                return {
+                    "error": "Could not auto-detect columns",
+                    "detected_columns": header[:20],
+                    "message": "Please specify cui_column and denumire_column indexes (0-based)",
+                    "example": f"Found {len(header)} columns. First 20: {header[:20]}"
+                }
+            
+            start_row = 1
+            logger.info(f"Auto-detected columns: CUI={cui_col_idx} ({header[cui_col_idx]}), DENUMIRE={denumire_col_idx} ({header[denumire_col_idx]})")
+        else:
+            return {
+                "error": "No header and no column indexes specified",
+                "message": "Please specify cui_column and denumire_column indexes (0-based)",
+                "first_row_sample": lines[0].split(delimiter)[:20] if lines else []
+            }
     
     db = SessionLocal()
     results = {
@@ -894,53 +920,52 @@ async def import_cui_csv(file: UploadFile = File(...)):
         "updated": [],
         "not_found_list": [],
         "delimiter_detected": delimiter,
-        "cui_column": cui_col,
-        "denumire_column": denumire_col
+        "cui_column_index": cui_col_idx,
+        "denumire_column_index": denumire_col_idx
     }
     
-    # Build a lookup dictionary of all firme for faster matching
+    # Build lookup dictionary
     firme_dict = {}
     all_firme = db.query(Firma).all()
     for firma in all_firme:
         if firma.denumire_normalized:
             firme_dict[firma.denumire_normalized] = firma
-            # Also add partial keys (first 30 chars)
             if len(firma.denumire_normalized) > 30:
                 firme_dict[firma.denumire_normalized[:30]] = firma
     
     logger.info(f"Loaded {len(all_firme)} firme for matching")
     
     try:
-        # Re-read CSV
-        reader = csv.DictReader(io.StringIO(decoded), delimiter=delimiter)
-        
-        batch_size = 1000
         batch_count = 0
         
-        for row in reader:
+        for i, line in enumerate(lines[start_row:], start=start_row):
+            if not line.strip():
+                continue
+                
             results["total_rows"] += 1
             
-            # Get values
-            cui_value = row.get(cui_col, '').strip() if row.get(cui_col) else None
-            denumire_value = row.get(denumire_col, '').strip() if row.get(denumire_col) else None
+            cols = line.split(delimiter)
+            
+            if len(cols) <= max(cui_col_idx, denumire_col_idx):
+                continue
+            
+            cui_value = cols[cui_col_idx].strip() if cols[cui_col_idx] else None
+            denumire_value = cols[denumire_col_idx].strip() if cols[denumire_col_idx] else None
             
             if not cui_value or not denumire_value:
                 continue
             
             results["processed"] += 1
             
-            # Normalize denumire for matching
             denumire_normalized = normalize_company_name(denumire_value)
             
-            # Find firma by normalized name (fast lookup)
+            # Find firma
             firma = firme_dict.get(denumire_normalized)
             
             if not firma and len(denumire_normalized) > 30:
-                # Try partial match
                 firma = firme_dict.get(denumire_normalized[:30])
             
             if not firma:
-                # Try substring search in our firme
                 for key, f in firme_dict.items():
                     if denumire_normalized in key or key in denumire_normalized:
                         firma = f
@@ -953,7 +978,7 @@ async def import_cui_csv(file: UploadFile = File(...)):
                 else:
                     firma.cui = cui_value
                     firma.updated_at = datetime.utcnow()
-                    if len(results["updated"]) < 100:  # Limit to first 100
+                    if len(results["updated"]) < 100:
                         results["updated"].append({
                             "id": firma.id,
                             "denumire": firma.denumire[:50],
@@ -961,12 +986,11 @@ async def import_cui_csv(file: UploadFile = File(...)):
                         })
             else:
                 results["not_found"] += 1
-                if len(results["not_found_list"]) < 10:  # Limit list
+                if len(results["not_found_list"]) < 10:
                     results["not_found_list"].append(denumire_value[:50])
             
-            # Commit in batches
             batch_count += 1
-            if batch_count >= batch_size:
+            if batch_count >= 1000:
                 db.commit()
                 batch_count = 0
                 logger.info(f"Processed {results['total_rows']} rows, matched {results['matched']}")
@@ -976,13 +1000,12 @@ async def import_cui_csv(file: UploadFile = File(...)):
         
     except Exception as e:
         db.rollback()
-        logger.error(f"Error processing CSV: {e}")
-        raise HTTPException(status_code=500, detail=f"Error processing CSV: {str(e)}")
+        logger.error(f"Error processing file: {e}")
+        raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
     finally:
         db.close()
     
-    # Cleanup large lists for response
-    results["updated"] = results["updated"][:50]  # Limit response size
+    results["updated"] = results["updated"][:50]
     
     return results
 
