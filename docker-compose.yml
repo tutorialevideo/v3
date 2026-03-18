@@ -46,7 +46,7 @@ services:
       - MONGO_URL=mongodb://root:rootpassword@mongodb:27017/
       - DB_NAME=justportal
       - POSTGRES_URL=postgresql://justapp:justapp123@postgres:5432/justportal
-      - CORS_ORIGINS=http://localhost:3080,http://localhost:3000,http://localhost:80,http://frontend:3000
+      - CORS_ORIGINS=*
     volumes:
       - backend_downloads:/app/downloads
     ports:

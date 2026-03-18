@@ -101,16 +101,22 @@ app = FastAPI()
 app.router.redirect_slashes = False
 
 # CORS Configuration - MUST be added before routes
-cors_origins = os.environ.get('CORS_ORIGINS', '*').split(',')
-logger_setup = logging.getLogger("cors")
-logger_setup.info(f"CORS origins configured: {cors_origins}")
+# Allow all origins for local development, or use CORS_ORIGINS env var
+cors_origins_env = os.environ.get('CORS_ORIGINS', '')
+if cors_origins_env and cors_origins_env != '*':
+    cors_origins = [origin.strip() for origin in cors_origins_env.split(',')]
+else:
+    cors_origins = ["*"]
+
+print(f"[CORS] Configured origins: {cors_origins}")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
-    allow_credentials=True,
+    allow_credentials=True if cors_origins != ["*"] else False,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # Set max upload size

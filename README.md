@@ -17,24 +17,26 @@ git clone <repository-url>
 cd portal-just-downloader
 
 # 2. Pornește toate serviciile
-docker-compose up -d
+docker-compose up -d --build
 
 # 3. Verifică că totul rulează
 docker-compose ps
 
 # 4. Accesează aplicația
-# Frontend: http://localhost:3000
+# Frontend: http://localhost:3080
 # Backend API: http://localhost:8001/api/
 ```
 
 ## Servicii
 
-| Serviciu | Port | Descriere |
-|----------|------|-----------|
-| Frontend | 3000 | React UI |
-| Backend | 8001 | FastAPI API |
-| PostgreSQL | 5432 | Baza de date firme/dosare |
-| MongoDB | 27017 | Config & job logs |
+| Serviciu | Port Intern | Port Extern | Descriere |
+|----------|-------------|-------------|-----------|
+| Frontend | 80 | **3080** | React UI |
+| Backend | 8001 | 8001 | FastAPI API |
+| PostgreSQL | 5432 | **5433** | Baza de date firme/dosare |
+| MongoDB | 27017 | **27018** | Config & job logs |
+
+> **Notă:** Porturile externe sunt remapate pentru a evita conflicte cu servicii locale.
 
 ## Structura Proiectului
 
@@ -56,7 +58,7 @@ docker-compose ps
 
 ### 1. Import Firme din ONRC
 
-1. Accesează http://localhost:3000
+1. Accesează http://localhost:3080
 2. În secțiunea "Import CUI pentru Firme", click "Import CSV"
 3. Selectează fișierul ONRC (format: `DENUMIRE^CUI^...`)
 4. Așteaptă procesarea (poate dura câteva minute pentru fișiere mari)
