@@ -845,9 +845,8 @@ async def import_cui_csv(
     only_companies: bool = True
 ):
     """
-    Import file with CUI mappings from ONRC registry.
-    Supports any file type (CSV, TXT, etc.)
-    Supports delimiters: ^ (caret), ; (semicolon), , (comma), tab
+    Import companies from ONRC file directly into database.
+    Creates new firms with CUI - later dosare will be matched to these firms.
     
     Default settings for ONRC files:
     - cui_column: 1 (second column)
@@ -866,13 +865,13 @@ async def import_cui_csv(
         except UnicodeDecodeError:
             decoded = content.decode('cp1252')
     
-    # Detect delimiter by checking first non-empty line
+    # Detect delimiter
     lines = [l for l in decoded.strip().split('\n') if l.strip()]
     if not lines:
         raise HTTPException(status_code=400, detail="File is empty")
     
     first_line = lines[0]
-    delimiter = '^'  # Default for ONRC files
+    delimiter = '^'
     if '^' in first_line:
         delimiter = '^'
     elif '\t' in first_line:
@@ -888,34 +887,30 @@ async def import_cui_csv(
     denumire_col_idx = denumire_column
     start_row = 1 if has_header else 0
     
-    logger.info(f"Using columns: CUI={cui_col_idx}, DENUMIRE={denumire_col_idx}, start_row={start_row}, only_companies={only_companies}")
-    
     db = SessionLocal()
     results = {
         "total_rows": 0,
         "processed": 0,
         "skipped_not_company": 0,
-        "matched": 0,
-        "not_found": 0,
-        "already_has_cui": 0,
-        "updated": [],
-        "not_found_list": [],
-        "delimiter_detected": delimiter,
-        "cui_column_index": cui_col_idx,
-        "denumire_column_index": denumire_col_idx,
-        "only_companies": only_companies
+        "created_new": 0,
+        "already_exists": 0,
+        "updated_cui": 0,
+        "skipped_no_cui": 0,
+        "sample_created": [],
+        "delimiter_detected": delimiter
     }
     
-    # Build lookup dictionary
-    firme_dict = {}
+    # Build lookup of existing firms by normalized name and by CUI
+    existing_by_name = {}
+    existing_by_cui = {}
     all_firme = db.query(Firma).all()
     for firma in all_firme:
         if firma.denumire_normalized:
-            firme_dict[firma.denumire_normalized] = firma
-            if len(firma.denumire_normalized) > 30:
-                firme_dict[firma.denumire_normalized[:30]] = firma
+            existing_by_name[firma.denumire_normalized] = firma
+        if firma.cui:
+            existing_by_cui[firma.cui] = firma
     
-    logger.info(f"Loaded {len(all_firme)} firme for matching")
+    logger.info(f"Existing firms in DB: {len(all_firme)}")
     
     try:
         batch_count = 0
@@ -937,53 +932,64 @@ async def import_cui_csv(
             if not denumire_value:
                 continue
             
-            # Filter: only companies (SRL, SA, etc.) - exclude PFA, II, IF
+            # Filter: only companies (SRL, SA, etc.)
             if only_companies and not is_company(denumire_value):
                 results["skipped_not_company"] += 1
                 continue
             
-            if not cui_value or cui_value == '0':
+            # Skip if no valid CUI
+            if not cui_value or cui_value == '0' or len(cui_value) < 2:
+                results["skipped_no_cui"] += 1
                 continue
             
             results["processed"] += 1
             
             denumire_normalized = normalize_company_name(denumire_value)
             
-            # Find firma
-            firma = firme_dict.get(denumire_normalized)
+            # Check if firm already exists by CUI
+            existing_firma = existing_by_cui.get(cui_value)
             
-            if not firma and len(denumire_normalized) > 30:
-                firma = firme_dict.get(denumire_normalized[:30])
+            if not existing_firma:
+                # Check by normalized name
+                existing_firma = existing_by_name.get(denumire_normalized)
             
-            if not firma:
-                for key, f in firme_dict.items():
-                    if denumire_normalized in key or key in denumire_normalized:
-                        firma = f
-                        break
-            
-            if firma:
-                results["matched"] += 1
-                if firma.cui and firma.cui.strip():
-                    results["already_has_cui"] += 1
+            if existing_firma:
+                # Firm exists
+                if existing_firma.cui and existing_firma.cui == cui_value:
+                    results["already_exists"] += 1
+                elif not existing_firma.cui:
+                    # Update CUI if missing
+                    existing_firma.cui = cui_value
+                    existing_firma.updated_at = datetime.utcnow()
+                    results["updated_cui"] += 1
                 else:
-                    firma.cui = cui_value
-                    firma.updated_at = datetime.utcnow()
-                    if len(results["updated"]) < 100:
-                        results["updated"].append({
-                            "id": firma.id,
-                            "denumire": firma.denumire[:50],
-                            "cui": cui_value
-                        })
+                    results["already_exists"] += 1
             else:
-                results["not_found"] += 1
-                if len(results["not_found_list"]) < 10:
-                    results["not_found_list"].append(denumire_value[:50])
+                # Create new firm
+                new_firma = Firma(
+                    cui=cui_value,
+                    denumire=denumire_value,
+                    denumire_normalized=denumire_normalized
+                )
+                db.add(new_firma)
+                
+                # Update lookup dictionaries
+                existing_by_name[denumire_normalized] = new_firma
+                existing_by_cui[cui_value] = new_firma
+                
+                results["created_new"] += 1
+                
+                if len(results["sample_created"]) < 10:
+                    results["sample_created"].append({
+                        "denumire": denumire_value[:50],
+                        "cui": cui_value
+                    })
             
             batch_count += 1
             if batch_count >= 1000:
                 db.commit()
                 batch_count = 0
-                logger.info(f"Processed {results['total_rows']} rows, matched {results['matched']}, skipped {results['skipped_not_company']} non-companies")
+                logger.info(f"Processed {results['total_rows']} rows, created {results['created_new']} new firms")
         
         db.commit()
         logger.info(f"Import complete: {results}")
@@ -994,8 +1000,6 @@ async def import_cui_csv(
         raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
     finally:
         db.close()
-    
-    results["updated"] = results["updated"][:50]
     
     return results
 

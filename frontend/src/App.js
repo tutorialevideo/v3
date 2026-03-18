@@ -296,8 +296,8 @@ function App() {
                       <span className="import-stat-label">Firme procesate</span>
                     </div>
                     <div className="import-stat success">
-                      <span className="import-stat-value">{importResult.matched?.toLocaleString() || 0}</span>
-                      <span className="import-stat-label">Găsite în DB</span>
+                      <span className="import-stat-value">{(importResult.created_new || 0).toLocaleString()}</span>
+                      <span className="import-stat-label">Firme noi create</span>
                     </div>
                     <div className="import-stat warning">
                       <span className="import-stat-value">{(importResult.skipped_not_company || 0).toLocaleString()}</span>
@@ -305,22 +305,25 @@ function App() {
                     </div>
                   </div>
                   
-                  {importResult.delimiter_detected && (
+                  {(importResult.already_exists > 0 || importResult.updated_cui > 0) && (
                     <p className="import-info">
-                      Delimiter detectat: <code>{importResult.delimiter_detected}</code> | 
-                      Coloane: <code>{importResult.cui_column}</code>, <code>{importResult.denumire_column}</code>
+                      Existau deja: <strong>{importResult.already_exists?.toLocaleString() || 0}</strong> | 
+                      CUI actualizat: <strong>{importResult.updated_cui?.toLocaleString() || 0}</strong> |
+                      Fără CUI valid: <strong>{importResult.skipped_no_cui?.toLocaleString() || 0}</strong>
                     </p>
                   )}
                   
-                  {importResult.not_found_list?.length > 0 && (
+                  {importResult.sample_created?.length > 0 && (
                     <div className="import-not-found">
-                      <p className="not-found-title">
-                        <AlertCircle size={14} />
-                        Firme din CSV negăsite în DB ({importResult.not_found?.toLocaleString()} total):
+                      <p className="not-found-title" style={{color: 'var(--success)'}}>
+                        <CheckCircle2 size={14} />
+                        Exemple firme create:
                       </p>
                       <ScrollArea className="not-found-scroll">
-                        {importResult.not_found_list.map((name, idx) => (
-                          <span key={idx} className="not-found-item">{name}</span>
+                        {importResult.sample_created.map((firma, idx) => (
+                          <span key={idx} className="not-found-item" style={{background: 'var(--success-bg)'}}>
+                            {firma.denumire} ({firma.cui})
+                          </span>
                         ))}
                       </ScrollArea>
                     </div>
