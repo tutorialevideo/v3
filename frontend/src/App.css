@@ -1375,3 +1375,183 @@ button[data-testid="run-now-btn"] {
     font-size: 1.5rem;
   }
 }
+
+
+/* ========================================
+   ANAF SYNC SECTION STYLES
+   ======================================== */
+
+.anaf-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.anaf-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 1rem;
+}
+
+.anaf-stat-card {
+  background: var(--bg-elevated);
+  border-radius: 12px;
+  padding: 1.25rem;
+  text-align: center;
+  border: 1px solid var(--border);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.anaf-stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.anaf-stat-card .stat-value {
+  display: block;
+  font-size: 1.75rem;
+  font-weight: 700;
+  font-family: 'IBM Plex Mono', monospace;
+  color: var(--text-primary);
+}
+
+.anaf-stat-card .stat-label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-top: 0.25rem;
+}
+
+.anaf-stat-card.synced .stat-value { color: var(--success); }
+.anaf-stat-card.not-synced .stat-value { color: var(--warning); }
+.anaf-stat-card.found .stat-value { color: var(--success); }
+.anaf-stat-card.not-found .stat-value { color: var(--text-muted); }
+.anaf-stat-card.active .stat-value { color: var(--success); }
+.anaf-stat-card.radiate .stat-value { color: var(--error); }
+.anaf-stat-card.tva .stat-value { color: var(--primary); }
+.anaf-stat-card.efactura .stat-value { color: var(--purple); }
+
+/* Progress Card */
+.progress-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.progress-bar-container {
+  width: 100%;
+  height: 24px;
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary), var(--success));
+  border-radius: 12px;
+  transition: width 0.5s ease;
+}
+
+.progress-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.progress-stats span {
+  background: var(--bg-elevated);
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+}
+
+.stop-btn {
+  align-self: flex-start;
+}
+
+/* Sync Actions */
+.sync-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.sync-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.sync-btn {
+  background: linear-gradient(135deg, var(--primary), var(--success));
+}
+
+.sync-note {
+  font-size: 0.85rem;
+  color: var(--warning);
+  padding: 0.75rem;
+  background: rgba(249, 171, 0, 0.1);
+  border-radius: 8px;
+  border-left: 3px solid var(--warning);
+}
+
+/* Test Card */
+.test-form {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.test-input {
+  flex: 1;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 1rem;
+}
+
+.test-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(0, 122, 204, 0.2);
+}
+
+.test-result {
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  padding: 1rem;
+  overflow-x: auto;
+}
+
+.test-result pre {
+  margin: 0;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .anaf-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .anaf-stat-card .stat-value {
+    font-size: 1.25rem;
+  }
+  
+  .sync-options {
+    flex-direction: column;
+  }
+  
+  .test-form {
+    flex-direction: column;
+  }
+}

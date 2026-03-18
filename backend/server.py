@@ -76,6 +76,40 @@ class Firma(Base):
     # Alte detalii adresă
     detalii_adresa = Column(Text, nullable=True)  # Restul câmpurilor concatenate
     
+    # ===== DATE ANAF =====
+    # Date generale ANAF
+    anaf_denumire = Column(String(500), nullable=True)
+    anaf_adresa = Column(Text, nullable=True)
+    anaf_nr_reg_com = Column(String(50), nullable=True)  # J17/836/2002
+    anaf_telefon = Column(String(50), nullable=True)
+    anaf_fax = Column(String(50), nullable=True)
+    anaf_cod_postal = Column(String(20), nullable=True)
+    anaf_stare = Column(String(200), nullable=True)  # RADIERE din data... / ACTIV
+    anaf_data_inregistrare = Column(String(20), nullable=True)
+    anaf_cod_caen = Column(String(20), nullable=True)
+    anaf_forma_juridica = Column(String(100), nullable=True)
+    anaf_forma_organizare = Column(String(100), nullable=True)
+    anaf_forma_proprietate = Column(String(200), nullable=True)
+    anaf_organ_fiscal = Column(String(200), nullable=True)
+    
+    # Status TVA
+    anaf_platitor_tva = Column(Boolean, nullable=True)  # scpTVA
+    anaf_tva_incasare = Column(Boolean, nullable=True)  # statusTvaIncasare
+    anaf_split_tva = Column(Boolean, nullable=True)  # statusSplitTVA
+    anaf_inactiv = Column(Boolean, nullable=True)  # statusInactivi
+    anaf_e_factura = Column(Boolean, nullable=True)  # statusRO_e_Factura
+    
+    # Adresa sediu social ANAF
+    anaf_sediu_judet = Column(String(100), nullable=True)
+    anaf_sediu_localitate = Column(String(200), nullable=True)
+    anaf_sediu_strada = Column(String(300), nullable=True)
+    anaf_sediu_numar = Column(String(50), nullable=True)
+    anaf_sediu_cod_postal = Column(String(20), nullable=True)
+    
+    # Metadata sincronizare
+    anaf_last_sync = Column(DateTime, nullable=True)
+    anaf_sync_status = Column(String(50), nullable=True)  # success, not_found, error
+    
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -165,6 +199,20 @@ import_progress = {
     "skipped_not_company": 0,
     "skipped_no_cui": 0,
     "last_update": None
+}
+
+# ANAF sync progress tracking
+anaf_sync_progress = {
+    "active": False,
+    "total_firms": 0,
+    "processed": 0,
+    "found": 0,
+    "not_found": 0,
+    "errors": 0,
+    "current_batch": 0,
+    "total_batches": 0,
+    "last_update": None,
+    "eta_seconds": None
 }
 
 # Scheduler
@@ -1620,6 +1668,7 @@ async def migrate_database_schema():
     """Add new columns to firme table if they don't exist"""
     try:
         new_columns = [
+            # ONRC columns
             ("cod_inregistrare", "VARCHAR(50)"),
             ("data_inregistrare", "VARCHAR(20)"),
             ("cod_onrc", "VARCHAR(100)"),
@@ -1634,7 +1683,33 @@ async def migrate_database_schema():
             ("etaj", "VARCHAR(20)"),
             ("apartament", "VARCHAR(20)"),
             ("cod_postal", "VARCHAR(20)"),
-            ("detalii_adresa", "TEXT")
+            ("detalii_adresa", "TEXT"),
+            # ANAF columns
+            ("anaf_denumire", "VARCHAR(500)"),
+            ("anaf_adresa", "TEXT"),
+            ("anaf_nr_reg_com", "VARCHAR(50)"),
+            ("anaf_telefon", "VARCHAR(50)"),
+            ("anaf_fax", "VARCHAR(50)"),
+            ("anaf_cod_postal", "VARCHAR(20)"),
+            ("anaf_stare", "VARCHAR(200)"),
+            ("anaf_data_inregistrare", "VARCHAR(20)"),
+            ("anaf_cod_caen", "VARCHAR(20)"),
+            ("anaf_forma_juridica", "VARCHAR(100)"),
+            ("anaf_forma_organizare", "VARCHAR(100)"),
+            ("anaf_forma_proprietate", "VARCHAR(200)"),
+            ("anaf_organ_fiscal", "VARCHAR(200)"),
+            ("anaf_platitor_tva", "BOOLEAN"),
+            ("anaf_tva_incasare", "BOOLEAN"),
+            ("anaf_split_tva", "BOOLEAN"),
+            ("anaf_inactiv", "BOOLEAN"),
+            ("anaf_e_factura", "BOOLEAN"),
+            ("anaf_sediu_judet", "VARCHAR(100)"),
+            ("anaf_sediu_localitate", "VARCHAR(200)"),
+            ("anaf_sediu_strada", "VARCHAR(300)"),
+            ("anaf_sediu_numar", "VARCHAR(50)"),
+            ("anaf_sediu_cod_postal", "VARCHAR(20)"),
+            ("anaf_last_sync", "TIMESTAMP"),
+            ("anaf_sync_status", "VARCHAR(50)")
         ]
         
         added = []
@@ -1776,6 +1851,264 @@ async def create_performance_indexes():
         }
     except Exception as e:
         logger.error(f"Error creating indexes: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================
+# ANAF SYNC ENDPOINTS
+# ============================================
+
+ANAF_API_URL = "https://webservicesp.anaf.ro/api/PlatitorTvaRest/v9/tva"
+ANAF_BATCH_SIZE = 100  # Max 100 CUIs per request
+ANAF_RATE_LIMIT_SECONDS = 1.1  # 1 request per second + buffer
+
+
+@api_router.get("/anaf/sync-progress")
+async def get_anaf_sync_progress():
+    """Get current ANAF sync progress"""
+    return anaf_sync_progress
+
+
+@api_router.get("/anaf/stats")
+async def get_anaf_stats():
+    """Get ANAF sync statistics"""
+    db = SessionLocal()
+    try:
+        total_firme = db.query(Firma).filter(Firma.cui.isnot(None), Firma.cui != '').count()
+        synced = db.query(Firma).filter(Firma.anaf_last_sync.isnot(None)).count()
+        found = db.query(Firma).filter(Firma.anaf_sync_status == 'found').count()
+        not_found = db.query(Firma).filter(Firma.anaf_sync_status == 'not_found').count()
+        errors = db.query(Firma).filter(Firma.anaf_sync_status == 'error').count()
+        active = db.query(Firma).filter(Firma.anaf_stare.ilike('%ACTIV%'), ~Firma.anaf_stare.ilike('%INACTIV%'), ~Firma.anaf_stare.ilike('%RADIERE%')).count()
+        radiate = db.query(Firma).filter(Firma.anaf_stare.ilike('%RADIERE%')).count()
+        platitori_tva = db.query(Firma).filter(Firma.anaf_platitor_tva == True).count()
+        e_factura = db.query(Firma).filter(Firma.anaf_e_factura == True).count()
+        
+        return {
+            "total_firme_cu_cui": total_firme,
+            "synced": synced,
+            "not_synced": total_firme - synced,
+            "found": found,
+            "not_found": not_found,
+            "errors": errors,
+            "active": active,
+            "radiate": radiate,
+            "platitori_tva": platitori_tva,
+            "e_factura": e_factura
+        }
+    finally:
+        db.close()
+
+
+@api_router.post("/anaf/sync")
+async def start_anaf_sync(
+    background_tasks: BackgroundTasks,
+    limit: int = None,
+    only_unsynced: bool = True,
+    judet: str = None
+):
+    """
+    Start ANAF sync for companies.
+    - limit: max number of companies to sync (None = all)
+    - only_unsynced: only sync companies without anaf_last_sync
+    - judet: filter by judet
+    """
+    global anaf_sync_progress
+    
+    if anaf_sync_progress["active"]:
+        raise HTTPException(status_code=400, detail="Sync already in progress")
+    
+    # Reset progress
+    anaf_sync_progress = {
+        "active": True,
+        "total_firms": 0,
+        "processed": 0,
+        "found": 0,
+        "not_found": 0,
+        "errors": 0,
+        "current_batch": 0,
+        "total_batches": 0,
+        "last_update": datetime.utcnow().isoformat(),
+        "eta_seconds": None
+    }
+    
+    # Start background task
+    background_tasks.add_task(run_anaf_sync, limit, only_unsynced, judet)
+    
+    return {"message": "ANAF sync started", "status": "running"}
+
+
+async def run_anaf_sync(limit: int, only_unsynced: bool, judet: str):
+    """Background task to sync with ANAF API"""
+    global anaf_sync_progress
+    
+    db = SessionLocal()
+    try:
+        # Build query
+        query = db.query(Firma).filter(Firma.cui.isnot(None), Firma.cui != '')
+        
+        if only_unsynced:
+            query = query.filter(Firma.anaf_last_sync.is_(None))
+        
+        if judet:
+            query = query.filter(Firma.judet.ilike(f"%{judet}%"))
+        
+        if limit:
+            query = query.limit(limit)
+        
+        firms = query.all()
+        total = len(firms)
+        
+        anaf_sync_progress["total_firms"] = total
+        anaf_sync_progress["total_batches"] = (total + ANAF_BATCH_SIZE - 1) // ANAF_BATCH_SIZE
+        
+        logger.info(f"[ANAF] Starting sync for {total} firms in {anaf_sync_progress['total_batches']} batches")
+        
+        start_time = datetime.utcnow()
+        
+        # Process in batches of 100
+        for batch_num in range(0, total, ANAF_BATCH_SIZE):
+            batch = firms[batch_num:batch_num + ANAF_BATCH_SIZE]
+            anaf_sync_progress["current_batch"] = batch_num // ANAF_BATCH_SIZE + 1
+            
+            # Prepare request
+            today = datetime.utcnow().strftime("%Y-%m-%d")
+            request_data = [{"cui": int(f.cui), "data": today} for f in batch if f.cui and f.cui.isdigit()]
+            
+            if not request_data:
+                continue
+            
+            try:
+                # Call ANAF API
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                        ANAF_API_URL,
+                        json=request_data,
+                        headers={"Content-Type": "application/json"},
+                        timeout=aiohttp.ClientTimeout(total=30)
+                    ) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            
+                            # Process found companies
+                            found_map = {}
+                            for item in data.get("found", []):
+                                cui = str(item.get("date_generale", {}).get("cui", ""))
+                                found_map[cui] = item
+                            
+                            # Update database
+                            for firma in batch:
+                                if firma.cui in found_map:
+                                    item = found_map[firma.cui]
+                                    dg = item.get("date_generale", {})
+                                    tva = item.get("inregistrare_scop_Tva", {})
+                                    rtvai = item.get("inregistrare_RTVAI", {})
+                                    inactiv = item.get("stare_inactiv", {})
+                                    split = item.get("inregistrare_SplitTVA", {})
+                                    sediu = item.get("adresa_sediu_social", {})
+                                    
+                                    firma.anaf_denumire = dg.get("denumire")
+                                    firma.anaf_adresa = dg.get("adresa")
+                                    firma.anaf_nr_reg_com = dg.get("nrRegCom")
+                                    firma.anaf_telefon = dg.get("telefon")
+                                    firma.anaf_fax = dg.get("fax")
+                                    firma.anaf_cod_postal = dg.get("codPostal")
+                                    firma.anaf_stare = dg.get("stare_inregistrare")
+                                    firma.anaf_data_inregistrare = dg.get("data_inregistrare")
+                                    firma.anaf_cod_caen = dg.get("cod_CAEN")
+                                    firma.anaf_forma_juridica = dg.get("forma_juridica")
+                                    firma.anaf_forma_organizare = dg.get("forma_organizare")
+                                    firma.anaf_forma_proprietate = dg.get("forma_de_proprietate")
+                                    firma.anaf_organ_fiscal = dg.get("organFiscalCompetent")
+                                    
+                                    firma.anaf_platitor_tva = tva.get("scpTVA", False)
+                                    firma.anaf_tva_incasare = rtvai.get("statusTvaIncasare", False)
+                                    firma.anaf_split_tva = split.get("statusSplitTVA", False)
+                                    firma.anaf_inactiv = inactiv.get("statusInactivi", False)
+                                    firma.anaf_e_factura = dg.get("statusRO_e_Factura", False)
+                                    
+                                    firma.anaf_sediu_judet = sediu.get("sdenumire_Judet")
+                                    firma.anaf_sediu_localitate = sediu.get("sdenumire_Localitate")
+                                    firma.anaf_sediu_strada = sediu.get("sdenumire_Strada")
+                                    firma.anaf_sediu_numar = sediu.get("snumar_Strada")
+                                    firma.anaf_sediu_cod_postal = sediu.get("scod_Postal")
+                                    
+                                    firma.anaf_last_sync = datetime.utcnow()
+                                    firma.anaf_sync_status = "found"
+                                    anaf_sync_progress["found"] += 1
+                                else:
+                                    firma.anaf_last_sync = datetime.utcnow()
+                                    firma.anaf_sync_status = "not_found"
+                                    anaf_sync_progress["not_found"] += 1
+                                
+                                anaf_sync_progress["processed"] += 1
+                            
+                            db.commit()
+                        else:
+                            logger.error(f"[ANAF] API error: {response.status}")
+                            for firma in batch:
+                                firma.anaf_sync_status = "error"
+                                anaf_sync_progress["errors"] += 1
+                                anaf_sync_progress["processed"] += 1
+                            db.commit()
+                            
+            except Exception as e:
+                logger.error(f"[ANAF] Batch error: {e}")
+                for firma in batch:
+                    firma.anaf_sync_status = "error"
+                    anaf_sync_progress["errors"] += 1
+                    anaf_sync_progress["processed"] += 1
+                db.commit()
+            
+            # Update progress and ETA
+            elapsed = (datetime.utcnow() - start_time).total_seconds()
+            if anaf_sync_progress["processed"] > 0:
+                rate = anaf_sync_progress["processed"] / elapsed
+                remaining = total - anaf_sync_progress["processed"]
+                anaf_sync_progress["eta_seconds"] = int(remaining / rate) if rate > 0 else None
+            
+            anaf_sync_progress["last_update"] = datetime.utcnow().isoformat()
+            
+            # Log progress every 10 batches
+            if anaf_sync_progress["current_batch"] % 10 == 0:
+                logger.info(f"[ANAF] Progress: {anaf_sync_progress['processed']}/{total} ({anaf_sync_progress['found']} found, {anaf_sync_progress['not_found']} not found)")
+            
+            # Rate limiting
+            await asyncio.sleep(ANAF_RATE_LIMIT_SECONDS)
+        
+        logger.info(f"[ANAF] Sync complete: {anaf_sync_progress['processed']} processed, {anaf_sync_progress['found']} found, {anaf_sync_progress['not_found']} not found")
+        
+    except Exception as e:
+        logger.error(f"[ANAF] Sync error: {e}")
+    finally:
+        db.close()
+        anaf_sync_progress["active"] = False
+
+
+@api_router.post("/anaf/sync-stop")
+async def stop_anaf_sync():
+    """Stop the ANAF sync (will stop after current batch)"""
+    global anaf_sync_progress
+    anaf_sync_progress["active"] = False
+    return {"message": "Sync stop requested"}
+
+
+@api_router.get("/anaf/test/{cui}")
+async def test_anaf_api(cui: str):
+    """Test ANAF API with a single CUI"""
+    try:
+        today = datetime.utcnow().strftime("%Y-%m-%d")
+        request_data = [{"cui": int(cui), "data": today}]
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                ANAF_API_URL,
+                json=request_data,
+                headers={"Content-Type": "application/json"},
+                timeout=aiohttp.ClientTimeout(total=30)
+            ) as response:
+                return await response.json()
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 

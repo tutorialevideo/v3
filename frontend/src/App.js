@@ -88,6 +88,14 @@ function App() {
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
   const [cleanupLoading, setCleanupLoading] = useState(false);
 
+  // ANAF sync state
+  const [anafStats, setAnafStats] = useState(null);
+  const [anafProgress, setAnafProgress] = useState(null);
+  const [anafLoading, setAnafLoading] = useState(false);
+  const [anafSyncRunning, setAnafSyncRunning] = useState(false);
+  const [anafTestResult, setAnafTestResult] = useState(null);
+  const [anafTestCui, setAnafTestCui] = useState("");
+
   const fetchData = useCallback(async () => {
     try {
       const [configRes, statsRes, filesRes, runsRes, currentRes, dbStatsRes] = await Promise.all([
@@ -456,6 +464,102 @@ function App() {
     }
   };
 
+  // ANAF Functions
+  const loadAnafStats = useCallback(async () => {
+    try {
+      const res = await axios.get(`${API}/anaf/stats`);
+      setAnafStats(res.data);
+    } catch (error) {
+      console.error("Error loading ANAF stats:", error);
+    }
+  }, []);
+
+  const loadAnafProgress = useCallback(async () => {
+    try {
+      const res = await axios.get(`${API}/anaf/sync-progress`);
+      setAnafProgress(res.data);
+      setAnafSyncRunning(res.data.active);
+    } catch (error) {
+      console.error("Error loading ANAF progress:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'anaf') {
+      loadAnafStats();
+      loadAnafProgress();
+    }
+  }, [activeTab, loadAnafStats, loadAnafProgress]);
+
+  // Poll for ANAF progress while sync is running
+  useEffect(() => {
+    let interval;
+    if (anafSyncRunning) {
+      interval = setInterval(() => {
+        loadAnafProgress();
+        loadAnafStats();
+      }, 3000);
+    }
+    return () => clearInterval(interval);
+  }, [anafSyncRunning, loadAnafProgress, loadAnafStats]);
+
+  const startAnafSync = async (options = {}) => {
+    setAnafLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (options.limit) params.append('limit', options.limit);
+      if (options.only_unsynced !== undefined) params.append('only_unsynced', options.only_unsynced);
+      if (options.judet) params.append('judet', options.judet);
+      
+      await axios.post(`${API}/anaf/sync?${params.toString()}`);
+      toast.success("Sincronizare ANAF pornită!");
+      setAnafSyncRunning(true);
+      loadAnafProgress();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Eroare la pornirea sincronizării");
+    } finally {
+      setAnafLoading(false);
+    }
+  };
+
+  const stopAnafSync = async () => {
+    try {
+      await axios.post(`${API}/anaf/sync-stop`);
+      toast.info("Sincronizare oprită");
+      setAnafSyncRunning(false);
+    } catch (error) {
+      toast.error("Eroare la oprirea sincronizării");
+    }
+  };
+
+  const testAnafCui = async () => {
+    if (!anafTestCui) {
+      toast.error("Introdu un CUI");
+      return;
+    }
+    setAnafLoading(true);
+    try {
+      const res = await axios.get(`${API}/anaf/test/${anafTestCui}`);
+      setAnafTestResult(res.data);
+      toast.success("Test ANAF reușit!");
+    } catch (error) {
+      toast.error("Eroare la testarea ANAF API");
+      setAnafTestResult({ error: error.message });
+    } finally {
+      setAnafLoading(false);
+    }
+  };
+
+  const formatEta = (seconds) => {
+    if (!seconds) return '-';
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    if (minutes > 0) return `${minutes}m ${secs}s`;
+    return `${secs}s`;
+  };
+
   const formatBytes = (bytes) => {
     if (bytes === 0) return '0 B';
     const k = 1024;
@@ -510,6 +614,14 @@ function App() {
           >
             <Building2 size={18} />
             Firme ({dbStats?.firme_total?.toLocaleString() || 0})
+          </button>
+          <button 
+            className={`tab-btn ${activeTab === 'anaf' ? 'active' : ''}`}
+            onClick={() => setActiveTab('anaf')}
+            data-testid="tab-anaf"
+          >
+            <Download size={18} />
+            Sync ANAF
           </button>
           <button 
             className={`tab-btn ${activeTab === 'diagnostics' ? 'active' : ''}`}
@@ -1138,6 +1250,171 @@ function App() {
                     Următor →
                   </Button>
                 </div>
+              </CardContent>
+            </Card>
+          </div>
+        ) : activeTab === 'anaf' ? (
+          /* ANAF Sync Tab */
+          <div className="anaf-section" data-testid="anaf-section">
+            {/* ANAF Stats Card */}
+            <Card className="anaf-stats-card" data-testid="anaf-stats">
+              <CardHeader>
+                <div className="card-header-with-action">
+                  <div>
+                    <CardTitle className="card-title">
+                      <Download size={20} />
+                      Sincronizare ANAF
+                    </CardTitle>
+                    <CardDescription>
+                      Descarcă date de la ANAF pentru firmele din baza de date (TVA, stare, e-Factura)
+                    </CardDescription>
+                  </div>
+                  <div className="header-actions">
+                    <Button variant="outline" onClick={() => { loadAnafStats(); loadAnafProgress(); }}>
+                      <RefreshCw size={16} />
+                      Reîncarcă
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {anafStats && (
+                  <div className="anaf-stats-grid">
+                    <div className="anaf-stat-card">
+                      <span className="stat-value">{anafStats.total_firme_cu_cui?.toLocaleString() || 0}</span>
+                      <span className="stat-label">Firme cu CUI</span>
+                    </div>
+                    <div className="anaf-stat-card synced">
+                      <span className="stat-value">{anafStats.synced?.toLocaleString() || 0}</span>
+                      <span className="stat-label">Sincronizate</span>
+                    </div>
+                    <div className="anaf-stat-card not-synced">
+                      <span className="stat-value">{anafStats.not_synced?.toLocaleString() || 0}</span>
+                      <span className="stat-label">Nesincronizate</span>
+                    </div>
+                    <div className="anaf-stat-card found">
+                      <span className="stat-value">{anafStats.found?.toLocaleString() || 0}</span>
+                      <span className="stat-label">Găsite în ANAF</span>
+                    </div>
+                    <div className="anaf-stat-card not-found">
+                      <span className="stat-value">{anafStats.not_found?.toLocaleString() || 0}</span>
+                      <span className="stat-label">Negăsite</span>
+                    </div>
+                    <div className="anaf-stat-card active">
+                      <span className="stat-value">{anafStats.active?.toLocaleString() || 0}</span>
+                      <span className="stat-label">Active</span>
+                    </div>
+                    <div className="anaf-stat-card radiate">
+                      <span className="stat-value">{anafStats.radiate?.toLocaleString() || 0}</span>
+                      <span className="stat-label">Radiate</span>
+                    </div>
+                    <div className="anaf-stat-card tva">
+                      <span className="stat-value">{anafStats.platitori_tva?.toLocaleString() || 0}</span>
+                      <span className="stat-label">Plătitori TVA</span>
+                    </div>
+                    <div className="anaf-stat-card efactura">
+                      <span className="stat-value">{anafStats.e_factura?.toLocaleString() || 0}</span>
+                      <span className="stat-label">e-Factura</span>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Sync Progress Card */}
+            <Card className="anaf-progress-card" data-testid="anaf-progress">
+              <CardHeader>
+                <CardTitle className="card-title">
+                  {anafSyncRunning ? <Loader2 className="animate-spin" size={20} /> : <Zap size={20} />}
+                  Progres Sincronizare
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {anafProgress && anafProgress.active ? (
+                  <div className="progress-info">
+                    <div className="progress-bar-container">
+                      <div 
+                        className="progress-bar" 
+                        style={{ width: `${anafProgress.total_firms > 0 ? (anafProgress.processed / anafProgress.total_firms * 100) : 0}%` }}
+                      />
+                    </div>
+                    <div className="progress-stats">
+                      <span>Procesat: {anafProgress.processed?.toLocaleString()} / {anafProgress.total_firms?.toLocaleString()}</span>
+                      <span>Găsite: {anafProgress.found?.toLocaleString()}</span>
+                      <span>Negăsite: {anafProgress.not_found?.toLocaleString()}</span>
+                      <span>Erori: {anafProgress.errors?.toLocaleString()}</span>
+                      <span>ETA: {formatEta(anafProgress.eta_seconds)}</span>
+                    </div>
+                    <Button variant="destructive" onClick={stopAnafSync} className="stop-btn">
+                      <XCircle size={16} />
+                      Oprește
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="sync-actions">
+                    <div className="sync-options">
+                      <Button 
+                        onClick={() => startAnafSync({ only_unsynced: true })}
+                        disabled={anafLoading || anafSyncRunning}
+                        className="sync-btn"
+                      >
+                        <Download size={16} />
+                        Sync Nesincronizate ({anafStats?.not_synced?.toLocaleString() || 0})
+                      </Button>
+                      <Button 
+                        variant="outline"
+                        onClick={() => startAnafSync({ only_unsynced: true, limit: 1000 })}
+                        disabled={anafLoading || anafSyncRunning}
+                      >
+                        Test 1,000 firme
+                      </Button>
+                      <Button 
+                        variant="outline"
+                        onClick={() => startAnafSync({ only_unsynced: false })}
+                        disabled={anafLoading || anafSyncRunning}
+                      >
+                        Re-sync toate
+                      </Button>
+                    </div>
+                    <p className="sync-note">
+                      ⚠️ ANAF permite max 100 CUI/request și 1 request/secundă. 
+                      Pentru 1 milion de firme va dura ~3 ore.
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Test ANAF API Card */}
+            <Card className="anaf-test-card" data-testid="anaf-test">
+              <CardHeader>
+                <CardTitle className="card-title">
+                  <Search size={20} />
+                  Test API ANAF
+                </CardTitle>
+                <CardDescription>
+                  Testează API-ul ANAF cu un singur CUI
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="test-form">
+                  <input
+                    type="text"
+                    placeholder="Introdu CUI (ex: 14918042)"
+                    value={anafTestCui}
+                    onChange={(e) => setAnafTestCui(e.target.value)}
+                    className="test-input"
+                  />
+                  <Button onClick={testAnafCui} disabled={anafLoading}>
+                    {anafLoading ? <Loader2 className="animate-spin" size={16} /> : <Search size={16} />}
+                    Verifică
+                  </Button>
+                </div>
+                {anafTestResult && (
+                  <div className="test-result">
+                    <pre>{JSON.stringify(anafTestResult, null, 2)}</pre>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
