@@ -1,0 +1,13 @@
+{
+  "search_term": "TEST COMPANY SRL",
+  "date_start": "2026-02-16",
+  "date_end": "2026-03-18",
+  "stats": {
+    "firme_new": 0,
+    "firme_existing": 0,
+    "dosare_new": 0,
+    "timeline_new": 0
+  },
+  "total_records": 0,
+  "dosare": []
+}

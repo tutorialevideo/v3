@@ -811,6 +811,7 @@ async def delete_file(filename: str):
 async def get_stats():
     total_runs = await mongo_db.job_runs.count_documents({})
     completed_runs = await mongo_db.job_runs.count_documents({"status": "completed"})
+    failed_runs = await mongo_db.job_runs.count_documents({"status": "failed"})
     config = await mongo_db.job_config.find_one({}, {"_id": 0})
     last_run = await mongo_db.job_runs.find_one({}, {"_id": 0}, sort=[("started_at", -1)])
     
@@ -831,6 +832,7 @@ async def get_stats():
     return {
         "total_runs": total_runs,
         "completed_runs": completed_runs,
+        "failed_runs": failed_runs,
         "total_files": total_files,
         "total_size_mb": round(total_size / (1024 * 1024), 2),
         "cron_enabled": config.get('cron_enabled', False) if config else False,
@@ -849,7 +851,8 @@ async def get_cron_status():
         "enabled": config.get('cron_enabled', False) if config else False,
         "schedule_hour": config.get('schedule_hour', 2) if config else 2,
         "schedule_minute": config.get('schedule_minute', 0) if config else 0,
-        "next_run": job.next_run_time.isoformat() if job and job.next_run_time else None
+        "next_run": job.next_run_time.isoformat() if job and job.next_run_time else None,
+        "job_active": job is not None
     }
 
 

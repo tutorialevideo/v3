@@ -1,53 +1,72 @@
 # Portal JUST Downloader - PRD
 
-## Original Problem Statement
-Aplicație pentru descărcarea automată a dosarelor de firme din portalquery.just.ro zilnic.
+## Problem Statement
+Aplicație pentru descărcarea automată a dosarelor de firme din portalquery.just.ro zilnic, cu stocare în PostgreSQL pentru procesare ulterioară.
 
 ## User Persona
-- Utilizator care dorește să monitorizeze dosarele juridice ale firmelor din România
-- Are nevoie de acces la date din toate cele 246 de instituții judiciare
+- Utilizator care monitorizează dosarele juridice ale firmelor din România
+- Necesită date structurate pentru asignare CUI și analiză
 
 ## Core Requirements
-1. Descărcare automată dosare pentru firme
-2. Salvare locală în format JSON
-3. Interfață web pentru monitorizare și configurare
-4. Ora de execuție setabilă
-5. Fără notificări email
-6. **NOU:** Selectare perioadă (data început/sfârșit)
-7. **NOU:** Cron job zilnic activ
+1. ✅ Descărcare automată dosare pentru firme
+2. ✅ Extragere doar companii (SC, SRL, SA, etc.) - nu persoane fizice
+3. ✅ Stocare în PostgreSQL cu relații: firme → dosare → timeline
+4. ✅ Fiecare firmă poate avea CUI pentru identificare
+5. ✅ Cron job zilnic configurabil
+6. ✅ Filtrare pe perioadă
 
-## What's Been Implemented (2026-03-18)
-- ✅ Backend API cu FastAPI pentru comunicare SOAP cu portalquery.just.ro
-- ✅ Suport pentru toate cele 246 instituții (16 Curți de Apel, 52 Tribunale, 178 Judecătorii)
-- ✅ Endpoint-uri: /api/config, /api/run, /api/search, /api/files, /api/stats, /api/runs, /api/cron/status
-- ✅ Filtrare dosare pe perioadă (CautareDosare2 cu dataStart/dataStop)
-- ✅ Cron job zilnic cu APScheduler
-- ✅ Frontend dashboard cu statistici, configurare, istoric
-- ✅ Calendar picker pentru selectare dată început/sfârșit
-- ✅ Switch pentru activare/dezactivare cron
-- ✅ Afișare următoarea rulare programată
-- ✅ Preview căutare cu filtrare pe date
-- ✅ Salvare locală în /app/backend/downloads/ în format JSON
+## Database Schema (PostgreSQL)
 
-## Technical Stack
-- Backend: FastAPI + aiohttp (SOAP client) + MongoDB + APScheduler
-- Frontend: React + Tailwind CSS + Shadcn UI (Calendar, Popover, Switch)
-- Storage: Local JSON files + MongoDB pentru config/logs
+```
+firme
+├── id (PK, BIGINT)
+├── cui (VARCHAR, UNIQUE, NULL) -- completat manual
+├── denumire (VARCHAR)
+├── denumire_normalized (VARCHAR) -- pentru căutare
+├── created_at, updated_at
 
-## Prioritized Backlog
-### P0 (Done)
-- [x] API SOAP integration cu CautareDosare2
-- [x] Download job pentru toate cele 246 instituții
-- [x] Frontend dashboard cu date pickers și cron toggle
-- [x] Config persistentă
-- [x] Cron job zilnic cu APScheduler
+dosare  
+├── id (PK, BIGINT)
+├── firma_id (FK → firme)
+├── numar_dosar
+├── institutie, obiect, stadiu, categorie, materie
+├── data_dosar
+├── raw_data (JSON) -- date originale complete
 
-### P1 (Next)
-- [ ] Selectare specifică de instituții
-- [ ] Export în alte formate (CSV, Excel)
-- [ ] Căutare în dosarele descărcate
+timeline
+├── id (PK, BIGINT)
+├── dosar_id (FK → dosare)
+├── tip (sedinta, hotarare, cale_atac)
+├── data, descriere
+├── detalii (JSON)
+```
 
-### P2 (Future)
-- [ ] Notificări când apar dosare noi
-- [ ] Comparație între rulări
-- [ ] API pentru acces extern
+## API Endpoints
+
+### Configurare & Rulare
+- `GET/PUT /api/config` - Configurare job
+- `POST /api/run` - Rulare manuală
+- `GET /api/cron/status` - Status cron
+
+### PostgreSQL Data
+- `GET /api/db/stats` - Statistici DB
+- `GET /api/db/firme` - Lista firme (cu paginare)
+- `GET /api/db/firme/{id}` - Detalii firmă + dosare
+- `PUT /api/db/firme/{id}` - Actualizare CUI
+- `GET /api/db/dosare/{id}` - Detalii dosar + timeline
+
+## Current Stats (2026-03-18)
+- **287 firme** extrase
+- **298 dosare** salvate
+- **547 evenimente timeline**
+- **246 instituții** verificate
+
+## Tech Stack
+- Backend: FastAPI + SQLAlchemy + asyncpg + APScheduler
+- Database: PostgreSQL (firme, dosare, timeline) + MongoDB (config, logs)
+- Frontend: React + Shadcn UI
+
+## Next Steps (P1)
+1. [ ] Import CSV cu CUI-uri pentru firme
+2. [ ] Export date pentru analiză
+3. [ ] Dashboard cu vizualizare dosare pe firmă
