@@ -59,6 +59,8 @@ function App() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [importLoading, setImportLoading] = useState(false);
   const [importResult, setImportResult] = useState(null);
+  const [importLog, setImportLog] = useState([]);
+  const [importError, setImportError] = useState(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -173,19 +175,44 @@ function App() {
 
     setImportLoading(true);
     setImportResult(null);
+    setImportError(null);
+    setImportLog([
+      `[${new Date().toLocaleTimeString()}] Fișier selectat: ${file.name}`,
+      `[${new Date().toLocaleTimeString()}] Dimensiune: ${(file.size / 1024 / 1024).toFixed(2)} MB`,
+      `[${new Date().toLocaleTimeString()}] Se încarcă fișierul...`
+    ]);
     
     const formData = new FormData();
     formData.append('file', file);
 
     try {
+      setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Se procesează pe server...`]);
+      
       const res = await axios.post(`${API}/db/import-cui`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 600000 // 10 minute timeout pentru fișiere mari
       });
+      
       setImportResult(res.data);
-      toast.success(`Import finalizat: ${res.data.updated?.length || 0} firme actualizate`);
+      setImportLog(prev => [
+        ...prev,
+        `[${new Date().toLocaleTimeString()}] ✓ Import finalizat cu succes!`,
+        `[${new Date().toLocaleTimeString()}] Rânduri procesate: ${res.data.total_rows?.toLocaleString()}`,
+        `[${new Date().toLocaleTimeString()}] Firme create: ${res.data.created_new?.toLocaleString()}`,
+        `[${new Date().toLocaleTimeString()}] PFA/II sărite: ${res.data.skipped_not_company?.toLocaleString()}`
+      ]);
+      toast.success(`Import finalizat: ${res.data.created_new || 0} firme create`);
       fetchData();
     } catch (error) {
-      toast.error(error.response?.data?.detail || "Eroare la importul CSV");
+      const errorMsg = error.response?.data?.detail || error.message || "Eroare necunoscută";
+      setImportError(errorMsg);
+      setImportLog(prev => [
+        ...prev,
+        `[${new Date().toLocaleTimeString()}] ✗ EROARE: ${errorMsg}`,
+        `[${new Date().toLocaleTimeString()}] Status: ${error.response?.status || 'N/A'}`,
+        `[${new Date().toLocaleTimeString()}] Verifică dacă fișierul are format corect (delimitator ^)`
+      ]);
+      toast.error("Eroare la importul fișierului");
     } finally {
       setImportLoading(false);
       event.target.value = '';
@@ -282,7 +309,33 @@ function App() {
                   <Download size={16} />
                   Export Firme
                 </Button>
+                <Button variant="ghost" onClick={() => { setImportLog([]); setImportResult(null); setImportError(null); }}>
+                  Șterge log
+                </Button>
               </div>
+
+              {/* Import Log Box */}
+              {(importLog.length > 0 || importError) && (
+                <div className="import-log-box" data-testid="import-log">
+                  <div className="import-log-header">
+                    <span>Log Import</span>
+                    {importLoading && <Loader2 className="animate-spin" size={14} />}
+                  </div>
+                  <ScrollArea className="import-log-scroll">
+                    {importLog.map((log, idx) => (
+                      <div key={idx} className={`log-line ${log.includes('EROARE') ? 'error' : log.includes('✓') ? 'success' : ''}`}>
+                        {log}
+                      </div>
+                    ))}
+                  </ScrollArea>
+                  {importError && (
+                    <div className="import-error-box">
+                      <AlertCircle size={16} />
+                      <span>{importError}</span>
+                    </div>
+                  )}
+                </div>
+              )}
               
               {importResult && (
                 <div className="import-result" data-testid="import-result">

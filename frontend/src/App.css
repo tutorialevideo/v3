@@ -258,6 +258,65 @@ body {
   font-family: 'IBM Plex Mono', monospace;
 }
 
+/* Import Log Box */
+.import-log-box {
+  background: #0d1117;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-top: 16px;
+  overflow: hidden;
+}
+
+.import-log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.import-log-scroll {
+  max-height: 200px;
+  padding: 12px;
+}
+
+.log-line {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 2px 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.log-line.success {
+  color: var(--success);
+}
+
+.log-line.error {
+  color: var(--error);
+}
+
+.import-error-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px;
+  background: var(--error-bg);
+  border-top: 1px solid var(--error);
+  color: var(--error);
+  font-size: 12px;
+}
+
+.import-error-box svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
 /* Stats Grid */
 .stats-grid {
   display: grid;
