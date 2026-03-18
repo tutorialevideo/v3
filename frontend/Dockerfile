@@ -1,7 +1,7 @@
 # Frontend Dockerfile - Multi-stage build
 
-# Stage 1: Build
-FROM node:18-alpine AS builder
+# Stage 1: Build - Using Node 20 for react-router-dom compatibility
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
