@@ -33,12 +33,28 @@ mongo_client = AsyncIOMotorClient(mongo_url)
 mongo_db = mongo_client[os.environ['DB_NAME']]
 
 # PostgreSQL connection
+# PostgreSQL connection - with graceful fallback
 POSTGRES_URL = os.environ.get('POSTGRES_URL', 'postgresql://justapp:justapp123@localhost:5432/justportal')
 DATABASE_URL = POSTGRES_URL.replace('postgresql://', 'postgresql+asyncpg://')
 
+# Try to create database connection, but don't fail if PostgreSQL is unavailable
 database = Database(DATABASE_URL)
-engine = create_engine(POSTGRES_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+postgres_available = False
+
+try:
+    engine = create_engine(POSTGRES_URL)
+    # Test connection
+    with engine.connect() as conn:
+        conn.execute("SELECT 1")
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    postgres_available = True
+    print("[DB] PostgreSQL connection successful")
+except Exception as e:
+    print(f"[DB] PostgreSQL not available: {e}")
+    print("[DB] Running in limited mode - MFinante CAPTCHA and some features still work")
+    engine = None
+    SessionLocal = None
+
 Base = declarative_base()
 
 # Create downloads directory (for backup JSON)
@@ -245,8 +261,13 @@ class Bilant(Base):
     )
 
 
-# Create tables
-Base.metadata.create_all(bind=engine)
+# Create tables (only if PostgreSQL is available)
+if engine is not None:
+    try:
+        Base.metadata.create_all(bind=engine)
+        print("[DB] Tables created/verified")
+    except Exception as e:
+        print(f"[DB] Could not create tables: {e}")
 
 # Create the main app with increased file upload limit (300MB for large CSV files)
 app = FastAPI()
@@ -3221,16 +3242,34 @@ app.include_router(api_router)
 
 @app.on_event("startup")
 async def startup_event():
-    await database.connect()
+    # Try to connect to PostgreSQL (async) - don't fail if unavailable
+    try:
+        await database.connect()
+        logger.info("[DB] Async PostgreSQL connection established")
+    except Exception as e:
+        logger.warning(f"[DB] Async PostgreSQL connection failed: {e}")
+        logger.info("[DB] Running in limited mode - CAPTCHA features still available")
+    
     scheduler.start()
-    config = await mongo_db.job_config.find_one({}, {"_id": 0})
-    if config and config.get('cron_enabled'):
-        update_scheduler(config.get('schedule_hour', 2), config.get('schedule_minute', 0), True)
-    logger.info("Application started with PostgreSQL support")
+    
+    try:
+        config = await mongo_db.job_config.find_one({}, {"_id": 0})
+        if config and config.get('cron_enabled'):
+            update_scheduler(config.get('schedule_hour', 2), config.get('schedule_minute', 0), True)
+    except Exception as e:
+        logger.warning(f"[MongoDB] Could not load config: {e}")
+    
+    logger.info("Application started")
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    await database.disconnect()
+    try:
+        await database.disconnect()
+    except:
+        pass
     scheduler.shutdown()
-    mongo_client.close()
+    try:
+        mongo_client.close()
+    except:
+        pass

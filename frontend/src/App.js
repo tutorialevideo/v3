@@ -636,7 +636,8 @@ function App() {
       const initRes = await axios.get(`${API}/mfinante/captcha/init`);
       if (initRes.data.success) {
         // Set image URL with timestamp to prevent caching
-        setCaptchaImageUrl(`${API}${initRes.data.captcha_url}&r=${Date.now()}`);
+        // captcha_url already includes /api/, so don't add API prefix
+        setCaptchaImageUrl(`${initRes.data.captcha_url}&r=${Date.now()}`);
       } else {
         setCaptchaError("Nu s-a putut inițializa sesiunea CAPTCHA");
       }
@@ -655,7 +656,7 @@ function App() {
     try {
       const initRes = await axios.get(`${API}/mfinante/captcha/init`);
       if (initRes.data.success) {
-        setCaptchaImageUrl(`${API}${initRes.data.captcha_url}&r=${Date.now()}`);
+        setCaptchaImageUrl(`${initRes.data.captcha_url}&r=${Date.now()}`);
       }
     } catch (error) {
       setCaptchaError("Eroare la reîncărcarea CAPTCHA");
@@ -665,8 +666,8 @@ function App() {
   };
 
   const submitCaptcha = async () => {
-    if (!captchaCode || captchaCode.length < 4) {
-      setCaptchaError("Introdu codul din imagine (minim 4 caractere)");
+    if (!captchaCode || captchaCode.length < 3) {
+      setCaptchaError("Introdu codul din imagine (minim 3 caractere)");
       return;
     }
     
