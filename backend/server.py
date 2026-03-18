@@ -100,6 +100,19 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI()
 app.router.redirect_slashes = False
 
+# CORS Configuration - MUST be added before routes
+cors_origins = os.environ.get('CORS_ORIGINS', '*').split(',')
+logger_setup = logging.getLogger("cors")
+logger_setup.info(f"CORS origins configured: {cors_origins}")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Set max upload size
 from starlette.requests import Request
 from starlette.datastructures import UploadFile as StarletteUploadFile
@@ -1106,14 +1119,6 @@ async def get_institutions():
 
 # App setup
 app.include_router(api_router)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 
 @app.on_event("startup")
