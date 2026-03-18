@@ -1131,10 +1131,24 @@ async def get_institutions():
 async def get_diagnostics_overview():
     """Get complete database diagnostics overview"""
     try:
-        # Table counts
-        firme_count = await database.fetch_one("SELECT COUNT(*) as cnt FROM firme")
-        dosare_count = await database.fetch_one("SELECT COUNT(*) as cnt FROM dosare")
-        timeline_count = await database.fetch_one("SELECT COUNT(*) as cnt FROM timeline_events")
+        # Table counts - with fallback for missing tables
+        try:
+            firme_count = await database.fetch_one("SELECT COUNT(*) as cnt FROM firme")
+            firme_cnt = int(firme_count["cnt"]) if firme_count else 0
+        except Exception:
+            firme_cnt = 0
+            
+        try:
+            dosare_count = await database.fetch_one("SELECT COUNT(*) as cnt FROM dosare")
+            dosare_cnt = int(dosare_count["cnt"]) if dosare_count else 0
+        except Exception:
+            dosare_cnt = 0
+            
+        try:
+            timeline_count = await database.fetch_one("SELECT COUNT(*) as cnt FROM timeline_events")
+            timeline_cnt = int(timeline_count["cnt"]) if timeline_count else 0
+        except Exception:
+            timeline_cnt = 0
         
         # Table sizes (approximate) - with fallback
         try:
@@ -1155,49 +1169,65 @@ async def get_diagnostics_overview():
             logger.warning(f"Could not fetch table sizes: {e}")
             table_sizes_list = []
         
-        # Duplicate counts
-        denumire_dupes = await database.fetch_one("""
-            SELECT COUNT(*) as cnt FROM (
-                SELECT denumire_normalized 
-                FROM firme 
-                GROUP BY denumire_normalized 
-                HAVING COUNT(*) > 1
-            ) as dupes
-        """)
+        # Duplicate counts - with fallback
+        try:
+            denumire_dupes = await database.fetch_one("""
+                SELECT COUNT(*) as cnt FROM (
+                    SELECT denumire_normalized 
+                    FROM firme 
+                    GROUP BY denumire_normalized 
+                    HAVING COUNT(*) > 1
+                ) as dupes
+            """)
+            dup_denumiri = int(denumire_dupes["cnt"]) if denumire_dupes else 0
+        except Exception:
+            dup_denumiri = 0
         
-        cui_dupes = await database.fetch_one("""
-            SELECT COUNT(*) as cnt FROM (
-                SELECT cui 
-                FROM firme 
-                WHERE cui IS NOT NULL AND cui != ''
-                GROUP BY cui 
-                HAVING COUNT(*) > 1
-            ) as dupes
-        """)
+        try:
+            cui_dupes = await database.fetch_one("""
+                SELECT COUNT(*) as cnt FROM (
+                    SELECT cui 
+                    FROM firme 
+                    WHERE cui IS NOT NULL AND cui != ''
+                    GROUP BY cui 
+                    HAVING COUNT(*) > 1
+                ) as dupes
+            """)
+            dup_cui = int(cui_dupes["cnt"]) if cui_dupes else 0
+        except Exception:
+            dup_cui = 0
         
         # Firme without CUI
-        no_cui = await database.fetch_one("""
-            SELECT COUNT(*) as cnt FROM firme WHERE cui IS NULL OR cui = ''
-        """)
+        try:
+            no_cui = await database.fetch_one("""
+                SELECT COUNT(*) as cnt FROM firme WHERE cui IS NULL OR cui = ''
+            """)
+            no_cui_cnt = int(no_cui["cnt"]) if no_cui else 0
+        except Exception:
+            no_cui_cnt = 0
         
         # Orphaned dosare (no firma)
-        orphaned_dosare = await database.fetch_one("""
-            SELECT COUNT(*) as cnt FROM dosare 
-            WHERE firma_id NOT IN (SELECT id FROM firme)
-        """)
+        try:
+            orphaned_dosare = await database.fetch_one("""
+                SELECT COUNT(*) as cnt FROM dosare 
+                WHERE firma_id NOT IN (SELECT id FROM firme)
+            """)
+            orphaned_cnt = int(orphaned_dosare["cnt"]) if orphaned_dosare else 0
+        except Exception:
+            orphaned_cnt = 0
         
         return {
             "counts": {
-                "firme": int(firme_count["cnt"]) if firme_count else 0,
-                "dosare": int(dosare_count["cnt"]) if dosare_count else 0,
-                "timeline_events": int(timeline_count["cnt"]) if timeline_count else 0
+                "firme": firme_cnt,
+                "dosare": dosare_cnt,
+                "timeline_events": timeline_cnt
             },
             "table_sizes": table_sizes_list,
             "issues": {
-                "duplicate_denumiri": int(denumire_dupes["cnt"]) if denumire_dupes else 0,
-                "duplicate_cui": int(cui_dupes["cnt"]) if cui_dupes else 0,
-                "firme_without_cui": int(no_cui["cnt"]) if no_cui else 0,
-                "orphaned_dosare": int(orphaned_dosare["cnt"]) if orphaned_dosare else 0
+                "duplicate_denumiri": dup_denumiri,
+                "duplicate_cui": dup_cui,
+                "firme_without_cui": no_cui_cnt,
+                "orphaned_dosare": orphaned_cnt
             }
         }
     except Exception as e:
