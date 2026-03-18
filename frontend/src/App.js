@@ -40,7 +40,8 @@ import {
   HardDrive,
   AlertTriangle,
   Wrench,
-  BarChart3
+  BarChart3,
+  Shield
 } from "lucide-react";
 
 // Use relative URL - nginx will proxy to backend
@@ -103,6 +104,13 @@ function App() {
   const [mfSession, setMfSession] = useState("");
   const [mfTestCui, setMfTestCui] = useState("");
   const [mfTestResult, setMfTestResult] = useState(null);
+  
+  // CAPTCHA popup state
+  const [captchaModalOpen, setCaptchaModalOpen] = useState(false);
+  const [captchaLoading, setCaptchaLoading] = useState(false);
+  const [captchaImageUrl, setCaptchaImageUrl] = useState(null);
+  const [captchaCode, setCaptchaCode] = useState("");
+  const [captchaError, setCaptchaError] = useState(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -613,6 +621,84 @@ function App() {
     } finally {
       setMfLoading(false);
     }
+  };
+
+  // CAPTCHA Functions
+  const openCaptchaModal = async () => {
+    setCaptchaModalOpen(true);
+    setCaptchaLoading(true);
+    setCaptchaError(null);
+    setCaptchaCode("");
+    setCaptchaImageUrl(null);
+    
+    try {
+      // Initialize CAPTCHA session
+      const initRes = await axios.get(`${API}/mfinante/captcha/init`);
+      if (initRes.data.success) {
+        // Set image URL with timestamp to prevent caching
+        setCaptchaImageUrl(`${API}${initRes.data.captcha_url}&r=${Date.now()}`);
+      } else {
+        setCaptchaError("Nu s-a putut inițializa sesiunea CAPTCHA");
+      }
+    } catch (error) {
+      setCaptchaError(error.response?.data?.detail || "Eroare la încărcarea CAPTCHA");
+    } finally {
+      setCaptchaLoading(false);
+    }
+  };
+
+  const refreshCaptcha = async () => {
+    setCaptchaLoading(true);
+    setCaptchaError(null);
+    setCaptchaCode("");
+    
+    try {
+      const initRes = await axios.get(`${API}/mfinante/captcha/init`);
+      if (initRes.data.success) {
+        setCaptchaImageUrl(`${API}${initRes.data.captcha_url}&r=${Date.now()}`);
+      }
+    } catch (error) {
+      setCaptchaError("Eroare la reîncărcarea CAPTCHA");
+    } finally {
+      setCaptchaLoading(false);
+    }
+  };
+
+  const submitCaptcha = async () => {
+    if (!captchaCode || captchaCode.length < 4) {
+      setCaptchaError("Introdu codul din imagine (minim 4 caractere)");
+      return;
+    }
+    
+    setCaptchaLoading(true);
+    setCaptchaError(null);
+    
+    try {
+      const res = await axios.post(`${API}/mfinante/captcha/solve?captcha_code=${encodeURIComponent(captchaCode)}`);
+      
+      if (res.data.success) {
+        toast.success("CAPTCHA rezolvat! Sesiunea a fost setată automat.");
+        setCaptchaModalOpen(false);
+        loadMfProgress();
+      } else {
+        setCaptchaError(res.data.error || "CAPTCHA incorect");
+        if (res.data.need_new_captcha) {
+          // Refresh CAPTCHA image
+          refreshCaptcha();
+        }
+      }
+    } catch (error) {
+      setCaptchaError(error.response?.data?.detail || "Eroare la verificarea CAPTCHA");
+    } finally {
+      setCaptchaLoading(false);
+    }
+  };
+
+  const closeCaptchaModal = () => {
+    setCaptchaModalOpen(false);
+    setCaptchaCode("");
+    setCaptchaError(null);
+    setCaptchaImageUrl(null);
   };
 
   const testMfCui = async () => {
@@ -1535,25 +1621,50 @@ function App() {
                 {/* Session Setup */}
                 <div className="mf-session-section">
                   <h4>1. Rezolvă CAPTCHA și setează sesiunea</h4>
-                  <ol className="mf-instructions">
-                    <li>Deschide <a href="https://mfinante.gov.ro/apps/infocodfiscal.html" target="_blank" rel="noopener noreferrer">mfinante.gov.ro/apps/infocodfiscal.html</a></li>
-                    <li>Rezolvă CAPTCHA și trimite cu orice CUI (ex: 14918042)</li>
-                    <li>Apasă F12 → Network → Găsește request-ul → Copiază <code>jsessionid</code> din URL</li>
-                    <li>Lipește mai jos și apasă "Setează Sesiune"</li>
-                  </ol>
-                  <div className="mf-session-form">
-                    <input
-                      type="text"
-                      placeholder="jsessionid (ex: Gtjp5kQJsBZ7Kd4ZU07zCai6IAzJ...)"
-                      value={mfSession}
-                      onChange={(e) => setMfSession(e.target.value)}
-                      className="test-input"
-                    />
-                    <Button onClick={setMfSessionId} disabled={mfLoading}>
-                      {mfLoading ? <Loader2 className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}
-                      Setează Sesiune
+                  
+                  {/* New CAPTCHA Button */}
+                  <div className="captcha-button-section">
+                    <Button 
+                      onClick={openCaptchaModal} 
+                      className="captcha-main-btn"
+                      disabled={captchaLoading}
+                    >
+                      {captchaLoading ? (
+                        <Loader2 className="animate-spin" size={16} />
+                      ) : (
+                        <Shield size={16} />
+                      )}
+                      Rezolvă CAPTCHA aici
                     </Button>
+                    <span className="captcha-hint">
+                      sau folosește metoda manuală de mai jos
+                    </span>
                   </div>
+
+                  {/* Manual method (collapsed by default) */}
+                  <details className="manual-session-method">
+                    <summary>Metodă alternativă (manuală)</summary>
+                    <ol className="mf-instructions">
+                      <li>Deschide <a href="https://mfinante.gov.ro/apps/infocodfiscal.html" target="_blank" rel="noopener noreferrer">mfinante.gov.ro/apps/infocodfiscal.html</a></li>
+                      <li>Rezolvă CAPTCHA și trimite cu orice CUI (ex: 14918042)</li>
+                      <li>Apasă F12 → Network → Găsește request-ul → Copiază <code>jsessionid</code> din URL</li>
+                      <li>Lipește mai jos și apasă "Setează Sesiune"</li>
+                    </ol>
+                    <div className="mf-session-form">
+                      <input
+                        type="text"
+                        placeholder="jsessionid (ex: Gtjp5kQJsBZ7Kd4ZU07zCai6IAzJ...)"
+                        value={mfSession}
+                        onChange={(e) => setMfSession(e.target.value)}
+                        className="test-input"
+                      />
+                      <Button onClick={setMfSessionId} disabled={mfLoading}>
+                        {mfLoading ? <Loader2 className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}
+                        Setează Sesiune
+                      </Button>
+                    </div>
+                  </details>
+
                   {mfProgress && (
                     <div className={`session-status ${mfProgress.session_valid ? 'valid' : 'invalid'}`}>
                       {mfProgress.session_valid ? (
@@ -1943,6 +2054,93 @@ function App() {
       <footer className="app-footer">
         <p>Portal JUST Downloader • Descărcare automată dosare firme • 246 instituții</p>
       </footer>
+
+      {/* CAPTCHA Modal */}
+      {captchaModalOpen && (
+        <div className="modal-overlay" onClick={closeCaptchaModal}>
+          <div className="captcha-modal" onClick={e => e.stopPropagation()}>
+            <div className="captcha-modal-header">
+              <h3>
+                <Shield size={20} />
+                Rezolvă CAPTCHA - MFinante
+              </h3>
+              <button className="close-btn" onClick={closeCaptchaModal}>
+                <XCircle size={20} />
+              </button>
+            </div>
+            
+            <div className="captcha-modal-body">
+              {captchaLoading ? (
+                <div className="captcha-loading">
+                  <Loader2 className="animate-spin" size={32} />
+                  <p>Se încarcă CAPTCHA...</p>
+                </div>
+              ) : captchaImageUrl ? (
+                <>
+                  <div className="captcha-image-container">
+                    <img 
+                      src={captchaImageUrl} 
+                      alt="CAPTCHA" 
+                      className="captcha-image"
+                      onError={() => setCaptchaError("Nu s-a putut încărca imaginea CAPTCHA")}
+                    />
+                    <button 
+                      className="refresh-captcha-btn" 
+                      onClick={refreshCaptcha}
+                      title="Reîncarcă CAPTCHA"
+                    >
+                      <RefreshCw size={16} />
+                    </button>
+                  </div>
+                  
+                  <div className="captcha-input-section">
+                    <label htmlFor="captcha-input">Introdu codul din imagine:</label>
+                    <input
+                      id="captcha-input"
+                      type="text"
+                      value={captchaCode}
+                      onChange={(e) => setCaptchaCode(e.target.value.toUpperCase())}
+                      placeholder="Ex: AB12CD"
+                      className="captcha-input"
+                      autoFocus
+                      onKeyPress={(e) => e.key === 'Enter' && submitCaptcha()}
+                    />
+                  </div>
+                  
+                  {captchaError && (
+                    <div className="captcha-error">
+                      <XCircle size={16} />
+                      {captchaError}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="captcha-error">
+                  <XCircle size={16} />
+                  {captchaError || "Eroare la încărcarea CAPTCHA"}
+                </div>
+              )}
+            </div>
+            
+            <div className="captcha-modal-footer">
+              <Button variant="outline" onClick={closeCaptchaModal}>
+                Anulează
+              </Button>
+              <Button 
+                onClick={submitCaptcha} 
+                disabled={captchaLoading || !captchaCode}
+              >
+                {captchaLoading ? (
+                  <Loader2 className="animate-spin" size={16} />
+                ) : (
+                  <CheckCircle2 size={16} />
+                )}
+                Verifică CAPTCHA
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

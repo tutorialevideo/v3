@@ -2320,6 +2320,200 @@ mfinante_session = {
     "cookies": {}
 }
 
+# Store for CAPTCHA session
+captcha_session = {
+    "cookies": None,
+    "jsessionid": None
+}
+
+
+@api_router.get("/mfinante/captcha/init")
+async def init_mfinante_captcha():
+    """
+    Initialize a new CAPTCHA session - fetches the MFinante page to get cookies and session.
+    Returns the CAPTCHA image URL that can be displayed to the user.
+    """
+    global captcha_session
+    
+    try:
+        # Create a new session and fetch the page
+        jar = aiohttp.CookieJar()
+        async with aiohttp.ClientSession(cookie_jar=jar) as session:
+            # First request to get initial cookies
+            async with session.get(
+                MFINANTE_URL,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                    "Accept-Language": "ro-RO,ro;q=0.9,en;q=0.8",
+                },
+                timeout=aiohttp.ClientTimeout(total=30),
+                allow_redirects=True
+            ) as response:
+                html = await response.text()
+                
+                # Extract jsessionid from URL or cookies
+                jsessionid = None
+                
+                # Check URL for jsessionid
+                final_url = str(response.url)
+                if "jsessionid=" in final_url:
+                    jsessionid = final_url.split("jsessionid=")[1].split("?")[0].split(";")[0]
+                
+                # Also check cookies
+                cookies_dict = {}
+                for cookie in jar:
+                    cookies_dict[cookie.key] = cookie.value
+                    if cookie.key.upper() == "JSESSIONID":
+                        jsessionid = cookie.value
+                
+                if not jsessionid:
+                    # Try to find in Set-Cookie header
+                    for key, val in response.headers.items():
+                        if key.lower() == "set-cookie" and "jsessionid" in val.lower():
+                            parts = val.split(";")
+                            for p in parts:
+                                if "jsessionid" in p.lower():
+                                    jsessionid = p.split("=")[1].strip()
+                                    break
+                
+                if not jsessionid:
+                    raise HTTPException(status_code=500, detail="Could not obtain session from MFinante")
+                
+                # Store for later use
+                captcha_session["jsessionid"] = jsessionid
+                captcha_session["cookies"] = cookies_dict
+                
+                # Generate timestamp to prevent caching
+                import time
+                timestamp = int(time.time() * 1000)
+                
+                return {
+                    "success": True,
+                    "jsessionid": jsessionid,
+                    "captcha_url": f"/api/mfinante/captcha/image?t={timestamp}",
+                    "message": "CAPTCHA session initialized. Load the captcha image and solve it."
+                }
+                
+    except Exception as e:
+        logger.error(f"[MFINANTE] CAPTCHA init error: {e}")
+        raise HTTPException(status_code=500, detail=f"Error initializing CAPTCHA: {str(e)}")
+
+
+@api_router.get("/mfinante/captcha/image")
+async def get_mfinante_captcha_image():
+    """
+    Fetch and return the CAPTCHA image from MFinante.
+    Must call /mfinante/captcha/init first.
+    """
+    from fastapi.responses import Response
+    
+    if not captcha_session.get("jsessionid"):
+        raise HTTPException(status_code=400, detail="No CAPTCHA session. Call /mfinante/captcha/init first.")
+    
+    try:
+        # The CAPTCHA image URL
+        captcha_url = f"https://mfinante.gov.ro/apps/kaptcha.jpg;jsessionid={captcha_session['jsessionid']}"
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                captcha_url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
+                    "Referer": MFINANTE_URL,
+                },
+                cookies=captcha_session.get("cookies", {}),
+                timeout=aiohttp.ClientTimeout(total=30)
+            ) as response:
+                if response.status != 200:
+                    raise HTTPException(status_code=500, detail="Could not fetch CAPTCHA image")
+                
+                image_data = await response.read()
+                return Response(
+                    content=image_data,
+                    media_type="image/jpeg",
+                    headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+                )
+                
+    except Exception as e:
+        logger.error(f"[MFINANTE] CAPTCHA image error: {e}")
+        raise HTTPException(status_code=500, detail=f"Error fetching CAPTCHA: {str(e)}")
+
+
+@api_router.post("/mfinante/captcha/solve")
+async def solve_mfinante_captcha(captcha_code: str, test_cui: str = "14918042"):
+    """
+    Submit the CAPTCHA solution and validate the session.
+    If successful, the session is automatically set for future requests.
+    """
+    global mfinante_session, captcha_session
+    
+    if not captcha_session.get("jsessionid"):
+        raise HTTPException(status_code=400, detail="No CAPTCHA session. Call /mfinante/captcha/init first.")
+    
+    try:
+        # Submit the form with CAPTCHA
+        url = f"{MFINANTE_URL};jsessionid={captcha_session['jsessionid']}"
+        
+        form_data = {
+            "cod": test_cui,
+            "captcha": captcha_code,
+            "method.vizualizare": "VIZUALIZARE"
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                url,
+                data=form_data,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    "Accept": "text/html,application/xhtml+xml",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Referer": MFINANTE_URL,
+                },
+                cookies=captcha_session.get("cookies", {}),
+                timeout=aiohttp.ClientTimeout(total=30),
+                allow_redirects=True
+            ) as response:
+                html = await response.text()
+                
+                # Check if CAPTCHA was correct
+                if "Cod de validare" in html and "kaptcha" in html:
+                    # CAPTCHA was wrong, still showing CAPTCHA page
+                    return {
+                        "success": False,
+                        "error": "CAPTCHA incorect. Încercați din nou.",
+                        "need_new_captcha": True
+                    }
+                
+                # Check if we got actual data
+                if "Date de identificare" in html or "Denumire" in html or "AGENTUL ECONOMIC" in html:
+                    # Success! Set the main session
+                    mfinante_session["jsessionid"] = captcha_session["jsessionid"]
+                    mfinante_session["cookies"] = captcha_session.get("cookies", {})
+                    
+                    # Update sync progress
+                    mfinante_sync_progress["session_valid"] = True
+                    
+                    return {
+                        "success": True,
+                        "message": "CAPTCHA rezolvat cu succes! Sesiunea a fost setată.",
+                        "session_valid": True,
+                        "jsessionid": captcha_session["jsessionid"][:20] + "..."
+                    }
+                
+                # Unknown response
+                return {
+                    "success": False,
+                    "error": "Răspuns neașteptat de la MFinante. Încercați din nou.",
+                    "need_new_captcha": True
+                }
+                
+    except Exception as e:
+        logger.error(f"[MFINANTE] CAPTCHA solve error: {e}")
+        raise HTTPException(status_code=500, detail=f"Error solving CAPTCHA: {str(e)}")
+
 
 @api_router.get("/mfinante/session-status")
 async def get_mfinante_session_status():
