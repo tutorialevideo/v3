@@ -245,7 +245,7 @@ function App() {
                   Import CUI pentru Firme
                 </CardTitle>
                 <CardDescription>
-                  Încarcă un fișier CSV cu coloanele: denumire, cui
+                  Încarcă un fișier cu coloanele: DENUMIRE, CUI (orice format)
                 </CardDescription>
               </div>
               <div className="import-stats">
@@ -261,7 +261,7 @@ function App() {
                 <label className="import-btn">
                   <input
                     type="file"
-                    accept=".csv"
+                    accept="*/*"
                     onChange={handleCsvImport}
                     disabled={importLoading}
                     style={{ display: 'none' }}

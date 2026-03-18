@@ -827,13 +827,12 @@ async def get_db_stats():
 @api_router.post("/db/import-cui")
 async def import_cui_csv(file: UploadFile = File(...)):
     """
-    Import CSV with CUI mappings from ONRC registry.
-    Supports delimiters: ^ (caret), ; (semicolon), , (comma)
+    Import file with CUI mappings from ONRC registry.
+    Supports any file type (CSV, TXT, etc.)
+    Supports delimiters: ^ (caret), ; (semicolon), , (comma), tab
     Auto-detects columns: CUI, DENUMIRE
     Handles large files (200MB+) with streaming
     """
-    if not file.filename.endswith('.csv'):
-        raise HTTPException(status_code=400, detail="Only CSV files are allowed")
     
     # Read content in chunks for large files
     content = await file.read()
@@ -850,6 +849,8 @@ async def import_cui_csv(file: UploadFile = File(...)):
     delimiter = '^'  # Default for ONRC files
     if '^' in first_line:
         delimiter = '^'
+    elif '\t' in first_line:
+        delimiter = '\t'
     elif ';' in first_line:
         delimiter = ';'
     elif ',' in first_line:
