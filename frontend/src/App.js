@@ -288,28 +288,35 @@ function App() {
                 <div className="import-result" data-testid="import-result">
                   <div className="import-stats-grid">
                     <div className="import-stat">
-                      <span className="import-stat-value">{importResult.total_rows}</span>
+                      <span className="import-stat-value">{importResult.total_rows?.toLocaleString()}</span>
                       <span className="import-stat-label">Rânduri CSV</span>
+                    </div>
+                    <div className="import-stat">
+                      <span className="import-stat-value">{importResult.matched?.toLocaleString() || 0}</span>
+                      <span className="import-stat-label">Găsite în DB</span>
                     </div>
                     <div className="import-stat success">
                       <span className="import-stat-value">{importResult.updated?.length || 0}</span>
-                      <span className="import-stat-label">Actualizate</span>
+                      <span className="import-stat-label">CUI Actualizate</span>
                     </div>
                     <div className="import-stat warning">
-                      <span className="import-stat-value">{importResult.already_has_cui}</span>
+                      <span className="import-stat-value">{importResult.already_has_cui?.toLocaleString()}</span>
                       <span className="import-stat-label">Aveau deja CUI</span>
                     </div>
-                    <div className="import-stat error">
-                      <span className="import-stat-value">{importResult.not_found}</span>
-                      <span className="import-stat-label">Negăsite</span>
-                    </div>
                   </div>
+                  
+                  {importResult.delimiter_detected && (
+                    <p className="import-info">
+                      Delimiter detectat: <code>{importResult.delimiter_detected}</code> | 
+                      Coloane: <code>{importResult.cui_column}</code>, <code>{importResult.denumire_column}</code>
+                    </p>
+                  )}
                   
                   {importResult.not_found_list?.length > 0 && (
                     <div className="import-not-found">
                       <p className="not-found-title">
                         <AlertCircle size={14} />
-                        Firme negăsite în DB:
+                        Firme din CSV negăsite în DB ({importResult.not_found?.toLocaleString()} total):
                       </p>
                       <ScrollArea className="not-found-scroll">
                         {importResult.not_found_list.map((name, idx) => (
