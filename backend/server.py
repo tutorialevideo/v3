@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, BackgroundTasks
+from fastapi import FastAPI, APIRouter, HTTPException, BackgroundTasks, UploadFile, File
 from fastapi.responses import FileResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -11,6 +11,8 @@ from sqlalchemy.orm import sessionmaker, relationship
 from databases import Database
 import os
 import re
+import csv
+import io
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
@@ -653,6 +655,41 @@ async def search_dosare(request: SearchRequest):
 
 
 # PostgreSQL Data Endpoints
+@api_router.get("/db/firme/export")
+async def export_firme_csv():
+    """Export all firms as CSV for editing"""
+    db = SessionLocal()
+    try:
+        firme = db.query(Firma).order_by(Firma.denumire).all()
+        
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(['id', 'cui', 'denumire', 'dosare_count'])
+        
+        for firma in firme:
+            dosare_count = db.query(Dosar).filter(Dosar.firma_id == firma.id).count()
+            writer.writerow([firma.id, firma.cui or '', firma.denumire, dosare_count])
+        
+        output.seek(0)
+        
+        # Save to file
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"firme_export_{timestamp}.csv"
+        filepath = DOWNLOADS_DIR / filename
+        
+        with open(filepath, 'w', encoding='utf-8', newline='') as f:
+            f.write(output.getvalue())
+        
+        return FileResponse(
+            filepath, 
+            filename=filename, 
+            media_type='text/csv',
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    finally:
+        db.close()
+
+
 @api_router.get("/db/firme")
 async def get_firme(skip: int = 0, limit: int = 100, search: str = None):
     """Get all companies from PostgreSQL"""
@@ -764,7 +801,7 @@ async def get_db_stats():
     db = SessionLocal()
     try:
         firme_count = db.query(Firma).count()
-        firme_with_cui = db.query(Firma).filter(Firma.cui.isnot(None)).count()
+        firme_with_cui = db.query(Firma).filter(Firma.cui.isnot(None), Firma.cui != '').count()
         dosare_count = db.query(Dosar).count()
         timeline_count = db.query(TimelineEvent).count()
         
@@ -777,6 +814,122 @@ async def get_db_stats():
         }
     finally:
         db.close()
+
+
+@api_router.post("/db/import-cui")
+async def import_cui_csv(file: UploadFile = File(...)):
+    """
+    Import CSV with CUI mappings.
+    CSV format: denumire,cui OR cui,denumire
+    Will match firma by denumire (normalized) and update CUI
+    """
+    if not file.filename.endswith('.csv'):
+        raise HTTPException(status_code=400, detail="Only CSV files are allowed")
+    
+    content = await file.read()
+    try:
+        decoded = content.decode('utf-8')
+    except UnicodeDecodeError:
+        decoded = content.decode('latin-1')
+    
+    reader = csv.DictReader(io.StringIO(decoded))
+    
+    # Detect columns
+    fieldnames = [f.lower().strip() for f in reader.fieldnames] if reader.fieldnames else []
+    
+    # Find cui and denumire columns
+    cui_col = None
+    denumire_col = None
+    
+    for col in fieldnames:
+        if 'cui' in col or 'cif' in col or 'cod' in col:
+            cui_col = col
+        if 'denumire' in col or 'nume' in col or 'firma' in col or 'name' in col or 'company' in col:
+            denumire_col = col
+    
+    if not cui_col or not denumire_col:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"CSV must have columns for CUI and Denumire. Found columns: {fieldnames}"
+        )
+    
+    db = SessionLocal()
+    results = {
+        "total_rows": 0,
+        "matched": 0,
+        "not_found": 0,
+        "already_has_cui": 0,
+        "updated": [],
+        "not_found_list": []
+    }
+    
+    try:
+        # Re-read CSV
+        reader = csv.DictReader(io.StringIO(decoded))
+        
+        for row in reader:
+            results["total_rows"] += 1
+            
+            # Get values (handle different column name cases)
+            cui_value = None
+            denumire_value = None
+            
+            for key, value in row.items():
+                key_lower = key.lower().strip()
+                if key_lower == cui_col:
+                    cui_value = value.strip() if value else None
+                if key_lower == denumire_col:
+                    denumire_value = value.strip() if value else None
+            
+            if not cui_value or not denumire_value:
+                continue
+            
+            # Normalize denumire for matching
+            denumire_normalized = normalize_company_name(denumire_value)
+            
+            # Find firma by normalized name
+            firma = db.query(Firma).filter(
+                Firma.denumire_normalized == denumire_normalized
+            ).first()
+            
+            if not firma:
+                # Try partial match
+                firma = db.query(Firma).filter(
+                    Firma.denumire_normalized.contains(denumire_normalized)
+                ).first()
+            
+            if not firma:
+                # Try reverse partial match
+                firma = db.query(Firma).filter(
+                    Firma.denumire_normalized.contains(denumire_normalized[:20])
+                ).first()
+            
+            if firma:
+                results["matched"] += 1
+                if firma.cui and firma.cui.strip():
+                    results["already_has_cui"] += 1
+                else:
+                    firma.cui = cui_value
+                    firma.updated_at = datetime.utcnow()
+                    results["updated"].append({
+                        "id": firma.id,
+                        "denumire": firma.denumire,
+                        "cui": cui_value
+                    })
+            else:
+                results["not_found"] += 1
+                if len(results["not_found_list"]) < 20:  # Limit list
+                    results["not_found_list"].append(denumire_value)
+        
+        db.commit()
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error processing CSV: {str(e)}")
+    finally:
+        db.close()
+    
+    return results
 
 
 @api_router.get("/files")

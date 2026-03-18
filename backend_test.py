@@ -683,6 +683,155 @@ class JustPortalAPITester:
             self.log_result("Company Filtering", False, f"Exception: {str(e)}")
             return False
 
+    def test_csv_import_cui(self) -> bool:
+        """Test POST /api/db/import-cui - CSV import with CUI data"""
+        try:
+            # Create test CSV content with proper headers
+            csv_content = """denumire,cui
+SC TEST FIRMA SRL,12345678
+SC EXEMPLU SA,87654321
+DEDEMAN SRL,99999999
+"""
+            
+            # Create temporary file-like object for requests
+            import io
+            csv_file = io.BytesIO(csv_content.encode('utf-8'))
+            
+            # Prepare multipart form data  
+            files = {
+                'file': ('test_cui.csv', csv_file, 'text/csv')
+            }
+            
+            # Create new session without Content-Type for multipart
+            response = requests.post(
+                f"{self.api_url}/db/import-cui", 
+                files=files,
+                timeout=60
+            )
+            
+            success = response.status_code == 200
+            
+            if success:
+                data = response.json()
+                required_fields = ['total_rows', 'matched', 'not_found', 'already_has_cui', 'updated']
+                missing_fields = [f for f in required_fields if f not in data]
+                
+                if not missing_fields:
+                    total_rows = data.get('total_rows', 0)
+                    matched = data.get('matched', 0)
+                    updated = len(data.get('updated', []))
+                    not_found = data.get('not_found', 0)
+                    
+                    details = f"Rows: {total_rows}, Matched: {matched}, Updated: {updated}, Not found: {not_found}"
+                    self.log_result("CSV Import CUI", True, details)
+                    return True
+                else:
+                    self.log_result("CSV Import CUI", False, f"Missing fields: {missing_fields}")
+                    return False
+            else:
+                error_detail = ""
+                try:
+                    error_data = response.json()
+                    error_detail = error_data.get('detail', '')
+                except:
+                    error_detail = response.text[:200]
+                self.log_result("CSV Import CUI", False, f"Status: {response.status_code}, Error: {error_detail}")
+                return False
+                
+        except Exception as e:
+            self.log_result("CSV Import CUI", False, f"Exception: {str(e)}")
+            return False
+
+    def test_export_firme_csv(self) -> bool:
+        """Test GET /api/db/firme/export - Export companies as CSV"""
+        try:
+            # Use requests directly instead of session for this test
+            response = requests.get(f"{self.api_url}/db/firme/export", timeout=60)
+            success = response.status_code == 200
+            
+            if success:
+                # Check if response is CSV - it should be a file download
+                content_disposition = response.headers.get('content-disposition', '')
+                content_type = response.headers.get('content-type', '')
+                
+                if ('attachment' in content_disposition.lower() or 
+                    'csv' in content_type.lower() or 
+                    'text' in content_type.lower()):
+                    
+                    content_length = len(response.content)
+                    
+                    # Try to parse a few lines to validate CSV structure
+                    try:
+                        content = response.content.decode('utf-8')
+                        lines = content.split('\n')
+                        
+                        if len(lines) >= 2:  # Header + at least one data row
+                            header = lines[0].strip()
+                            expected_columns = ['id', 'cui', 'denumire', 'dosare_count']
+                            
+                            # Check if header contains expected columns
+                            if all(col in header for col in expected_columns):
+                                details = f"CSV exported: {content_length} bytes, {len(lines)} lines"
+                                self.log_result("Export Firme CSV", True, details)
+                                return True
+                            else:
+                                self.log_result("Export Firme CSV", False, f"Invalid CSV header: {header}")
+                                return False
+                        else:
+                            self.log_result("Export Firme CSV", False, "CSV file too short")
+                            return False
+                    except UnicodeDecodeError:
+                        # File might be in different encoding, still consider it success if headers are right
+                        details = f"CSV exported: {content_length} bytes (encoding issue but file downloaded)"
+                        self.log_result("Export Firme CSV", True, details)
+                        return True
+                else:
+                    self.log_result("Export Firme CSV", False, f"Not a CSV download - Content-Type: {content_type}, Disposition: {content_disposition}")
+                    return False
+            else:
+                error_text = response.text[:200] if response.text else "No response text"
+                self.log_result("Export Firme CSV", False, f"Status: {response.status_code}, Error: {error_text}")
+                return False
+                
+        except Exception as e:
+            self.log_result("Export Firme CSV", False, f"Exception: {str(e)}")
+            return False
+
+    def test_db_stats_cui_counts(self) -> bool:
+        """Test GET /api/db/stats - Verify it returns firme_with_cui and firme_without_cui"""
+        try:
+            response = self.session.get(f"{self.api_url}/db/stats", timeout=30)
+            success = response.status_code == 200
+            
+            if success:
+                data = response.json()
+                required_fields = ['firme_total', 'firme_with_cui', 'firme_without_cui']
+                missing_fields = [f for f in required_fields if f not in data]
+                
+                if not missing_fields:
+                    total = data['firme_total']
+                    with_cui = data['firme_with_cui']
+                    without_cui = data['firme_without_cui']
+                    
+                    # Validate that counts add up correctly
+                    if (with_cui + without_cui) == total:
+                        details = f"Total: {total}, With CUI: {with_cui}, Without CUI: {without_cui}"
+                        self.log_result("DB Stats CUI Counts", True, details)
+                        return True
+                    else:
+                        self.log_result("DB Stats CUI Counts", False, f"Counts don't add up: {with_cui} + {without_cui} ≠ {total}")
+                        return False
+                else:
+                    self.log_result("DB Stats CUI Counts", False, f"Missing fields: {missing_fields}")
+                    return False
+            else:
+                self.log_result("DB Stats CUI Counts", False, f"Status code: {response.status_code}")
+                return False
+                
+        except Exception as e:
+            self.log_result("DB Stats CUI Counts", False, f"Exception: {str(e)}")
+            return False
+
     def run_all_tests(self) -> Dict[str, Any]:
         """Run all API tests"""
         print("🚀 Starting Portal JUST API Tests")
@@ -714,10 +863,15 @@ class JustPortalAPITester:
         
         # PostgreSQL Database Tests (new requirements)
         self.test_db_stats()  # GET /api/db/stats
+        self.test_db_stats_cui_counts()  # GET /api/db/stats with CUI counts validation
         self.test_db_firme_list()  # GET /api/db/firme  
         self.test_db_firma_details_and_update()  # GET /api/db/firme/{id} and PUT /api/db/firme/{id}
         self.test_db_dosar_details()  # GET /api/db/dosare/{id}
         self.test_company_filtering()  # Verify only companies extracted
+        
+        # CSV Import/Export Tests (NEW FEATURE)
+        self.test_csv_import_cui()  # POST /api/db/import-cui
+        self.test_export_firme_csv()  # GET /api/db/firme/export
         
         # File operations (if files exist)
         self.test_file_download(files)

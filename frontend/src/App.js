@@ -32,7 +32,10 @@ import {
   Activity,
   CalendarIcon,
   Timer,
-  Zap
+  Zap,
+  Upload,
+  FileSpreadsheet,
+  AlertCircle
 } from "lucide-react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -41,6 +44,7 @@ const API = `${BACKEND_URL}/api`;
 function App() {
   const [config, setConfig] = useState(null);
   const [stats, setStats] = useState(null);
+  const [dbStats, setDbStats] = useState(null);
   const [files, setFiles] = useState([]);
   const [runs, setRuns] = useState([]);
   const [currentRun, setCurrentRun] = useState(null);
@@ -53,15 +57,18 @@ function App() {
   const [dateEnd, setDateEnd] = useState(null);
   const [searchPreview, setSearchPreview] = useState(null);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importResult, setImportResult] = useState(null);
 
   const fetchData = useCallback(async () => {
     try {
-      const [configRes, statsRes, filesRes, runsRes, currentRes] = await Promise.all([
+      const [configRes, statsRes, filesRes, runsRes, currentRes, dbStatsRes] = await Promise.all([
         axios.get(`${API}/config`),
         axios.get(`${API}/stats`),
         axios.get(`${API}/files`),
         axios.get(`${API}/runs`),
-        axios.get(`${API}/runs/current`)
+        axios.get(`${API}/runs/current`),
+        axios.get(`${API}/db/stats`)
       ]);
       
       setConfig(configRes.data);
@@ -69,6 +76,7 @@ function App() {
       setFiles(filesRes.data);
       setRuns(runsRes.data);
       setCurrentRun(currentRes.data);
+      setDbStats(dbStatsRes.data);
       
       if (configRes.data) {
         setSearchTerm(configRes.data.search_term || "");
@@ -159,6 +167,35 @@ function App() {
     }
   };
 
+  const handleCsvImport = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setImportLoading(true);
+    setImportResult(null);
+    
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await axios.post(`${API}/db/import-cui`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      setImportResult(res.data);
+      toast.success(`Import finalizat: ${res.data.updated?.length || 0} firme actualizate`);
+      fetchData();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Eroare la importul CSV");
+    } finally {
+      setImportLoading(false);
+      event.target.value = '';
+    }
+  };
+
+  const exportFirme = () => {
+    window.open(`${API}/db/firme/export`, '_blank');
+  };
+
   const formatBytes = (bytes) => {
     if (bytes === 0) return '0 B';
     const k = 1024;
@@ -198,6 +235,95 @@ function App() {
       </header>
 
       <main className="main-content">
+        {/* Import CUI Section */}
+        <Card className="import-card" data-testid="import-section">
+          <CardHeader>
+            <div className="card-header-with-action">
+              <div>
+                <CardTitle className="card-title">
+                  <FileSpreadsheet size={20} />
+                  Import CUI pentru Firme
+                </CardTitle>
+                <CardDescription>
+                  Încarcă un fișier CSV cu coloanele: denumire, cui
+                </CardDescription>
+              </div>
+              <div className="import-stats">
+                <Badge variant="outline" className="badge-info">
+                  {dbStats?.firme_with_cui || 0} / {dbStats?.firme_total || 0} cu CUI
+                </Badge>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="import-content">
+              <div className="import-actions">
+                <label className="import-btn">
+                  <input
+                    type="file"
+                    accept=".csv"
+                    onChange={handleCsvImport}
+                    disabled={importLoading}
+                    style={{ display: 'none' }}
+                    data-testid="csv-file-input"
+                  />
+                  <Button variant="default" disabled={importLoading} asChild>
+                    <span>
+                      {importLoading ? (
+                        <Loader2 className="animate-spin" size={16} />
+                      ) : (
+                        <Upload size={16} />
+                      )}
+                      {importLoading ? 'Se importă...' : 'Import CSV'}
+                    </span>
+                  </Button>
+                </label>
+                <Button variant="outline" onClick={exportFirme} data-testid="export-firme-btn">
+                  <Download size={16} />
+                  Export Firme
+                </Button>
+              </div>
+              
+              {importResult && (
+                <div className="import-result" data-testid="import-result">
+                  <div className="import-stats-grid">
+                    <div className="import-stat">
+                      <span className="import-stat-value">{importResult.total_rows}</span>
+                      <span className="import-stat-label">Rânduri CSV</span>
+                    </div>
+                    <div className="import-stat success">
+                      <span className="import-stat-value">{importResult.updated?.length || 0}</span>
+                      <span className="import-stat-label">Actualizate</span>
+                    </div>
+                    <div className="import-stat warning">
+                      <span className="import-stat-value">{importResult.already_has_cui}</span>
+                      <span className="import-stat-label">Aveau deja CUI</span>
+                    </div>
+                    <div className="import-stat error">
+                      <span className="import-stat-value">{importResult.not_found}</span>
+                      <span className="import-stat-label">Negăsite</span>
+                    </div>
+                  </div>
+                  
+                  {importResult.not_found_list?.length > 0 && (
+                    <div className="import-not-found">
+                      <p className="not-found-title">
+                        <AlertCircle size={14} />
+                        Firme negăsite în DB:
+                      </p>
+                      <ScrollArea className="not-found-scroll">
+                        {importResult.not_found_list.map((name, idx) => (
+                          <span key={idx} className="not-found-item">{name}</span>
+                        ))}
+                      </ScrollArea>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Stats Cards */}
         <div className="stats-grid" data-testid="stats-section">
           <Card className="stat-card">
