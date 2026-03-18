@@ -1095,8 +1095,20 @@ async def import_cui_csv(
                 continue
             
             # Filter: only companies (SRL, SA, etc.) if requested
-            if only_companies and not is_company(denumire):
-                results["skipped_not_company"] += 1
+            # Use FORMA_JURIDICA column for accurate filtering
+            if only_companies:
+                # Exclude PF, PFA, II, IF, AF based on forma_juridica column
+                excluded_forms = {'PF', 'PFA', 'II', 'IF', 'AF', 'CA', 'FORMA_JURIDICA'}  # FORMA_JURIDICA is header
+                if forma_juridica and forma_juridica.upper() in excluded_forms:
+                    results["skipped_not_company"] += 1
+                    continue
+                # Also check the name for safety
+                if not is_company(denumire) and forma_juridica not in {'SRL', 'SA', 'SNC', 'SCS', 'SCA', 'RA', 'GIE', 'SC', 'OCR', 'OCC', 'OCM', 'OC1', 'OC2'}:
+                    results["skipped_not_company"] += 1
+                    continue
+            
+            # Skip header row
+            if cui == 'CUI' or denumire == 'DENUMIRE':
                 continue
             
             # Skip if no valid CUI
