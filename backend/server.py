@@ -50,9 +50,32 @@ class Firma(Base):
     __tablename__ = "firme"
     
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    cui = Column(String(20), unique=True, nullable=True, index=True)
+    # Date de identificare
+    cui = Column(String(20), nullable=True, index=True)
     denumire = Column(String(500), nullable=False, index=True)
     denumire_normalized = Column(String(500), index=True)  # For search
+    
+    # Date înregistrare ONRC
+    cod_inregistrare = Column(String(50), nullable=True)  # J40/123/2024
+    data_inregistrare = Column(String(20), nullable=True)  # 19/12/2023
+    cod_onrc = Column(String(100), nullable=True)  # ROONRC.J40/123/2024
+    forma_juridica = Column(String(50), nullable=True)  # SRL, SA, PFA, etc.
+    
+    # Adresa sediu social
+    tara = Column(String(100), nullable=True)
+    judet = Column(String(100), nullable=True, index=True)
+    localitate = Column(String(200), nullable=True)
+    strada = Column(String(300), nullable=True)
+    numar = Column(String(50), nullable=True)
+    bloc = Column(String(50), nullable=True)
+    scara = Column(String(20), nullable=True)
+    etaj = Column(String(20), nullable=True)
+    apartament = Column(String(20), nullable=True)
+    cod_postal = Column(String(20), nullable=True)
+    
+    # Alte detalii adresă
+    detalii_adresa = Column(Text, nullable=True)  # Restul câmpurilor concatenate
+    
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -730,7 +753,7 @@ async def export_firme_csv():
 
 
 @api_router.get("/db/firme")
-async def get_firme(skip: int = 0, limit: int = 100, search: str = None):
+async def get_firme(skip: int = 0, limit: int = 100, search: str = None, judet: str = None):
     """Get all companies from PostgreSQL"""
     db = SessionLocal()
     try:
@@ -743,6 +766,10 @@ async def get_firme(skip: int = 0, limit: int = 100, search: str = None):
                 query = query.filter(Firma.cui.contains(search_term))
             else:
                 query = query.filter(Firma.denumire_normalized.contains(normalize_company_name(search_term)))
+        
+        if judet:
+            query = query.filter(Firma.judet.ilike(f"%{judet}%"))
+        
         total = query.count()
         firme = query.order_by(Firma.id.desc()).offset(skip).limit(limit).all()
         
@@ -754,6 +781,13 @@ async def get_firme(skip: int = 0, limit: int = 100, search: str = None):
                 "id": f.id, 
                 "cui": f.cui, 
                 "denumire": f.denumire,
+                "cod_inregistrare": f.cod_inregistrare,
+                "data_inregistrare": f.data_inregistrare,
+                "forma_juridica": f.forma_juridica,
+                "judet": f.judet,
+                "localitate": f.localitate,
+                "strada": f.strada,
+                "numar": f.numar,
                 "dosare_count": dosare_count,
                 "created_at": f.created_at.isoformat() if f.created_at else None
             })
@@ -780,7 +814,23 @@ async def get_firma(firma_id: int):
             "id": firma.id,
             "cui": firma.cui,
             "denumire": firma.denumire,
+            "cod_inregistrare": firma.cod_inregistrare,
+            "data_inregistrare": firma.data_inregistrare,
+            "cod_onrc": firma.cod_onrc,
+            "forma_juridica": firma.forma_juridica,
+            "tara": firma.tara,
+            "judet": firma.judet,
+            "localitate": firma.localitate,
+            "strada": firma.strada,
+            "numar": firma.numar,
+            "bloc": firma.bloc,
+            "scara": firma.scara,
+            "etaj": firma.etaj,
+            "apartament": firma.apartament,
+            "cod_postal": firma.cod_postal,
+            "detalii_adresa": firma.detalii_adresa,
             "created_at": firma.created_at.isoformat() if firma.created_at else None,
+            "updated_at": firma.updated_at.isoformat() if firma.updated_at else None,
             "dosare_count": len(dosare),
             "dosare": [{
                 "id": d.id,
@@ -876,20 +926,31 @@ async def get_db_stats():
 @api_router.post("/db/import-cui")
 async def import_cui_csv(
     file: UploadFile = File(...),
-    cui_column: int = 1,
-    denumire_column: int = 0,
     has_header: bool = False,
     only_companies: bool = True
 ):
     """
     Import companies from ONRC file directly into database.
-    Creates new firms with CUI - later dosare will be matched to these firms.
+    Saves all columns from the ONRC file.
     
-    Default settings for ONRC files:
-    - cui_column: 1 (second column)
-    - denumire_column: 0 (first column)
-    - has_header: false
-    - only_companies: true (excludes PFA, II, IF - only SRL, SA, etc.)
+    ONRC file structure (delimiter: ^):
+    0: DENUMIRE (company name)
+    1: CUI (tax ID)
+    2: COD_INREGISTRARE (registration code like J40/123/2024)
+    3: DATA_INREGISTRARE (registration date)
+    4: COD_ONRC (ROONRC identifier)
+    5: FORMA_JURIDICA (legal form: SRL, SA, PFA, etc.)
+    6: TARA (country)
+    7: JUDET (county)
+    8: LOCALITATE (city)
+    9: STRADA (street)
+    10: NUMAR (number)
+    11: BLOC (building)
+    12: SCARA (entrance)
+    13: ETAJ (floor)
+    14: APARTAMENT (apartment)
+    15: COD_POSTAL (postal code)
+    16+: Additional details
     """
     
     # Read content
@@ -920,8 +981,6 @@ async def import_cui_csv(
     
     logger.info(f"Detected delimiter: '{delimiter}', total lines: {len(lines)}")
     
-    cui_col_idx = cui_column
-    denumire_col_idx = denumire_column
     start_row = 1 if has_header else 0
     
     db = SessionLocal()
@@ -931,23 +990,27 @@ async def import_cui_csv(
         "skipped_not_company": 0,
         "created_new": 0,
         "already_exists": 0,
-        "updated_cui": 0,
+        "updated": 0,
         "skipped_no_cui": 0,
         "sample_created": [],
         "delimiter_detected": delimiter
     }
     
-    # Build lookup of existing firms by normalized name and by CUI
-    existing_by_name = {}
+    # Build lookup of existing firms by CUI
     existing_by_cui = {}
     all_firme = db.query(Firma).all()
     for firma in all_firme:
-        if firma.denumire_normalized:
-            existing_by_name[firma.denumire_normalized] = firma
         if firma.cui:
             existing_by_cui[firma.cui] = firma
     
     logger.info(f"Existing firms in DB: {len(all_firme)}")
+    
+    def get_col(cols, idx, default=None):
+        """Safely get column value"""
+        if idx < len(cols):
+            val = cols[idx].strip() if cols[idx] else None
+            return val if val else default
+        return default
     
     try:
         batch_count = 0
@@ -960,66 +1023,108 @@ async def import_cui_csv(
             
             cols = line.split(delimiter)
             
-            if len(cols) <= max(cui_col_idx, denumire_col_idx):
+            # Extract all columns
+            denumire = get_col(cols, 0)
+            cui = get_col(cols, 1)
+            cod_inregistrare = get_col(cols, 2)
+            data_inregistrare = get_col(cols, 3)
+            cod_onrc = get_col(cols, 4)
+            forma_juridica = get_col(cols, 5)
+            tara = get_col(cols, 6)
+            judet = get_col(cols, 7)
+            localitate = get_col(cols, 8)
+            strada = get_col(cols, 9)
+            numar = get_col(cols, 10)
+            bloc = get_col(cols, 11)
+            scara = get_col(cols, 12)
+            etaj = get_col(cols, 13)
+            apartament = get_col(cols, 14)
+            cod_postal = get_col(cols, 15)
+            
+            # Concatenate remaining columns as additional details
+            detalii_adresa = None
+            if len(cols) > 16:
+                extra = [c.strip() for c in cols[16:] if c.strip()]
+                if extra:
+                    detalii_adresa = ' | '.join(extra)
+            
+            if not denumire:
                 continue
             
-            denumire_value = cols[denumire_col_idx].strip() if cols[denumire_col_idx] else None
-            cui_value = cols[cui_col_idx].strip() if cols[cui_col_idx] else None
-            
-            if not denumire_value:
-                continue
-            
-            # Filter: only companies (SRL, SA, etc.)
-            if only_companies and not is_company(denumire_value):
+            # Filter: only companies (SRL, SA, etc.) if requested
+            if only_companies and not is_company(denumire):
                 results["skipped_not_company"] += 1
                 continue
             
             # Skip if no valid CUI
-            if not cui_value or cui_value == '0' or len(cui_value) < 2:
+            if not cui or cui == '0' or len(cui) < 2:
                 results["skipped_no_cui"] += 1
                 continue
             
             results["processed"] += 1
             
-            denumire_normalized = normalize_company_name(denumire_value)
+            denumire_normalized = normalize_company_name(denumire)
             
             # Check if firm already exists by CUI
-            existing_firma = existing_by_cui.get(cui_value)
-            
-            if not existing_firma:
-                # Check by normalized name
-                existing_firma = existing_by_name.get(denumire_normalized)
+            existing_firma = existing_by_cui.get(cui)
             
             if existing_firma:
-                # Firm exists
-                if existing_firma.cui and existing_firma.cui == cui_value:
-                    results["already_exists"] += 1
-                elif not existing_firma.cui:
-                    # Update CUI if missing
-                    existing_firma.cui = cui_value
-                    existing_firma.updated_at = datetime.utcnow()
-                    results["updated_cui"] += 1
-                else:
-                    results["already_exists"] += 1
+                # Update existing firm with new data
+                existing_firma.denumire = denumire
+                existing_firma.denumire_normalized = denumire_normalized
+                existing_firma.cod_inregistrare = cod_inregistrare
+                existing_firma.data_inregistrare = data_inregistrare
+                existing_firma.cod_onrc = cod_onrc
+                existing_firma.forma_juridica = forma_juridica
+                existing_firma.tara = tara
+                existing_firma.judet = judet
+                existing_firma.localitate = localitate
+                existing_firma.strada = strada
+                existing_firma.numar = numar
+                existing_firma.bloc = bloc
+                existing_firma.scara = scara
+                existing_firma.etaj = etaj
+                existing_firma.apartament = apartament
+                existing_firma.cod_postal = cod_postal
+                existing_firma.detalii_adresa = detalii_adresa
+                existing_firma.updated_at = datetime.utcnow()
+                results["updated"] += 1
             else:
-                # Create new firm
+                # Create new firm with all data
                 new_firma = Firma(
-                    cui=cui_value,
-                    denumire=denumire_value,
-                    denumire_normalized=denumire_normalized
+                    cui=cui,
+                    denumire=denumire,
+                    denumire_normalized=denumire_normalized,
+                    cod_inregistrare=cod_inregistrare,
+                    data_inregistrare=data_inregistrare,
+                    cod_onrc=cod_onrc,
+                    forma_juridica=forma_juridica,
+                    tara=tara,
+                    judet=judet,
+                    localitate=localitate,
+                    strada=strada,
+                    numar=numar,
+                    bloc=bloc,
+                    scara=scara,
+                    etaj=etaj,
+                    apartament=apartament,
+                    cod_postal=cod_postal,
+                    detalii_adresa=detalii_adresa
                 )
                 db.add(new_firma)
                 
-                # Update lookup dictionaries
-                existing_by_name[denumire_normalized] = new_firma
-                existing_by_cui[cui_value] = new_firma
+                # Update lookup dictionary
+                existing_by_cui[cui] = new_firma
                 
                 results["created_new"] += 1
                 
-                if len(results["sample_created"]) < 10:
+                if len(results["sample_created"]) < 5:
                     results["sample_created"].append({
-                        "denumire": denumire_value[:50],
-                        "cui": cui_value
+                        "denumire": denumire[:50] if denumire else "",
+                        "cui": cui,
+                        "forma_juridica": forma_juridica,
+                        "judet": judet,
+                        "localitate": localitate
                     })
             
             batch_count += 1
@@ -1427,9 +1532,18 @@ async def cleanup_orphaned_dosare():
 async def optimize_database():
     """Run VACUUM ANALYZE on all tables to optimize performance"""
     try:
-        await database.execute("VACUUM ANALYZE firme")
-        await database.execute("VACUUM ANALYZE dosare")
-        await database.execute("VACUUM ANALYZE timeline_events")
+        try:
+            await database.execute("VACUUM ANALYZE firme")
+        except Exception:
+            pass
+        try:
+            await database.execute("VACUUM ANALYZE dosare")
+        except Exception:
+            pass
+        try:
+            await database.execute("VACUUM ANALYZE timeline_events")
+        except Exception:
+            pass
         
         return {
             "success": True,
@@ -1437,6 +1551,72 @@ async def optimize_database():
         }
     except Exception as e:
         logger.error(f"Error optimizing database: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/diagnostics/migrate-schema")
+async def migrate_database_schema():
+    """Add new columns to firme table if they don't exist"""
+    try:
+        new_columns = [
+            ("cod_inregistrare", "VARCHAR(50)"),
+            ("data_inregistrare", "VARCHAR(20)"),
+            ("cod_onrc", "VARCHAR(100)"),
+            ("forma_juridica", "VARCHAR(50)"),
+            ("tara", "VARCHAR(100)"),
+            ("judet", "VARCHAR(100)"),
+            ("localitate", "VARCHAR(200)"),
+            ("strada", "VARCHAR(300)"),
+            ("numar", "VARCHAR(50)"),
+            ("bloc", "VARCHAR(50)"),
+            ("scara", "VARCHAR(20)"),
+            ("etaj", "VARCHAR(20)"),
+            ("apartament", "VARCHAR(20)"),
+            ("cod_postal", "VARCHAR(20)"),
+            ("detalii_adresa", "TEXT")
+        ]
+        
+        added = []
+        for col_name, col_type in new_columns:
+            try:
+                await database.execute(f"""
+                    ALTER TABLE firme ADD COLUMN IF NOT EXISTS {col_name} {col_type}
+                """)
+                added.append(col_name)
+            except Exception as e:
+                logger.warning(f"Could not add column {col_name}: {e}")
+        
+        # Also ensure timeline_events table exists
+        try:
+            await database.execute("""
+                CREATE TABLE IF NOT EXISTS timeline_events (
+                    id BIGSERIAL PRIMARY KEY,
+                    dosar_id BIGINT REFERENCES dosare(id),
+                    tip VARCHAR(50),
+                    data TIMESTAMP,
+                    descriere TEXT,
+                    detalii JSONB,
+                    created_at TIMESTAMP DEFAULT NOW()
+                )
+            """)
+        except Exception as e:
+            logger.warning(f"Could not create timeline_events: {e}")
+        
+        # Create index on judet for filtering
+        try:
+            await database.execute("""
+                CREATE INDEX IF NOT EXISTS idx_firme_judet ON firme(judet)
+            """)
+        except Exception:
+            pass
+        
+        return {
+            "success": True,
+            "columns_added": added,
+            "message": f"Schema migration complete. Added {len(added)} columns."
+        }
+    except Exception as e:
+        logger.error(f"Error in schema migration: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

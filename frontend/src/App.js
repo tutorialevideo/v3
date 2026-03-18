@@ -376,6 +376,19 @@ function App() {
     }
   };
 
+  const migrateSchema = async () => {
+    setCleanupLoading(true);
+    try {
+      const res = await axios.post(`${API}/diagnostics/migrate-schema`);
+      toast.success(res.data.message);
+      loadDiagnostics();
+    } catch (error) {
+      toast.error("Eroare la migrarea schemei");
+    } finally {
+      setCleanupLoading(false);
+    }
+  };
+
   const formatBytes = (bytes) => {
     if (bytes === 0) return '0 B';
     const k = 1024;
@@ -992,17 +1005,19 @@ function App() {
                     <table className="firme-table">
                       <thead>
                         <tr>
-                          <th>ID</th>
                           <th>CUI</th>
                           <th>Denumire</th>
+                          <th>Formă</th>
+                          <th>Județ</th>
+                          <th>Localitate</th>
+                          <th>Adresă</th>
+                          <th>Înreg.</th>
                           <th>Dosare</th>
-                          <th>Creat</th>
                         </tr>
                       </thead>
                       <tbody>
                         {firmeList.map((firma) => (
                           <tr key={firma.id} data-testid={`firma-row-${firma.id}`}>
-                            <td className="col-id">{firma.id}</td>
                             <td className="col-cui">
                               {firma.cui ? (
                                 <Badge variant="outline" className="badge-cui">{firma.cui}</Badge>
@@ -1010,9 +1025,23 @@ function App() {
                                 <span className="no-cui">-</span>
                               )}
                             </td>
-                            <td className="col-denumire">{firma.denumire}</td>
+                            <td className="col-denumire" title={firma.denumire}>{firma.denumire}</td>
+                            <td className="col-forma">
+                              {firma.forma_juridica && (
+                                <Badge variant="secondary" className="badge-forma">{firma.forma_juridica}</Badge>
+                              )}
+                            </td>
+                            <td className="col-judet">{firma.judet || '-'}</td>
+                            <td className="col-localitate">{firma.localitate || '-'}</td>
+                            <td className="col-adresa" title={`${firma.strada || ''} ${firma.numar || ''}`}>
+                              {firma.strada ? `${firma.strada} ${firma.numar || ''}`.trim() : '-'}
+                            </td>
+                            <td className="col-inreg">
+                              {firma.cod_inregistrare && (
+                                <span className="cod-inreg" title={firma.data_inregistrare}>{firma.cod_inregistrare}</span>
+                              )}
+                            </td>
                             <td className="col-dosare">{firma.dosare_count || 0}</td>
-                            <td className="col-date">{firma.created_at ? new Date(firma.created_at).toLocaleDateString('ro-RO') : '-'}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -1147,6 +1176,15 @@ function App() {
                     <div className="diag-card actions-card">
                       <h4><Wrench size={18} /> Acțiuni de Întreținere</h4>
                       <div className="actions-list">
+                        <Button 
+                          variant="default" 
+                          onClick={migrateSchema}
+                          disabled={cleanupLoading}
+                          className="action-btn"
+                        >
+                          <Database size={16} />
+                          Migrare Schemă (coloane noi)
+                        </Button>
                         <Button 
                           variant="outline" 
                           onClick={createIndexes}
