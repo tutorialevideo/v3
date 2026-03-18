@@ -5,7 +5,7 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey, JSON, Boolean, BigInteger
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey, JSON, Boolean, BigInteger, Float
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from databases import Database
@@ -109,6 +109,21 @@ class Firma(Base):
     # Metadata sincronizare
     anaf_last_sync = Column(DateTime, nullable=True)
     anaf_sync_status = Column(String(50), nullable=True)  # success, not_found, error
+    
+    # ===== DATE MFINANTE (bilanțuri) =====
+    mf_denumire = Column(String(500), nullable=True)
+    mf_adresa = Column(Text, nullable=True)
+    mf_stare = Column(String(200), nullable=True)
+    mf_cifra_afaceri = Column(Float, nullable=True)
+    mf_profit = Column(Float, nullable=True)
+    mf_pierdere = Column(Float, nullable=True)
+    mf_numar_angajati = Column(Integer, nullable=True)
+    mf_capital_social = Column(Float, nullable=True)
+    mf_active_totale = Column(Float, nullable=True)
+    mf_datorii_totale = Column(Float, nullable=True)
+    mf_an_bilant = Column(String(10), nullable=True)  # anul bilanțului
+    mf_last_sync = Column(DateTime, nullable=True)
+    mf_sync_status = Column(String(50), nullable=True)
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -1709,7 +1724,21 @@ async def migrate_database_schema():
             ("anaf_sediu_numar", "VARCHAR(50)"),
             ("anaf_sediu_cod_postal", "VARCHAR(20)"),
             ("anaf_last_sync", "TIMESTAMP"),
-            ("anaf_sync_status", "VARCHAR(50)")
+            ("anaf_sync_status", "VARCHAR(50)"),
+            # MFinante columns
+            ("mf_denumire", "VARCHAR(500)"),
+            ("mf_adresa", "TEXT"),
+            ("mf_stare", "VARCHAR(200)"),
+            ("mf_cifra_afaceri", "FLOAT"),
+            ("mf_profit", "FLOAT"),
+            ("mf_pierdere", "FLOAT"),
+            ("mf_numar_angajati", "INTEGER"),
+            ("mf_capital_social", "FLOAT"),
+            ("mf_active_totale", "FLOAT"),
+            ("mf_datorii_totale", "FLOAT"),
+            ("mf_an_bilant", "VARCHAR(10)"),
+            ("mf_last_sync", "TIMESTAMP"),
+            ("mf_sync_status", "VARCHAR(50)")
         ]
         
         added = []
@@ -2110,6 +2139,375 @@ async def test_anaf_api(cui: str):
                 return await response.json()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================
+# MFINANTE CRAWLER (pentru bilanțuri)
+# ============================================
+
+MFINANTE_URL = "https://mfinante.gov.ro/apps/infocodfiscal.html"
+
+# MFinante sync progress
+mfinante_sync_progress = {
+    "active": False,
+    "session_valid": False,
+    "total_firms": 0,
+    "processed": 0,
+    "found": 0,
+    "errors": 0,
+    "last_update": None,
+    "last_cui": None
+}
+
+# Store session cookies
+mfinante_session = {
+    "jsessionid": None,
+    "cookies": {}
+}
+
+
+@api_router.get("/mfinante/session-status")
+async def get_mfinante_session_status():
+    """Get current MFinante session status"""
+    return {
+        "session_valid": mfinante_session.get("jsessionid") is not None,
+        "jsessionid": mfinante_session.get("jsessionid", "")[:20] + "..." if mfinante_session.get("jsessionid") else None,
+        "progress": mfinante_sync_progress
+    }
+
+
+@api_router.post("/mfinante/set-session")
+async def set_mfinante_session(jsessionid: str, cookies: dict = None):
+    """
+    Set MFinante session after manually solving CAPTCHA.
+    
+    How to get the session:
+    1. Go to https://mfinante.gov.ro/apps/infocodfiscal.html
+    2. Solve the CAPTCHA and submit with any CUI
+    3. Open DevTools (F12) -> Network tab
+    4. Find the request to infocodfiscal.html
+    5. Copy the jsessionid from the URL or Cookie header
+    """
+    global mfinante_session
+    mfinante_session["jsessionid"] = jsessionid
+    mfinante_session["cookies"] = cookies or {}
+    
+    # Test the session
+    test_valid = await test_mfinante_session()
+    
+    return {
+        "success": True,
+        "session_set": True,
+        "session_valid": test_valid,
+        "message": "Session set. " + ("Session is valid!" if test_valid else "Session may be invalid, try solving CAPTCHA again.")
+    }
+
+
+async def test_mfinante_session():
+    """Test if the MFinante session is valid"""
+    if not mfinante_session.get("jsessionid"):
+        return False
+    
+    try:
+        url = f"{MFINANTE_URL};jsessionid={mfinante_session['jsessionid']}?cod=14918042"
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Accept": "text/html,application/xhtml+xml",
+                    "Accept-Language": "ro-RO,ro;q=0.9,en;q=0.8",
+                },
+                cookies=mfinante_session.get("cookies", {}),
+                timeout=aiohttp.ClientTimeout(total=30),
+                allow_redirects=True
+            ) as response:
+                text = await response.text()
+                # Check if we got actual data (not CAPTCHA page)
+                if "Cod de validare" in text and "kaptcha" in text:
+                    return False  # Still asking for CAPTCHA
+                if "Date de identificare" in text or "Denumire" in text:
+                    return True
+                return False
+    except Exception as e:
+        logger.error(f"[MFINANTE] Session test error: {e}")
+        return False
+
+
+@api_router.get("/mfinante/test/{cui}")
+async def test_mfinante_cui(cui: str):
+    """Test MFinante with a single CUI using current session"""
+    if not mfinante_session.get("jsessionid"):
+        raise HTTPException(status_code=400, detail="No session set. Please solve CAPTCHA first.")
+    
+    try:
+        data = await fetch_mfinante_data(cui)
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+async def fetch_mfinante_data(cui: str):
+    """Fetch company data from MFinante"""
+    import re
+    from bs4 import BeautifulSoup
+    
+    url = f"{MFINANTE_URL};jsessionid={mfinante_session['jsessionid']}?cod={cui}"
+    
+    async with aiohttp.ClientSession() as session:
+        async with session.get(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml",
+                "Accept-Language": "ro-RO,ro;q=0.9,en;q=0.8",
+                "Referer": MFINANTE_URL,
+            },
+            cookies=mfinante_session.get("cookies", {}),
+            timeout=aiohttp.ClientTimeout(total=30)
+        ) as response:
+            html = await response.text()
+    
+    # Check if session expired
+    if "Cod de validare" in html and "kaptcha" in html:
+        raise Exception("Session expired - CAPTCHA required")
+    
+    soup = BeautifulSoup(html, 'html.parser')
+    
+    result = {
+        "cui": cui,
+        "found": False,
+        "date_identificare": {},
+        "date_fiscale": {},
+        "bilanturi": [],
+        "obligatii_restante": None
+    }
+    
+    # Parse tables
+    tables = soup.find_all('table')
+    
+    for table in tables:
+        # Try to identify table type by headers or content
+        rows = table.find_all('tr')
+        
+        for row in rows:
+            cells = row.find_all(['td', 'th'])
+            if len(cells) >= 2:
+                label = cells[0].get_text(strip=True).lower()
+                value = cells[1].get_text(strip=True) if len(cells) > 1 else ""
+                
+                # Date de identificare
+                if 'denumire' in label:
+                    result["date_identificare"]["denumire"] = value
+                    result["found"] = True
+                elif 'adresa' in label:
+                    result["date_identificare"]["adresa"] = value
+                elif 'nr. inreg' in label or 'numar inregistrare' in label:
+                    result["date_identificare"]["nr_reg_com"] = value
+                elif 'stare' in label:
+                    result["date_identificare"]["stare"] = value
+                elif 'data inregistrare' in label:
+                    result["date_identificare"]["data_inregistrare"] = value
+                    
+                # Date fiscale
+                elif 'platitor tva' in label or 'plătitor tva' in label:
+                    result["date_fiscale"]["platitor_tva"] = 'da' in value.lower()
+                elif 'tva la incasare' in label or 'tva încasare' in label:
+                    result["date_fiscale"]["tva_incasare"] = 'da' in value.lower()
+                elif 'accize' in label:
+                    result["date_fiscale"]["accize"] = 'da' in value.lower()
+    
+    # Parse bilanturi (usually in a select or separate section)
+    # Look for balance sheet years
+    selects = soup.find_all('select')
+    for select in selects:
+        options = select.find_all('option')
+        for opt in options:
+            value = opt.get('value', '')
+            text = opt.get_text(strip=True)
+            if value and ('20' in value or '20' in text):
+                result["bilanturi"].append({"an": text, "value": value})
+    
+    # Look for financial data in tables (cifra afaceri, profit, etc.)
+    # This is usually in a specific format
+    text_content = soup.get_text()
+    
+    # Try to extract financial indicators
+    patterns = {
+        "cifra_afaceri": r"cifr[aă]\s*(?:de\s*)?afaceri[:\s]*([0-9.,]+)",
+        "profit": r"profit[:\s]*([0-9.,]+)",
+        "pierdere": r"pierdere[:\s]*([0-9.,]+)",
+        "numar_angajati": r"num[aă]r\s*(?:mediu\s*)?(?:de\s*)?angaja[tț]i[:\s]*([0-9.,]+)",
+        "capital_social": r"capital\s*social[:\s]*([0-9.,]+)",
+    }
+    
+    for key, pattern in patterns.items():
+        match = re.search(pattern, text_content, re.IGNORECASE)
+        if match:
+            result["date_fiscale"][key] = match.group(1)
+    
+    return result
+
+
+@api_router.post("/mfinante/sync")
+async def start_mfinante_sync(
+    background_tasks: BackgroundTasks,
+    limit: int = 100,
+    only_without_bilant: bool = True
+):
+    """
+    Start MFinante sync for companies.
+    Requires valid session (solve CAPTCHA first).
+    """
+    global mfinante_sync_progress
+    
+    if not mfinante_session.get("jsessionid"):
+        raise HTTPException(status_code=400, detail="No session set. Please solve CAPTCHA first at /mfinante/set-session")
+    
+    if mfinante_sync_progress["active"]:
+        raise HTTPException(status_code=400, detail="Sync already in progress")
+    
+    # Reset progress
+    mfinante_sync_progress = {
+        "active": True,
+        "session_valid": True,
+        "total_firms": 0,
+        "processed": 0,
+        "found": 0,
+        "errors": 0,
+        "last_update": datetime.utcnow().isoformat(),
+        "last_cui": None
+    }
+    
+    background_tasks.add_task(run_mfinante_sync, limit, only_without_bilant)
+    
+    return {"message": "MFinante sync started", "status": "running"}
+
+
+async def run_mfinante_sync(limit: int, only_without_bilant: bool):
+    """Background task to sync with MFinante"""
+    global mfinante_sync_progress
+    
+    db = SessionLocal()
+    try:
+        # Get firms to sync
+        query = db.query(Firma).filter(Firma.cui.isnot(None), Firma.cui != '')
+        
+        if only_without_bilant:
+            # Only firms without financial data
+            query = query.filter(
+                (Firma.mf_cifra_afaceri.is_(None)) | 
+                (Firma.mf_last_sync.is_(None))
+            )
+        
+        query = query.limit(limit)
+        firms = query.all()
+        
+        mfinante_sync_progress["total_firms"] = len(firms)
+        logger.info(f"[MFINANTE] Starting sync for {len(firms)} firms")
+        
+        for firma in firms:
+            if not mfinante_sync_progress["active"]:
+                logger.info("[MFINANTE] Sync stopped by user")
+                break
+            
+            mfinante_sync_progress["last_cui"] = firma.cui
+            
+            try:
+                data = await fetch_mfinante_data(firma.cui)
+                
+                if data.get("found"):
+                    # Update firma with MFinante data
+                    di = data.get("date_identificare", {})
+                    df = data.get("date_fiscale", {})
+                    
+                    firma.mf_denumire = di.get("denumire")
+                    firma.mf_adresa = di.get("adresa")
+                    firma.mf_stare = di.get("stare")
+                    
+                    # Financial data
+                    if df.get("cifra_afaceri"):
+                        try:
+                            firma.mf_cifra_afaceri = float(df["cifra_afaceri"].replace(".", "").replace(",", "."))
+                        except:
+                            pass
+                    if df.get("profit"):
+                        try:
+                            firma.mf_profit = float(df["profit"].replace(".", "").replace(",", "."))
+                        except:
+                            pass
+                    if df.get("numar_angajati"):
+                        try:
+                            firma.mf_numar_angajati = int(df["numar_angajati"].replace(".", ""))
+                        except:
+                            pass
+                    
+                    firma.mf_last_sync = datetime.utcnow()
+                    firma.mf_sync_status = "found"
+                    mfinante_sync_progress["found"] += 1
+                else:
+                    firma.mf_sync_status = "not_found"
+                
+                db.commit()
+                
+            except Exception as e:
+                error_msg = str(e)
+                logger.error(f"[MFINANTE] Error for CUI {firma.cui}: {error_msg}")
+                
+                if "Session expired" in error_msg or "CAPTCHA" in error_msg:
+                    mfinante_sync_progress["session_valid"] = False
+                    logger.error("[MFINANTE] Session expired! Need new CAPTCHA.")
+                    break
+                
+                firma.mf_sync_status = "error"
+                db.commit()
+                mfinante_sync_progress["errors"] += 1
+            
+            mfinante_sync_progress["processed"] += 1
+            mfinante_sync_progress["last_update"] = datetime.utcnow().isoformat()
+            
+            # Rate limiting - be gentle with MFinante
+            await asyncio.sleep(2)  # 2 seconds between requests
+        
+        logger.info(f"[MFINANTE] Sync complete: {mfinante_sync_progress['processed']} processed, {mfinante_sync_progress['found']} found")
+        
+    except Exception as e:
+        logger.error(f"[MFINANTE] Sync error: {e}")
+    finally:
+        db.close()
+        mfinante_sync_progress["active"] = False
+
+
+@api_router.post("/mfinante/sync-stop")
+async def stop_mfinante_sync():
+    """Stop the MFinante sync"""
+    global mfinante_sync_progress
+    mfinante_sync_progress["active"] = False
+    return {"message": "MFinante sync stop requested"}
+
+
+@api_router.get("/mfinante/stats")
+async def get_mfinante_stats():
+    """Get MFinante sync statistics"""
+    db = SessionLocal()
+    try:
+        total = db.query(Firma).filter(Firma.cui.isnot(None)).count()
+        synced = db.query(Firma).filter(Firma.mf_last_sync.isnot(None)).count()
+        with_cifra = db.query(Firma).filter(Firma.mf_cifra_afaceri.isnot(None)).count()
+        
+        return {
+            "total_firme": total,
+            "synced_mfinante": synced,
+            "not_synced": total - synced,
+            "with_cifra_afaceri": with_cifra,
+            "session_status": {
+                "has_session": mfinante_session.get("jsessionid") is not None,
+                "session_valid": mfinante_sync_progress.get("session_valid", False)
+            }
+        }
+    finally:
+        db.close()
 
 
 # App setup

@@ -96,6 +96,14 @@ function App() {
   const [anafTestResult, setAnafTestResult] = useState(null);
   const [anafTestCui, setAnafTestCui] = useState("");
 
+  // MFinante sync state
+  const [mfStats, setMfStats] = useState(null);
+  const [mfProgress, setMfProgress] = useState(null);
+  const [mfLoading, setMfLoading] = useState(false);
+  const [mfSession, setMfSession] = useState("");
+  const [mfTestCui, setMfTestCui] = useState("");
+  const [mfTestResult, setMfTestResult] = useState(null);
+
   const fetchData = useCallback(async () => {
     try {
       const [configRes, statsRes, filesRes, runsRes, currentRes, dbStatsRes] = await Promise.all([
@@ -558,6 +566,93 @@ function App() {
     if (hours > 0) return `${hours}h ${minutes}m`;
     if (minutes > 0) return `${minutes}m ${secs}s`;
     return `${secs}s`;
+  };
+
+  // MFinante Functions
+  const loadMfStats = useCallback(async () => {
+    try {
+      const res = await axios.get(`${API}/mfinante/stats`);
+      setMfStats(res.data);
+    } catch (error) {
+      console.error("Error loading MFinante stats:", error);
+    }
+  }, []);
+
+  const loadMfProgress = useCallback(async () => {
+    try {
+      const res = await axios.get(`${API}/mfinante/session-status`);
+      setMfProgress(res.data);
+    } catch (error) {
+      console.error("Error loading MFinante progress:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'anaf') {
+      loadMfStats();
+      loadMfProgress();
+    }
+  }, [activeTab, loadMfStats, loadMfProgress]);
+
+  const setMfSessionId = async () => {
+    if (!mfSession) {
+      toast.error("Introdu JSESSIONID");
+      return;
+    }
+    setMfLoading(true);
+    try {
+      const res = await axios.post(`${API}/mfinante/set-session?jsessionid=${encodeURIComponent(mfSession)}`);
+      if (res.data.session_valid) {
+        toast.success("Sesiune MFinante validă!");
+      } else {
+        toast.warning("Sesiune setată, dar poate fi invalidă. Încearcă să rezolvi CAPTCHA din nou.");
+      }
+      loadMfProgress();
+    } catch (error) {
+      toast.error("Eroare la setarea sesiunii");
+    } finally {
+      setMfLoading(false);
+    }
+  };
+
+  const testMfCui = async () => {
+    if (!mfTestCui) {
+      toast.error("Introdu un CUI");
+      return;
+    }
+    setMfLoading(true);
+    try {
+      const res = await axios.get(`${API}/mfinante/test/${mfTestCui}`);
+      setMfTestResult(res.data);
+      toast.success("Test MFinante reușit!");
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Eroare la testare");
+      setMfTestResult({ error: error.response?.data?.detail || error.message });
+    } finally {
+      setMfLoading(false);
+    }
+  };
+
+  const startMfSync = async (limit = 100) => {
+    setMfLoading(true);
+    try {
+      await axios.post(`${API}/mfinante/sync?limit=${limit}`);
+      toast.success("Sincronizare MFinante pornită!");
+      loadMfProgress();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Eroare la pornirea sincronizării");
+    } finally {
+      setMfLoading(false);
+    }
+  };
+
+  const stopMfSync = async () => {
+    try {
+      await axios.post(`${API}/mfinante/sync-stop`);
+      toast.info("Sincronizare oprită");
+    } catch (error) {
+      toast.error("Eroare la oprire");
+    }
   };
 
   const formatBytes = (bytes) => {
@@ -1415,6 +1510,138 @@ function App() {
                     <pre>{JSON.stringify(anafTestResult, null, 2)}</pre>
                   </div>
                 )}
+              </CardContent>
+            </Card>
+
+            {/* MFinante Section */}
+            <Card className="mfinante-card" data-testid="mfinante-section">
+              <CardHeader>
+                <div className="card-header-with-action">
+                  <div>
+                    <CardTitle className="card-title">
+                      <FileSpreadsheet size={20} />
+                      MFinante - Bilanțuri
+                    </CardTitle>
+                    <CardDescription>
+                      Date financiare de pe mfinante.gov.ro (cifră afaceri, profit, nr. angajați)
+                    </CardDescription>
+                  </div>
+                  <Button variant="outline" onClick={() => { loadMfStats(); loadMfProgress(); }}>
+                    <RefreshCw size={16} />
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {/* Session Setup */}
+                <div className="mf-session-section">
+                  <h4>1. Rezolvă CAPTCHA și setează sesiunea</h4>
+                  <ol className="mf-instructions">
+                    <li>Deschide <a href="https://mfinante.gov.ro/apps/infocodfiscal.html" target="_blank" rel="noopener noreferrer">mfinante.gov.ro/apps/infocodfiscal.html</a></li>
+                    <li>Rezolvă CAPTCHA și trimite cu orice CUI (ex: 14918042)</li>
+                    <li>Apasă F12 → Network → Găsește request-ul → Copiază <code>jsessionid</code> din URL</li>
+                    <li>Lipește mai jos și apasă "Setează Sesiune"</li>
+                  </ol>
+                  <div className="mf-session-form">
+                    <input
+                      type="text"
+                      placeholder="jsessionid (ex: Gtjp5kQJsBZ7Kd4ZU07zCai6IAzJ...)"
+                      value={mfSession}
+                      onChange={(e) => setMfSession(e.target.value)}
+                      className="test-input"
+                    />
+                    <Button onClick={setMfSessionId} disabled={mfLoading}>
+                      {mfLoading ? <Loader2 className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}
+                      Setează Sesiune
+                    </Button>
+                  </div>
+                  {mfProgress && (
+                    <div className={`session-status ${mfProgress.session_valid ? 'valid' : 'invalid'}`}>
+                      {mfProgress.session_valid ? (
+                        <><CheckCircle2 size={16} /> Sesiune validă</>
+                      ) : (
+                        <><XCircle size={16} /> Sesiune invalidă sau expirată</>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Test CUI */}
+                <div className="mf-test-section">
+                  <h4>2. Testează cu un CUI</h4>
+                  <div className="test-form">
+                    <input
+                      type="text"
+                      placeholder="CUI (ex: 14918042)"
+                      value={mfTestCui}
+                      onChange={(e) => setMfTestCui(e.target.value)}
+                      className="test-input"
+                    />
+                    <Button onClick={testMfCui} disabled={mfLoading || !mfProgress?.session_valid}>
+                      {mfLoading ? <Loader2 className="animate-spin" size={16} /> : <Search size={16} />}
+                      Test
+                    </Button>
+                  </div>
+                  {mfTestResult && (
+                    <div className="test-result">
+                      <pre>{JSON.stringify(mfTestResult, null, 2)}</pre>
+                    </div>
+                  )}
+                </div>
+
+                {/* Sync Actions */}
+                <div className="mf-sync-section">
+                  <h4>3. Sincronizează firme</h4>
+                  {mfStats && (
+                    <div className="mf-stats-mini">
+                      <span>Total: {mfStats.total_firme?.toLocaleString()}</span>
+                      <span>Sincronizate: {mfStats.synced_mfinante?.toLocaleString()}</span>
+                      <span>Cu cifră afaceri: {mfStats.with_cifra_afaceri?.toLocaleString()}</span>
+                    </div>
+                  )}
+                  <div className="sync-options">
+                    <Button 
+                      onClick={() => startMfSync(50)}
+                      disabled={mfLoading || !mfProgress?.session_valid}
+                    >
+                      Test 50 firme
+                    </Button>
+                    <Button 
+                      variant="outline"
+                      onClick={() => startMfSync(500)}
+                      disabled={mfLoading || !mfProgress?.session_valid}
+                    >
+                      Sync 500 firme
+                    </Button>
+                    <Button 
+                      variant="destructive"
+                      onClick={stopMfSync}
+                      disabled={!mfProgress?.progress?.active}
+                    >
+                      <XCircle size={16} />
+                      Stop
+                    </Button>
+                  </div>
+                  {mfProgress?.progress?.active && (
+                    <div className="mf-progress">
+                      <div className="progress-bar-container">
+                        <div 
+                          className="progress-bar" 
+                          style={{ width: `${mfProgress.progress.total_firms > 0 ? (mfProgress.progress.processed / mfProgress.progress.total_firms * 100) : 0}%` }}
+                        />
+                      </div>
+                      <div className="progress-stats">
+                        <span>Procesat: {mfProgress.progress.processed} / {mfProgress.progress.total_firms}</span>
+                        <span>Găsite: {mfProgress.progress.found}</span>
+                        <span>Erori: {mfProgress.progress.errors}</span>
+                        <span>Ultimul CUI: {mfProgress.progress.last_cui}</span>
+                      </div>
+                    </div>
+                  )}
+                  <p className="sync-note">
+                    ⚠️ MFinante este lent (~2 sec/firmă). Pentru 1000 de firme = ~30 minute.
+                    Sesiunea expiră după ~15-30 min inactivitate.
+                  </p>
+                </div>
               </CardContent>
             </Card>
           </div>
