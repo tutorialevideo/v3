@@ -717,13 +717,31 @@ async def get_firme(skip: int = 0, limit: int = 100, search: str = None):
     try:
         query = db.query(Firma)
         if search:
-            query = query.filter(Firma.denumire_normalized.contains(normalize_company_name(search)))
+            # Search by CUI or denumire
+            search_term = search.strip()
+            if search_term.isdigit():
+                # Search by CUI
+                query = query.filter(Firma.cui.contains(search_term))
+            else:
+                query = query.filter(Firma.denumire_normalized.contains(normalize_company_name(search_term)))
         total = query.count()
-        firme = query.order_by(Firma.created_at.desc()).offset(skip).limit(limit).all()
+        firme = query.order_by(Firma.id.desc()).offset(skip).limit(limit).all()
+        
+        # Get dosare counts
+        result = []
+        for f in firme:
+            dosare_count = db.query(Dosar).filter(Dosar.firma_id == f.id).count()
+            result.append({
+                "id": f.id, 
+                "cui": f.cui, 
+                "denumire": f.denumire,
+                "dosare_count": dosare_count,
+                "created_at": f.created_at.isoformat() if f.created_at else None
+            })
+        
         return {
             "total": total,
-            "firme": [{"id": f.id, "cui": f.cui, "denumire": f.denumire, 
-                      "created_at": f.created_at.isoformat() if f.created_at else None} for f in firme]
+            "firme": result
         }
     finally:
         db.close()

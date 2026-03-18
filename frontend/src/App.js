@@ -61,6 +61,14 @@ function App() {
   const [importResult, setImportResult] = useState(null);
   const [importLog, setImportLog] = useState([]);
   const [importError, setImportError] = useState(null);
+  
+  // Firme viewer state
+  const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard' or 'firme'
+  const [firmeList, setFirmeList] = useState([]);
+  const [firmeTotal, setFirmeTotal] = useState(0);
+  const [firmePage, setFirmePage] = useState(0);
+  const [firmeSearch, setFirmeSearch] = useState("");
+  const [firmeLoading, setFirmeLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -223,6 +231,32 @@ function App() {
     window.open(`${API}/db/firme/export`, '_blank');
   };
 
+  const loadFirme = useCallback(async (page = 0, search = "") => {
+    setFirmeLoading(true);
+    try {
+      const res = await axios.get(`${API}/db/firme`, {
+        params: { skip: page * 50, limit: 50, search: search || undefined }
+      });
+      setFirmeList(res.data.firme);
+      setFirmeTotal(res.data.total);
+    } catch (error) {
+      toast.error("Eroare la încărcarea firmelor");
+    } finally {
+      setFirmeLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'firme') {
+      loadFirme(firmePage, firmeSearch);
+    }
+  }, [activeTab, firmePage, loadFirme]);
+
+  const handleFirmeSearch = () => {
+    setFirmePage(0);
+    loadFirme(0, firmeSearch);
+  };
+
   const formatBytes = (bytes) => {
     if (bytes === 0) return '0 B';
     const k = 1024;
@@ -259,9 +293,31 @@ function App() {
           </div>
           <p className="header-subtitle">Descărcare automată dosare firme din portalquery.just.ro • 246 instituții</p>
         </div>
+        
+        {/* Tab Navigation */}
+        <div className="tab-navigation">
+          <button 
+            className={`tab-btn ${activeTab === 'dashboard' ? 'active' : ''}`}
+            onClick={() => setActiveTab('dashboard')}
+            data-testid="tab-dashboard"
+          >
+            <Activity size={18} />
+            Dashboard
+          </button>
+          <button 
+            className={`tab-btn ${activeTab === 'firme' ? 'active' : ''}`}
+            onClick={() => setActiveTab('firme')}
+            data-testid="tab-firme"
+          >
+            <Building2 size={18} />
+            Firme ({dbStats?.firme_total?.toLocaleString() || 0})
+          </button>
+        </div>
       </header>
 
       <main className="main-content">
+        {activeTab === 'dashboard' ? (
+          <>
         {/* Import CUI Section */}
         <Card className="import-card" data-testid="import-section">
           <CardHeader>
@@ -761,6 +817,107 @@ function App() {
             </CardContent>
           </Card>
         </div>
+          </>
+        ) : (
+          /* Firme Tab */
+          <div className="firme-container" data-testid="firme-section">
+            <Card className="firme-card">
+              <CardHeader>
+                <div className="card-header-with-action">
+                  <div>
+                    <CardTitle className="card-title">
+                      <Building2 size={20} />
+                      Firme în Baza de Date
+                    </CardTitle>
+                    <CardDescription>
+                      {firmeTotal.toLocaleString()} firme totale • {dbStats?.firme_with_cui?.toLocaleString() || 0} cu CUI
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {/* Search */}
+                <div className="firme-search">
+                  <Input
+                    placeholder="Caută după denumire sau CUI..."
+                    value={firmeSearch}
+                    onChange={(e) => setFirmeSearch(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleFirmeSearch()}
+                    data-testid="firme-search-input"
+                  />
+                  <Button onClick={handleFirmeSearch} disabled={firmeLoading}>
+                    <Search size={16} />
+                    Caută
+                  </Button>
+                  <Button variant="outline" onClick={() => { setFirmeSearch(""); setFirmePage(0); loadFirme(0, ""); }}>
+                    Reset
+                  </Button>
+                </div>
+
+                {/* Firme Table */}
+                <div className="firme-table-container">
+                  {firmeLoading ? (
+                    <div className="firme-loading">
+                      <Loader2 className="animate-spin" size={32} />
+                      <p>Se încarcă...</p>
+                    </div>
+                  ) : (
+                    <table className="firme-table">
+                      <thead>
+                        <tr>
+                          <th>ID</th>
+                          <th>CUI</th>
+                          <th>Denumire</th>
+                          <th>Dosare</th>
+                          <th>Creat</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {firmeList.map((firma) => (
+                          <tr key={firma.id} data-testid={`firma-row-${firma.id}`}>
+                            <td className="col-id">{firma.id}</td>
+                            <td className="col-cui">
+                              {firma.cui ? (
+                                <Badge variant="outline" className="badge-cui">{firma.cui}</Badge>
+                              ) : (
+                                <span className="no-cui">-</span>
+                              )}
+                            </td>
+                            <td className="col-denumire">{firma.denumire}</td>
+                            <td className="col-dosare">{firma.dosare_count || 0}</td>
+                            <td className="col-date">{firma.created_at ? new Date(firma.created_at).toLocaleDateString('ro-RO') : '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+
+                {/* Pagination */}
+                <div className="firme-pagination">
+                  <Button 
+                    variant="outline" 
+                    disabled={firmePage === 0 || firmeLoading}
+                    onClick={() => setFirmePage(p => Math.max(0, p - 1))}
+                  >
+                    ← Anterior
+                  </Button>
+                  <span className="pagination-info">
+                    Pagina {firmePage + 1} din {Math.ceil(firmeTotal / 50) || 1}
+                    <small>({(firmePage * 50) + 1} - {Math.min((firmePage + 1) * 50, firmeTotal)} din {firmeTotal.toLocaleString()})</small>
+                  </span>
+                  <Button 
+                    variant="outline" 
+                    disabled={(firmePage + 1) * 50 >= firmeTotal || firmeLoading}
+                    onClick={() => setFirmePage(p => p + 1)}
+                  >
+                    Următor →
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
       </main>
 
       <footer className="app-footer">
