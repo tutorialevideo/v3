@@ -119,14 +119,22 @@ scheduler = AsyncIOScheduler()
 SOAP_URL = "http://portalquery.just.ro/query.asmx"
 SOAP_ACTION_DOSARE2 = "portalquery.just.ro/CautareDosare2"
 
-# Pattern to match companies (SC, SRL, SA, etc.)
+# Pattern to match companies (SC, SRL, SA, etc.) - EXCLUDES PFA, II, IF
 COMPANY_PATTERNS = [
-    r'\bSC\b', r'\bSRL\b', r'\bSA\b', r'\bSCS\b', r'\bSNC\b', r'\bSCA\b',
+    r'\bSRL\b', r'\bSA\b', r'\bSCS\b', r'\bSNC\b', r'\bSCA\b',
     r'\bSPRL\b', r'\bGMBH\b', r'\bLTD\b', r'\bLLC\b', r'\bINC\b',
-    r'\bPFA\b', r'\bII\b', r'\bIF\b', r'\bONG\b', r'\bASSOC\b',
-    r'S\.R\.L\.', r'S\.A\.', r'S\.C\.', r'S\.C\.S\.', r'S\.N\.C\.'
+    r'\bONG\b', r'\bASSOC\b',
+    r'S\.R\.L\.', r'S\.A\.', r'S\.C\.S\.', r'S\.N\.C\.'
 ]
 COMPANY_REGEX = re.compile('|'.join(COMPANY_PATTERNS), re.IGNORECASE)
+
+# Patterns to EXCLUDE (individuals, not companies)
+EXCLUDE_PATTERNS = [
+    r'PERSOANĂ FIZICĂ', r'PERSOANA FIZICA', r'PFA\b',
+    r'ÎNTREPRINDERE INDIVIDUALĂ', r'INTREPRINDERE INDIVIDUALA',
+    r'\bII\b', r'\bIF\b', r'CABINET INDIVIDUAL', r'BIROU INDIVIDUAL'
+]
+EXCLUDE_REGEX = re.compile('|'.join(EXCLUDE_PATTERNS), re.IGNORECASE)
 
 # Complete list of all 246 institutions
 INSTITUTII = [
@@ -271,7 +279,11 @@ def normalize_company_name(name: str) -> str:
 
 
 def is_company(name: str) -> bool:
-    """Check if the name is a company (not a person)"""
+    """Check if the name is a real company (SRL, SA, etc.) - excludes PFA, II, IF"""
+    # First check if it should be excluded (PFA, II, etc.)
+    if EXCLUDE_REGEX.search(name):
+        return False
+    # Then check if it's a company
     return bool(COMPANY_REGEX.search(name))
 
 
@@ -827,19 +839,21 @@ async def get_db_stats():
 @api_router.post("/db/import-cui")
 async def import_cui_csv(
     file: UploadFile = File(...),
-    cui_column: int = None,
-    denumire_column: int = None,
-    has_header: bool = True
+    cui_column: int = 1,
+    denumire_column: int = 0,
+    has_header: bool = False,
+    only_companies: bool = True
 ):
     """
     Import file with CUI mappings from ONRC registry.
     Supports any file type (CSV, TXT, etc.)
     Supports delimiters: ^ (caret), ; (semicolon), , (comma), tab
     
-    If file has no header, specify column indexes (0-based):
-    - cui_column: index for CUI column
-    - denumire_column: index for DENUMIRE column
-    - has_header: set to false if file has no header row
+    Default settings for ONRC files:
+    - cui_column: 1 (second column)
+    - denumire_column: 0 (first column)
+    - has_header: false
+    - only_companies: true (excludes PFA, II, IF - only SRL, SA, etc.)
     """
     
     # Read content
@@ -852,8 +866,12 @@ async def import_cui_csv(
         except UnicodeDecodeError:
             decoded = content.decode('cp1252')
     
-    # Detect delimiter by checking first line
-    first_line = decoded.split('\n')[0]
+    # Detect delimiter by checking first non-empty line
+    lines = [l for l in decoded.strip().split('\n') if l.strip()]
+    if not lines:
+        raise HTTPException(status_code=400, detail="File is empty")
+    
+    first_line = lines[0]
     delimiter = '^'  # Default for ONRC files
     if '^' in first_line:
         delimiter = '^'
@@ -864,56 +882,19 @@ async def import_cui_csv(
     elif ',' in first_line:
         delimiter = ','
     
-    logger.info(f"Detected delimiter: '{delimiter}'")
+    logger.info(f"Detected delimiter: '{delimiter}', total lines: {len(lines)}")
     
-    lines = decoded.strip().split('\n')
+    cui_col_idx = cui_column
+    denumire_col_idx = denumire_column
+    start_row = 1 if has_header else 0
     
-    # If manual column indexes are provided, use them
-    if cui_column is not None and denumire_column is not None:
-        # Manual mode - use column indexes
-        cui_col_idx = cui_column
-        denumire_col_idx = denumire_column
-        start_row = 1 if has_header else 0
-        use_manual = True
-        logger.info(f"Using manual columns: CUI={cui_col_idx}, DENUMIRE={denumire_col_idx}, start_row={start_row}")
-    else:
-        # Auto-detect mode
-        use_manual = False
-        if has_header:
-            header = lines[0].split(delimiter)
-            header_lower = [h.strip().lower() for h in header]
-            
-            cui_col_idx = None
-            denumire_col_idx = None
-            
-            for i, col in enumerate(header_lower):
-                if col in ['cui', 'cif', 'cod_fiscal', 'cod']:
-                    cui_col_idx = i
-                elif col in ['denumire', 'nume_firma', 'company_name', 'nume', 'firma']:
-                    denumire_col_idx = i
-            
-            if cui_col_idx is None or denumire_col_idx is None:
-                # Return column info for user to specify
-                return {
-                    "error": "Could not auto-detect columns",
-                    "detected_columns": header[:20],
-                    "message": "Please specify cui_column and denumire_column indexes (0-based)",
-                    "example": f"Found {len(header)} columns. First 20: {header[:20]}"
-                }
-            
-            start_row = 1
-            logger.info(f"Auto-detected columns: CUI={cui_col_idx} ({header[cui_col_idx]}), DENUMIRE={denumire_col_idx} ({header[denumire_col_idx]})")
-        else:
-            return {
-                "error": "No header and no column indexes specified",
-                "message": "Please specify cui_column and denumire_column indexes (0-based)",
-                "first_row_sample": lines[0].split(delimiter)[:20] if lines else []
-            }
+    logger.info(f"Using columns: CUI={cui_col_idx}, DENUMIRE={denumire_col_idx}, start_row={start_row}, only_companies={only_companies}")
     
     db = SessionLocal()
     results = {
         "total_rows": 0,
         "processed": 0,
+        "skipped_not_company": 0,
         "matched": 0,
         "not_found": 0,
         "already_has_cui": 0,
@@ -921,7 +902,8 @@ async def import_cui_csv(
         "not_found_list": [],
         "delimiter_detected": delimiter,
         "cui_column_index": cui_col_idx,
-        "denumire_column_index": denumire_col_idx
+        "denumire_column_index": denumire_col_idx,
+        "only_companies": only_companies
     }
     
     # Build lookup dictionary
@@ -949,10 +931,18 @@ async def import_cui_csv(
             if len(cols) <= max(cui_col_idx, denumire_col_idx):
                 continue
             
-            cui_value = cols[cui_col_idx].strip() if cols[cui_col_idx] else None
             denumire_value = cols[denumire_col_idx].strip() if cols[denumire_col_idx] else None
+            cui_value = cols[cui_col_idx].strip() if cols[cui_col_idx] else None
             
-            if not cui_value or not denumire_value:
+            if not denumire_value:
+                continue
+            
+            # Filter: only companies (SRL, SA, etc.) - exclude PFA, II, IF
+            if only_companies and not is_company(denumire_value):
+                results["skipped_not_company"] += 1
+                continue
+            
+            if not cui_value or cui_value == '0':
                 continue
             
             results["processed"] += 1
@@ -993,7 +983,7 @@ async def import_cui_csv(
             if batch_count >= 1000:
                 db.commit()
                 batch_count = 0
-                logger.info(f"Processed {results['total_rows']} rows, matched {results['matched']}")
+                logger.info(f"Processed {results['total_rows']} rows, matched {results['matched']}, skipped {results['skipped_not_company']} non-companies")
         
         db.commit()
         logger.info(f"Import complete: {results}")

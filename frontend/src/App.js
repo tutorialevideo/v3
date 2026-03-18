@@ -289,19 +289,19 @@ function App() {
                   <div className="import-stats-grid">
                     <div className="import-stat">
                       <span className="import-stat-value">{importResult.total_rows?.toLocaleString()}</span>
-                      <span className="import-stat-label">Rânduri CSV</span>
+                      <span className="import-stat-label">Rânduri totale</span>
                     </div>
                     <div className="import-stat">
+                      <span className="import-stat-value">{importResult.processed?.toLocaleString() || 0}</span>
+                      <span className="import-stat-label">Firme procesate</span>
+                    </div>
+                    <div className="import-stat success">
                       <span className="import-stat-value">{importResult.matched?.toLocaleString() || 0}</span>
                       <span className="import-stat-label">Găsite în DB</span>
                     </div>
-                    <div className="import-stat success">
-                      <span className="import-stat-value">{importResult.updated?.length || 0}</span>
-                      <span className="import-stat-label">CUI Actualizate</span>
-                    </div>
                     <div className="import-stat warning">
-                      <span className="import-stat-value">{importResult.already_has_cui?.toLocaleString()}</span>
-                      <span className="import-stat-label">Aveau deja CUI</span>
+                      <span className="import-stat-value">{(importResult.skipped_not_company || 0).toLocaleString()}</span>
+                      <span className="import-stat-label">PFA/II sărite</span>
                     </div>
                   </div>
                   
