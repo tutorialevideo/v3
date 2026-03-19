@@ -4,6 +4,37 @@ from datetime import datetime, timezone
 from typing import List, Optional
 from pydantic import BaseModel, Field, ConfigDict
 
+# All valid CategorieCaz values from portalquery.just.ro WSDL
+CATEGORII_CAZ = [
+    "Litigiicuprofesionistii",
+    "Civil",
+    "Penal",
+    "Faliment",
+    "Contenciosadministrativsifiscal",
+    "Minorisifamilie",
+    "Litigiidemunca",
+    "Altematerii",
+    "Asigurarisociale",
+    "ProprietateIntelectuala",
+    "Dreptmaritimsifluvial",
+    "Insolventapersoaneifizice",
+]
+
+CATEGORII_NUME = {
+    "Litigiicuprofesionistii": "Litigii cu profesioniștii",
+    "Civil": "Civil",
+    "Penal": "Penal",
+    "Faliment": "Faliment / Insolvență",
+    "Contenciosadministrativsifiscal": "Contencios administrativ și fiscal",
+    "Minorisifamilie": "Minori și familie",
+    "Litigiidemunca": "Litigii de muncă",
+    "Altematerii": "Alte materii",
+    "Asigurarisociale": "Asigurări sociale",
+    "ProprietateIntelectuala": "Proprietate intelectuală",
+    "Dreptmaritimsifluvial": "Drept maritim și fluvial",
+    "Insolventapersoaneifizice": "Insolvența persoanei fizice",
+}
+
 
 class JobConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -15,6 +46,8 @@ class JobConfig(BaseModel):
     date_end: Optional[str] = None
     cron_enabled: bool = False
     is_active: bool = True
+    # Category filter — None means all categories
+    categorie_caz: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -27,6 +60,7 @@ class JobConfigUpdate(BaseModel):
     date_end: Optional[str] = None
     cron_enabled: Optional[bool] = None
     is_active: Optional[bool] = None
+    categorie_caz: Optional[str] = None
 
 
 class JobRun(BaseModel):

@@ -29,6 +29,7 @@ export default function DashboardPage({ ctx }) {
     searchTerm, setSearchTerm, scheduleHour, setScheduleHour,
     scheduleMinute, setScheduleMinute, cronEnabled, setCronEnabled,
     dateStart, setDateStart, dateEnd, setDateEnd,
+    categoriiCaz, categorieCaz, setCategorieCaz,
     searchPreview, setSearchPreview, searchLoading, showAdvancedConfig, setShowAdvancedConfig,
     downloadLogs, downloadProgress,
     importLoading, importResult, importLog, importError,
@@ -384,6 +385,37 @@ export default function DashboardPage({ ctx }) {
 
               {showAdvancedConfig && (
                 <div style={{marginTop: '12px'}}>
+
+                  {/* Categorie Caz selector — shown first, most important filter */}
+                  <div className="form-group">
+                    <Label htmlFor="categorieCaz">
+                      Categorie Dosar
+                      <span style={{fontWeight:'normal', opacity:0.6, fontSize:'0.85em'}}> — filtrează ce tipuri de dosare salvezi</span>
+                    </Label>
+                    <select
+                      id="categorieCaz"
+                      data-testid="categorie-caz-select"
+                      value={categorieCaz}
+                      onChange={(e) => setCategorieCaz(e.target.value)}
+                      style={{
+                        width: '100%', padding: '8px 12px', borderRadius: '6px',
+                        border: '1px solid var(--border)', background: 'var(--bg-elevated)',
+                        color: 'var(--text-primary)', fontSize: '0.875rem',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <option value="">Toate categoriile</option>
+                      {categoriiCaz.map(cat => (
+                        <option key={cat.value} value={cat.value}>{cat.label}</option>
+                      ))}
+                    </select>
+                    {categorieCaz && (
+                      <p style={{fontSize:'0.78rem', color:'var(--primary)', marginTop:'4px'}}>
+                        Vor fi salvate doar dosarele din categoria: <strong>{categoriiCaz.find(c => c.value === categorieCaz)?.label || categorieCaz}</strong>
+                      </p>
+                    )}
+                  </div>
+
                   <div className="form-group">
                     <Label htmlFor="searchTerm">Nume Firmă <span style={{fontWeight: 'normal', opacity: 0.6, fontSize: '0.85em'}}>(opțional)</span></Label>
                     <div className="search-input-group">

@@ -75,6 +75,8 @@ function App() {
   const [cronEnabled, setCronEnabled] = useState(false);
   const [dateStart, setDateStart] = useState(null);
   const [dateEnd, setDateEnd] = useState(null);
+  const [categoriiCaz, setCategoriiCaz] = useState([]);
+  const [categorieCaz, setCategorieCaz] = useState("");
   const [searchPreview, setSearchPreview] = useState(null);
   const [searchLoading, setSearchLoading] = useState(false);
   const [importLoading, setImportLoading] = useState(false);
@@ -184,18 +186,23 @@ function App() {
         if (configRes.data.date_end) {
           setDateEnd(new Date(configRes.data.date_end));
         }
+        if (configRes.data.categorie_caz !== undefined) {
+          setCategorieCaz(configRes.data.categorie_caz || "");
+        }
       }
     } catch (error) {
       console.error("Error fetching data:", error);
-      // Only show error toast once, not repeatedly
       if (!window._dataErrorShown) {
         window._dataErrorShown = true;
-        // Don't show error toast if it's just PostgreSQL unavailable
-        // This allows CAPTCHA and other non-DB features to work
       }
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  // Load categorii caz on mount
+  useEffect(() => {
+    axios.get(`${API}/categorii-caz`).then(res => setCategoriiCaz(res.data)).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -268,7 +275,8 @@ function App() {
         schedule_minute: scheduleMinute,
         cron_enabled: cronEnabled,
         date_start: dateStart ? format(dateStart, 'yyyy-MM-dd') : null,
-        date_end: dateEnd ? format(dateEnd, 'yyyy-MM-dd') : null
+        date_end: dateEnd ? format(dateEnd, 'yyyy-MM-dd') : null,
+        categorie_caz: categorieCaz || ""
       });
       toast.success("Configurație salvată cu succes!");
       fetchData();
@@ -283,14 +291,14 @@ function App() {
       return;
     }
     try {
-      // Auto-save config then run
       await axios.put(`${API}/config`, {
         search_term: searchTerm,
         schedule_hour: scheduleHour,
         schedule_minute: scheduleMinute,
         cron_enabled: cronEnabled,
         date_start: dateStart ? format(dateStart, 'yyyy-MM-dd') : null,
-        date_end: dateEnd ? format(dateEnd, 'yyyy-MM-dd') : null
+        date_end: dateEnd ? format(dateEnd, 'yyyy-MM-dd') : null,
+        categorie_caz: categorieCaz || ""
       });
       await axios.post(`${API}/run`);
       setDownloadLogs([]);
@@ -1179,6 +1187,7 @@ function App() {
     searchTerm, setSearchTerm, scheduleHour, setScheduleHour,
     scheduleMinute, setScheduleMinute, cronEnabled, setCronEnabled,
     dateStart, setDateStart, dateEnd, setDateEnd,
+    categoriiCaz, categorieCaz, setCategorieCaz,
     searchPreview, setSearchPreview, searchLoading, setSearchLoading,
     showAdvancedConfig, setShowAdvancedConfig,
     downloadLogs, downloadProgress,

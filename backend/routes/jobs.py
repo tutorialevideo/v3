@@ -20,7 +20,7 @@ from constants import (
     INSTITUTII, SOAP_URL, SOAP_ACTION_DOSARE2, DOWNLOADS_DIR
 )
 from helpers import build_soap_request, parse_soap_response, extract_companies_from_parti, parse_date, normalize_company_name
-from schemas import JobConfig, JobConfigUpdate, JobRun, SearchRequest
+from schemas import JobConfig, JobConfigUpdate, JobRun, SearchRequest, CATEGORII_CAZ, CATEGORII_NUME
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -41,14 +41,21 @@ async def fetch_dosare(session: aiohttp.ClientSession, nume_parte: str, institut
     return []
 
 
-async def save_to_postgres(dosare: list, search_term: str) -> dict:
+async def save_to_postgres(dosare: list, search_term: str, categorie_caz: str = None) -> dict:
     db = database.SessionLocal()
     Firma = database.Firma
     Dosar = database.Dosar
     TimelineEvent = database.TimelineEvent
-    stats = {'firme_new': 0, 'firme_existing': 0, 'dosare_new': 0, 'timeline_new': 0}
+    stats = {'firme_new': 0, 'firme_existing': 0, 'dosare_new': 0, 'timeline_new': 0, 'skipped_categorie': 0}
     try:
         for dosar_data in dosare:
+            # Filter by categorie if specified
+            if categorie_caz:
+                dosar_categorie = dosar_data.get('categorieCaz', '')
+                if dosar_categorie != categorie_caz:
+                    stats['skipped_categorie'] += 1
+                    continue
+
             parti = dosar_data.get('parti', [])
             if not isinstance(parti, list):
                 continue
@@ -105,19 +112,22 @@ async def save_to_postgres(dosare: list, search_term: str) -> dict:
 # ─── Download job ─────────────────────────────────────────────────────────────
 
 async def run_download_job(search_term: str, job_run_id: str,
-                           date_start: str = "", date_end: str = "", triggered_by: str = "manual"):
+                           date_start: str = "", date_end: str = "",
+                           triggered_by: str = "manual", categorie_caz: str = None):
     state.download_job_stop_flag = False
     label_info = search_term if search_term and search_term.strip() else f"{date_start or '*'} → {date_end or '*'}"
-    logger.info(f"Starting download job: {label_info}")
+    cat_label = CATEGORII_NUME.get(categorie_caz, categorie_caz) if categorie_caz else "Toate categoriile"
+    logger.info(f"Starting download job: {label_info} | categorie: {cat_label}")
 
     state.download_job_progress["active"] = True
     state.download_job_progress.update({"processed": 0, "total": len(INSTITUTII), "dosare_found": 0, "firme_new": 0, "logs": []})
     state.add_download_log(f"Job pornit: {label_info}")
+    state.add_download_log(f"Categorie: {cat_label}")
     state.add_download_log(f"Procesare {len(INSTITUTII)} instituții...")
 
     all_dosare = []
     processed = 0
-    total_stats = {'firme_new': 0, 'firme_existing': 0, 'dosare_new': 0, 'timeline_new': 0}
+    total_stats = {'firme_new': 0, 'firme_existing': 0, 'dosare_new': 0, 'timeline_new': 0, 'skipped_categorie': 0}
 
     async with aiohttp.ClientSession() as session:
         for institutie in INSTITUTII:
@@ -126,11 +136,20 @@ async def run_download_job(search_term: str, job_run_id: str,
                 break
             dosare = await fetch_dosare(session, search_term, institutie, date_start, date_end)
             if dosare:
-                stats = await save_to_postgres(dosare, search_term)
+                stats = await save_to_postgres(dosare, search_term, categorie_caz)
                 for key in total_stats:
-                    total_stats[key] += stats[key]
-                all_dosare.extend(dosare)
-                state.add_download_log(f"[{processed+1}/{len(INSTITUTII)}] {institutie}: {len(dosare)} dosare, {stats['firme_new']} firme noi")
+                    total_stats[key] = total_stats.get(key, 0) + stats.get(key, 0)
+                # Only count dosare that passed the category filter
+                all_dosare.extend(d for d in dosare if not categorie_caz or d.get('categorieCaz') == categorie_caz)
+                saved = stats['dosare_new']
+                skipped = stats.get('skipped_categorie', 0)
+                if saved > 0 or (dosare and not skipped):
+                    msg = f"[{processed+1}/{len(INSTITUTII)}] {institutie}: {len(dosare)} total"
+                    if categorie_caz:
+                        msg += f", {saved} salvate ({skipped} alte categorii)"
+                    else:
+                        msg += f", {saved} firme noi"
+                    state.add_download_log(msg)
             processed += 1
             state.download_job_progress.update({"processed": processed, "dosare_found": len(all_dosare), "firme_new": total_stats['firme_new']})
             await state.mongo_db.job_runs.update_one(
@@ -188,7 +207,8 @@ async def scheduled_job():
     job_run_dict['started_at'] = job_run_dict['started_at'].isoformat()
     await state.mongo_db.job_runs.insert_one(job_run_dict)
     await run_download_job(config.get('search_term', ''), job_run.id,
-                           config.get('date_start', ''), config.get('date_end', ''), "cron")
+                           config.get('date_start', ''), config.get('date_end', ''),
+                           "cron", config.get('categorie_caz'))
 
 
 def update_scheduler(hour: int, minute: int, enabled: bool):
@@ -221,6 +241,9 @@ async def get_config():
 @router.put("/config")
 async def update_config(update: JobConfigUpdate):
     update_data = {k: v for k, v in update.model_dump().items() if v is not None}
+    # Allow explicitly clearing categorie_caz by sending empty string
+    if 'categorie_caz' in update.model_dump() and update.model_dump()['categorie_caz'] == '':
+        update_data['categorie_caz'] = None
     update_data['updated_at'] = datetime.now(timezone.utc).isoformat()
     result = await state.mongo_db.job_config.find_one_and_update(
         {}, {"$set": update_data}, return_document=True, projection={"_id": 0}
@@ -235,6 +258,12 @@ async def update_config(update: JobConfigUpdate):
     if any(k in update_data for k in ['schedule_hour', 'schedule_minute', 'cron_enabled']):
         update_scheduler(result.get('schedule_hour', 2), result.get('schedule_minute', 0), result.get('cron_enabled', False))
     return result
+
+
+@router.get("/categorii-caz")
+async def get_categorii_caz():
+    """List all available CategorieCaz values from portalquery.just.ro"""
+    return [{"value": v, "label": CATEGORII_NUME.get(v, v)} for v in CATEGORII_CAZ]
 
 
 @router.post("/run")
@@ -252,8 +281,12 @@ async def trigger_run(background_tasks: BackgroundTasks):
     job_run_dict = job_run.model_dump()
     job_run_dict['started_at'] = job_run_dict['started_at'].isoformat()
     await state.mongo_db.job_runs.insert_one(job_run_dict)
-    background_tasks.add_task(run_download_job, config.get('search_term', ''), job_run.id,
-                              config.get('date_start', ''), config.get('date_end', ''), "manual")
+    background_tasks.add_task(
+        run_download_job,
+        config.get('search_term', ''), job_run.id,
+        config.get('date_start', ''), config.get('date_end', ''),
+        "manual", config.get('categorie_caz')
+    )
     return {"message": "Job started", "job_id": job_run.id}
 
 
