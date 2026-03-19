@@ -1871,7 +1871,6 @@ button[data-testid="run-now-btn"] {
   letter-spacing: 0.15em;
   text-align: center;
   color: var(--text-primary);
-  text-transform: uppercase;
   transition: border-color 0.2s;
 }
 

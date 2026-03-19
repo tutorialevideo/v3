@@ -51,18 +51,20 @@ export default function CaptchaModal({ ctx }) {
               </div>
               
               <div className="captcha-input-section">
-                <label htmlFor="captcha-input">Introdu codul EXACT din imagine (atenție la majuscule/minuscule):</label>
+                <label htmlFor="captcha-input">Codul din imagine (case-sensitive):</label>
                 <input
                   id="captcha-input"
                   type="text"
                   value={captchaCode}
                   onChange={(e) => setCaptchaCode(e.target.value)}
-                  placeholder="Ex: aB12cD"
+                  placeholder="Scrie exact ce vezi în imagine"
                   className="captcha-input"
                   autoFocus
-                  onKeyPress={(e) => e.key === 'Enter' && submitCaptcha()}
+                  onKeyDown={(e) => e.key === 'Enter' && !captchaLoading && captchaCode && submitCaptcha()}
                 />
-                <span className="captcha-hint-text">Codul este case-sensitive (diferență între litere mari/mici)</span>
+                <span className="captcha-hint-text">
+                  Atenție: literele mari și mici contează (ex: &quot;aB3xY&quot; ≠ &quot;AB3XY&quot;)
+                </span>
               </div>
               
               {captchaError && (
@@ -84,16 +86,17 @@ export default function CaptchaModal({ ctx }) {
           <Button variant="outline" onClick={closeCaptchaModal}>
             Anulează
           </Button>
-          <Button 
-            onClick={submitCaptcha} 
-            disabled={captchaLoading || !captchaCode}
+          <Button
+            onClick={submitCaptcha}
+            disabled={captchaLoading || !captchaCode || captchaCode.length < 2}
+            data-testid="submit-captcha-btn"
           >
             {captchaLoading ? (
               <Loader2 className="animate-spin" size={16} />
             ) : (
               <CheckCircle2 size={16} />
             )}
-            Verifică CAPTCHA
+            {captchaCode && captchaCode.length >= 2 ? 'Verifică CAPTCHA' : 'Scrie codul mai întâi'}
           </Button>
         </div>
       </div>

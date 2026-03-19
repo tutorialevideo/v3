@@ -108,38 +108,77 @@ async def get_mfinante_captcha_image():
 @router.post("/mfinante/captcha/solve")
 async def solve_mfinante_captcha(captcha_code: str, test_cui: str = "14918042"):
     if not state.captcha_session.get("jsessionid"):
-        raise HTTPException(status_code=400, detail="No CAPTCHA session.")
+        raise HTTPException(status_code=400, detail="No CAPTCHA session. Call /mfinante/captcha/init first.")
     try:
         url = f"{MFINANTE_URL};jsessionid={state.captcha_session['jsessionid']}"
         form_data = {"cod": test_cui, "captcha": captcha_code, "method.vizualizare": "VIZUALIZARE"}
-        async with aiohttp.ClientSession() as session:
+        
+        jar = aiohttp.CookieJar()
+        async with aiohttp.ClientSession(cookie_jar=jar) as session:
             async with session.post(
                 url, data=form_data,
                 headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                    "Accept": "text/html,application/xhtml+xml",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                     "Content-Type": "application/x-www-form-urlencoded",
                     "Referer": MFINANTE_URL,
+                    "Accept-Language": "ro-RO,ro;q=0.9,en;q=0.8",
                 },
                 cookies=state.captcha_session.get("cookies", {}),
                 timeout=aiohttp.ClientTimeout(total=30),
                 allow_redirects=True
             ) as response:
                 html = await response.text()
-                if "Cod de validare" in html and "kaptcha" in html:
+                final_url = str(response.url)
+                
+                # Get updated session from cookies/URL after redirect
+                new_jsessionid = state.captcha_session["jsessionid"]
+                new_cookies = dict(state.captcha_session.get("cookies", {}))
+                
+                # Update cookies from response
+                for cookie in jar:
+                    new_cookies[cookie.key] = cookie.value
+                    if cookie.key.upper() == "JSESSIONID":
+                        new_jsessionid = cookie.value
+                
+                # Check jsessionid in final URL
+                if "jsessionid=" in final_url:
+                    new_jsessionid = final_url.split("jsessionid=")[1].split("?")[0].split(";")[0].split("&")[0]
+                
+                # WRONG CAPTCHA: page shows captcha form again
+                is_captcha_page = ("kaptcha" in html.lower() or 
+                                   "captcha" in html.lower() or
+                                   "Cod de validare" in html)
+                
+                if is_captcha_page:
                     return {"success": False, "error": "CAPTCHA incorect. Încercați din nou.", "need_new_captcha": True}
-                if "Date de identificare" in html or "Denumire" in html or "AGENTUL ECONOMIC" in html:
-                    state.mfinante_session["jsessionid"] = state.captcha_session["jsessionid"]
-                    state.mfinante_session["cookies"] = state.captcha_session.get("cookies", {})
-                    state.mfinante_sync_progress["session_valid"] = True
-                    return {
-                        "success": True,
-                        "message": "CAPTCHA rezolvat cu succes! Sesiunea a fost setată.",
-                        "session_valid": True,
-                        "jsessionid": state.captcha_session["jsessionid"][:20] + "..."
-                    }
-                return {"success": False, "error": "Răspuns neașteptat de la MFinante.", "need_new_captcha": True}
+                
+                # SUCCESS: any non-captcha response means the session is valid
+                # MFinante may show company data, error for wrong CUI, or redirect — all are OK
+                state.captcha_session["jsessionid"] = new_jsessionid
+                state.captcha_session["cookies"] = new_cookies
+                state.mfinante_session["jsessionid"] = new_jsessionid
+                state.mfinante_session["cookies"] = new_cookies
+                state.mfinante_sync_progress["session_valid"] = True
+                
+                # Detect company data in response for confirmation message
+                has_company_data = any(kw in html for kw in [
+                    "Date de identificare", "Denumire", "AGENTUL ECONOMIC",
+                    "codul fiscal", "CUI", "TVA", "infocodfiscal"
+                ])
+                
+                msg = "CAPTCHA rezolvat! Sesiunea MFinante este activă."
+                if has_company_data:
+                    msg = "CAPTCHA rezolvat cu succes! Date companie găsite, sesiunea este validă."
+                
+                return {
+                    "success": True,
+                    "message": msg,
+                    "session_valid": True,
+                    "jsessionid": new_jsessionid[:20] + "..."
+                }
     except Exception as e:
+        logger.error(f"[MFINANTE] CAPTCHA solve error: {e}")
         raise HTTPException(status_code=500, detail=f"Error solving CAPTCHA: {str(e)}")
 
 
