@@ -68,6 +68,14 @@ export default function AnafPage({ ctx }) {
     captchaLoading,
     // MFinante-specific
     setMfSession, setMfSessionId, startMfSync, stopMfSync,
+    // Sync Dosare per Firma
+    syncDosareProgress, syncDosareLogs, syncDosareLoading,
+    syncDosareLimit, setSyncDosareLimit,
+    syncDosareCategorie, setSyncDosareCategorie,
+    syncDosareDateStart, setSyncDosareDateStart,
+    syncDosareDateEnd, setSyncDosareDateEnd,
+    startSyncDosare, stopSyncDosare,
+    categoriiCaz,
   } = ctx;
 
   return (
@@ -676,6 +684,129 @@ export default function AnafPage({ ctx }) {
                     MFinante este lent (~2 sec/firmă). Sesiunea expiră după ~15-30 min inactivitate.
                   </p>
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* Sync Dosare per Firma Card */}
+            <Card data-testid="sync-dosare-card">
+              <CardHeader>
+                <CardTitle className="card-title">
+                  <FileJson size={20} />
+                  Sync Dosare Portal JUST — per Firmă
+                </CardTitle>
+                <CardDescription>
+                  Caută în Portal JUST dosarele fiecărei firme active ANAF, folosind <strong>denumirea din ANAF</strong> ca termen de căutare
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {/* How it works */}
+                <div style={{padding:'10px 14px', background:'var(--bg-secondary)', borderRadius:'8px', marginBottom:'14px', fontSize:'0.83rem', lineHeight:'1.6'}}>
+                  <strong>Flux:</strong> Firme cu CUI → Sync ANAF (active) → <strong>Căutare Portal JUST cu anaf_denumire</strong> → Dosare salvate direct la firma corectă
+                </div>
+
+                {/* Controls */}
+                <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'12px'}}>
+                  <div>
+                    <label style={{fontSize:'0.8rem', color:'var(--text-muted)', display:'block', marginBottom:'4px'}}>Categorie dosar</label>
+                    <select
+                      value={syncDosareCategorie}
+                      onChange={(e) => setSyncDosareCategorie(e.target.value)}
+                      style={{width:'100%', padding:'7px 10px', borderRadius:'6px', border:'1px solid var(--border)', background:'var(--bg-elevated)', color:'var(--text-primary)', fontSize:'0.84rem'}}
+                      data-testid="sync-dosare-categorie"
+                    >
+                      <option value="">Toate categoriile</option>
+                      {(categoriiCaz || []).map(cat => (
+                        <option key={cat.value} value={cat.value}>{cat.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{fontSize:'0.8rem', color:'var(--text-muted)', display:'block', marginBottom:'4px'}}>Nr. firme de procesat</label>
+                    <input
+                      type="number"
+                      value={syncDosareLimit}
+                      onChange={(e) => setSyncDosareLimit(parseInt(e.target.value) || 100)}
+                      min="1" max="10000"
+                      style={{width:'100%', padding:'7px 10px', borderRadius:'6px', border:'1px solid var(--border)', background:'var(--bg-elevated)', color:'var(--text-primary)', fontSize:'0.84rem'}}
+                      data-testid="sync-dosare-limit"
+                    />
+                  </div>
+                  <div>
+                    <label style={{fontSize:'0.8rem', color:'var(--text-muted)', display:'block', marginBottom:'4px'}}>Data început dosar (opțional)</label>
+                    <input
+                      type="date"
+                      value={syncDosareDateStart}
+                      onChange={(e) => setSyncDosareDateStart(e.target.value)}
+                      style={{width:'100%', padding:'7px 10px', borderRadius:'6px', border:'1px solid var(--border)', background:'var(--bg-elevated)', color:'var(--text-primary)', fontSize:'0.84rem'}}
+                    />
+                  </div>
+                  <div>
+                    <label style={{fontSize:'0.8rem', color:'var(--text-muted)', display:'block', marginBottom:'4px'}}>Data sfârșit dosar (opțional)</label>
+                    <input
+                      type="date"
+                      value={syncDosareDateEnd}
+                      onChange={(e) => setSyncDosareDateEnd(e.target.value)}
+                      style={{width:'100%', padding:'7px 10px', borderRadius:'6px', border:'1px solid var(--border)', background:'var(--bg-elevated)', color:'var(--text-primary)', fontSize:'0.84rem'}}
+                    />
+                  </div>
+                </div>
+
+                <div style={{display:'flex', gap:'8px', marginBottom:'12px'}}>
+                  <Button
+                    onClick={startSyncDosare}
+                    disabled={syncDosareLoading}
+                    data-testid="start-sync-dosare-btn"
+                  >
+                    {syncDosareLoading
+                      ? <><Loader2 className="animate-spin" size={14} style={{marginRight:6}} />Procesare...</>
+                      : <><Play size={14} style={{marginRight:6}} />Pornește Sync Dosare</>
+                    }
+                  </Button>
+                  {syncDosareLoading && (
+                    <Button variant="destructive" onClick={stopSyncDosare} size="sm">
+                      <XCircle size={14} style={{marginRight:4}} /> Stop
+                    </Button>
+                  )}
+                </div>
+
+                {/* Progress */}
+                {syncDosareProgress && (
+                  <div style={{display:'flex', gap:'16px', flexWrap:'wrap', fontSize:'0.8rem', marginBottom:'8px', color:'var(--text-muted)'}}>
+                    <span>Procesate: <strong style={{color:'var(--text-primary)'}}>{syncDosareProgress.processed?.toLocaleString()}/{syncDosareProgress.total_firms?.toLocaleString()}</strong></span>
+                    <span>Cu dosare: <strong style={{color:'#22c55e'}}>{syncDosareProgress.firms_with_dosare?.toLocaleString()}</strong></span>
+                    <span>Dosare noi: <strong style={{color:'var(--primary)'}}>{syncDosareProgress.dosare_new?.toLocaleString()}</strong></span>
+                    <span>Erori: <strong style={{color:'#ef4444'}}>{syncDosareProgress.errors}</strong></span>
+                  </div>
+                )}
+
+                {/* Live log */}
+                {syncDosareLogs.length > 0 && (
+                  <div className="download-log-panel" data-testid="sync-dosare-log">
+                    <div className="download-log-header">
+                      <Activity size={14} />
+                      <span>Log sync dosare</span>
+                      {syncDosareProgress?.active && (
+                        <span className="download-log-stats">
+                          {syncDosareProgress.processed}/{syncDosareProgress.total_firms} firme
+                        </span>
+                      )}
+                    </div>
+                    <ScrollArea className="download-log-scroll">
+                      <div className="download-log-content">
+                        {syncDosareLogs.map((line, i) => (
+                          <div key={i} className="download-log-line"
+                               style={{color: line.includes('niciun dosar') ? 'var(--text-muted)' : line.includes('dosare noi') ? '#22c55e' : line.includes('Eroare') ? '#ef4444' : undefined}}>
+                            {line}
+                          </div>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  </div>
+                )}
+
+                <p className="sync-note" style={{marginTop:'8px'}}>
+                  Caută simultan în toate cele 246 de instituții. ~0.3s/firmă × {syncDosareLimit} firme = ~{Math.round(syncDosareLimit * 246 * 0.3 / 60)} minute estimat.
+                </p>
               </CardContent>
             </Card>
           </div>

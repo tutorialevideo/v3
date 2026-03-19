@@ -79,6 +79,27 @@ def add_anaf_log(message: str):
         anaf_sync_progress["logs"] = anaf_sync_progress["logs"][-100:]
 
 
+# ─── Sync Dosare per Firmă state ──────────────────────────────────────────────
+sync_dosare_progress = {
+    "active": False,
+    "total_firms": 0,
+    "processed": 0,
+    "firms_with_dosare": 0,
+    "dosare_new": 0,
+    "firme_new": 0,
+    "errors": 0,
+    "current_firma": None,
+    "logs": []
+}
+
+
+def add_sync_dosare_log(message: str):
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    sync_dosare_progress["logs"].append(f"[{timestamp}] {message}")
+    if len(sync_dosare_progress["logs"]) > 300:
+        sync_dosare_progress["logs"] = sync_dosare_progress["logs"][-300:]
+
+
 # ─── MFinante state ───────────────────────────────────────────────────────────
 mfinante_sync_progress = {
     "active": False,

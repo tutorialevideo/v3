@@ -424,3 +424,229 @@ async def get_cron_status():
 @router.get("/institutions")
 async def get_institutions():
     return INSTITUTII
+
+
+# ─── Sync Dosare per Firmă ────────────────────────────────────────────────────
+
+@router.get("/sync-dosare/progress")
+async def get_sync_dosare_progress():
+    return state.sync_dosare_progress
+
+
+@router.post("/sync-dosare/stop")
+async def stop_sync_dosare():
+    state.sync_dosare_progress["active"] = False
+    return {"message": "Stop requested"}
+
+
+@router.post("/sync-dosare/start")
+async def start_sync_dosare(
+    background_tasks: BackgroundTasks,
+    limit: int = 100,
+    date_start: str = None,
+    date_end: str = None,
+    categorie_caz: str = None,
+    only_without_dosare: bool = False,
+    judet: str = None
+):
+    """
+    Sync dosare from Portal JUST for each ANAF-active firm.
+    Searches Portal JUST using anaf_denumire as numeParte.
+    """
+    if database.SessionLocal is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    if state.sync_dosare_progress["active"]:
+        raise HTTPException(status_code=400, detail="Sync already running")
+
+    state.sync_dosare_progress.update({
+        "active": True, "total_firms": 0, "processed": 0,
+        "firms_with_dosare": 0, "dosare_new": 0, "firme_new": 0,
+        "errors": 0, "current_firma": None, "logs": []
+    })
+
+    background_tasks.add_task(
+        _run_sync_dosare_per_firma,
+        limit, date_start, date_end, categorie_caz, only_without_dosare, judet
+    )
+    return {"message": "Sync dosare pornit", "status": "running"}
+
+
+async def _run_sync_dosare_per_firma(
+    limit: int,
+    date_start: str,
+    date_end: str,
+    categorie_caz: str,
+    only_without_dosare: bool,
+    judet: str
+):
+    """
+    For each active firm (anaf_sync_status='found' AND active),
+    search Portal JUST using anaf_denumire as numeParte.
+    """
+    db = database.SessionLocal()
+    Firma = database.Firma
+    Dosar = database.Dosar
+
+    try:
+        # Build query: only ANAF-verified active firms WITH anaf_denumire
+        query = db.query(Firma).filter(
+            Firma.anaf_sync_status == 'found',
+            Firma.anaf_denumire.isnot(None),
+            Firma.anaf_denumire != '',
+            Firma.anaf_stare.isnot(None),
+            Firma.anaf_stare.ilike('%ACTIV%'),
+            ~Firma.anaf_stare.ilike('%INACTIV%'),
+            ~Firma.anaf_stare.ilike('%RADIERE%')
+        )
+
+        if judet:
+            query = query.filter(
+                (Firma.anaf_sediu_judet.ilike(f"%{judet}%")) |
+                (Firma.judet.ilike(f"%{judet}%"))
+            )
+
+        if only_without_dosare:
+            # Only firms that have no dosare yet
+            existing_ids = db.query(Dosar.firma_id).distinct().subquery()
+            query = query.filter(~Firma.id.in_(existing_ids))
+
+        total = query.count()
+        firms = query.order_by(Firma.id).limit(limit).all()
+
+        state.sync_dosare_progress["total_firms"] = len(firms)
+        state.add_sync_dosare_log(f"Firme active ANAF cu denumire: {total:,} total")
+        state.add_sync_dosare_log(f"Procesăm: {len(firms)} firme")
+        if categorie_caz:
+            from schemas import CATEGORII_NUME
+            state.add_sync_dosare_log(f"Filtru categorie: {CATEGORII_NUME.get(categorie_caz, categorie_caz)}")
+        if date_start or date_end:
+            state.add_sync_dosare_log(f"Perioadă: {date_start or '*'} → {date_end or '*'}")
+        state.add_sync_dosare_log("─" * 40)
+
+        async with aiohttp.ClientSession() as http_session:
+            for firma in firms:
+                if not state.sync_dosare_progress["active"]:
+                    state.add_sync_dosare_log("Oprire solicitată.")
+                    break
+
+                idx = state.sync_dosare_progress["processed"] + 1
+                search_name = firma.anaf_denumire
+                state.sync_dosare_progress["current_firma"] = search_name
+
+                try:
+                    # Search ALL institutions for this firm
+                    all_dosare = []
+                    for institutie in INSTITUTII:
+                        if not state.sync_dosare_progress["active"]:
+                            break
+                        dosare = await fetch_dosare(
+                            http_session, search_name, institutie,
+                            date_start or "", date_end or ""
+                        )
+                        if dosare:
+                            # Filter by category if needed
+                            if categorie_caz:
+                                dosare = [d for d in dosare if d.get('categorieCaz') == categorie_caz]
+                            if dosare:
+                                all_dosare.extend(dosare)
+
+                    if all_dosare:
+                        # Save dosare — but link them to THIS firma directly
+                        new_count = await _save_dosare_for_firma(
+                            db, firma, all_dosare, categorie_caz
+                        )
+                        state.sync_dosare_progress["dosare_new"] += new_count
+                        state.sync_dosare_progress["firms_with_dosare"] += 1
+                        state.add_sync_dosare_log(
+                            f"[{idx}/{len(firms)}] {firma.cui} | {search_name[:45]} | {new_count} dosare noi"
+                        )
+                    else:
+                        state.add_sync_dosare_log(
+                            f"[{idx}/{len(firms)}] {firma.cui} | {search_name[:45]} | niciun dosar"
+                        )
+
+                except Exception as e:
+                    state.sync_dosare_progress["errors"] += 1
+                    state.add_sync_dosare_log(
+                        f"[{idx}/{len(firms)}] {firma.cui} | Eroare: {str(e)[:50]}"
+                    )
+                    logger.error(f"[SYNC_DOSARE] Error for {firma.cui}: {e}")
+
+                state.sync_dosare_progress["processed"] += 1
+                # Small delay to be polite with the API
+                await asyncio.sleep(0.3)
+
+        state.add_sync_dosare_log("─" * 40)
+        state.add_sync_dosare_log(
+            f"Finalizat: {state.sync_dosare_progress['firms_with_dosare']} firme cu dosare, "
+            f"{state.sync_dosare_progress['dosare_new']} dosare noi salvate"
+        )
+
+    except Exception as e:
+        state.add_sync_dosare_log(f"Eroare generală: {str(e)[:60]}")
+        logger.error(f"[SYNC_DOSARE] Error: {e}")
+    finally:
+        db.close()
+        state.sync_dosare_progress["active"] = False
+
+
+async def _save_dosare_for_firma(db, firma, dosare: list, categorie_caz: str = None) -> int:
+    """Save dosare linked directly to a specific firma (matched by anaf_denumire)."""
+    Dosar = database.Dosar
+    TimelineEvent = database.TimelineEvent
+    new_count = 0
+
+    try:
+        for dosar_data in dosare:
+            if categorie_caz and dosar_data.get('categorieCaz') != categorie_caz:
+                continue
+
+            numar_dosar = dosar_data.get('numar', '')
+            if not numar_dosar:
+                continue
+
+            # Skip if dosar already linked to this firma
+            existing = db.query(Dosar).filter(
+                Dosar.firma_id == firma.id,
+                Dosar.numar_dosar == numar_dosar
+            ).first()
+            if existing:
+                continue
+
+            dosar = Dosar(
+                firma_id=firma.id,
+                numar_dosar=numar_dosar,
+                institutie=dosar_data.get('institutie', ''),
+                obiect=dosar_data.get('obiect', ''),
+                data_dosar=parse_date(dosar_data.get('data', '')),
+                stadiu=dosar_data.get('stadiuProcesual', ''),
+                categorie=dosar_data.get('categorieCaz', ''),
+                materie=dosar_data.get('materie', ''),
+                raw_data=dosar_data
+            )
+            db.add(dosar)
+            db.flush()
+            new_count += 1
+
+            # Save timeline events
+            for sedinta in (dosar_data.get('sedinte', []) or []):
+                db.add(TimelineEvent(
+                    dosar_id=dosar.id, tip='sedinta',
+                    data=parse_date(sedinta.get('data', '')),
+                    descriere=sedinta.get('solutie', '') or sedinta.get('complet', ''),
+                    detalii=sedinta
+                ))
+            for cale in (dosar_data.get('caiAtac', []) or []):
+                db.add(TimelineEvent(
+                    dosar_id=dosar.id, tip='cale_atac',
+                    data=parse_date(cale.get('dataDeclarare', '')),
+                    descriere=cale.get('tipCaleAtac', ''), detalii=cale
+                ))
+
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"[SYNC_DOSARE] Save error: {e}")
+
+    return new_count
+

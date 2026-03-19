@@ -156,6 +156,14 @@ function App() {
   const [showAdvancedConfig, setShowAdvancedConfig] = useState(false);
   const [downloadLogs, setDownloadLogs] = useState([]);
   const [downloadProgress, setDownloadProgress] = useState(null);
+  // Sync Dosare per Firma
+  const [syncDosareProgress, setSyncDosareProgress] = useState(null);
+  const [syncDosareLogs, setSyncDosareLogs] = useState([]);
+  const [syncDosareLoading, setSyncDosareLoading] = useState(false);
+  const [syncDosareLimit, setSyncDosareLimit] = useState(100);
+  const [syncDosareCategorie, setSyncDosareCategorie] = useState("Litigiicuprofesionistii");
+  const [syncDosareDateStart, setSyncDosareDateStart] = useState("");
+  const [syncDosareDateEnd, setSyncDosareDateEnd] = useState("");
 
   const fetchData = useCallback(async () => {
     try {
@@ -726,6 +734,45 @@ function App() {
     }
   }, [activeTab, loadDiagnostics]);
 
+  // Sync Dosare per Firma
+  const startSyncDosare = async () => {
+    setSyncDosareLoading(true);
+    setSyncDosareLogs([]);
+    try {
+      const params = new URLSearchParams({ limit: syncDosareLimit });
+      if (syncDosareCategorie) params.set('categorie_caz', syncDosareCategorie);
+      if (syncDosareDateStart) params.set('date_start', syncDosareDateStart);
+      if (syncDosareDateEnd) params.set('date_end', syncDosareDateEnd);
+
+      await axios.post(`${API}/sync-dosare/start?${params.toString()}`);
+      toast.success('Sync dosare pornit!');
+
+      const pollInterval = setInterval(async () => {
+        try {
+          const res = await axios.get(`${API}/sync-dosare/progress`);
+          setSyncDosareProgress(res.data);
+          setSyncDosareLogs(res.data.logs || []);
+          if (!res.data.active) {
+            clearInterval(pollInterval);
+            setSyncDosareLoading(false);
+            fetchData();
+            toast.success(`Sync finalizat: ${res.data.dosare_new?.toLocaleString()} dosare noi`);
+          }
+        } catch (e) { clearInterval(pollInterval); setSyncDosareLoading(false); }
+      }, 2000);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Eroare la pornirea sync');
+      setSyncDosareLoading(false);
+    }
+  };
+
+  const stopSyncDosare = async () => {
+    try {
+      await axios.post(`${API}/sync-dosare/stop`);
+      toast.info('Sync oprit');
+    } catch (e) {}
+  };
+
   const cleanupDuplicateDenumiri = async () => {
     if (!window.confirm("Sigur vrei să ștergi duplicatele după denumire? Această acțiune este ireversibilă!")) {
       return;
@@ -1234,6 +1281,13 @@ function App() {
     // Localitati
     localitatiStats, localitatiLoading, normalizeProgress,
     loadLocalitatiStats, importLocalitati, startNormalizare,
+    // Sync Dosare per Firma
+    syncDosareProgress, syncDosareLogs, syncDosareLoading,
+    syncDosareLimit, setSyncDosareLimit,
+    syncDosareCategorie, setSyncDosareCategorie,
+    syncDosareDateStart, setSyncDosareDateStart,
+    syncDosareDateEnd, setSyncDosareDateEnd,
+    startSyncDosare, stopSyncDosare,
     // Helpers
     formatDate: (d) => d ? new Date(d).toLocaleString('ro-RO') : '-',
     formatBytes: (b) => b > 1024*1024 ? `${(b/1024/1024).toFixed(1)} MB` : `${(b/1024).toFixed(0)} KB`,
