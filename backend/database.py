@@ -110,6 +110,21 @@ class Firma(Base):
     anaf_sediu_strada = Column(String(300), nullable=True)
     anaf_sediu_numar = Column(String(50), nullable=True)
     anaf_sediu_cod_postal = Column(String(20), nullable=True)
+    # Extra ANAF fields
+    anaf_iban = Column(String(50), nullable=True)
+    anaf_data_efactura = Column(String(20), nullable=True)      # data_inreg_Reg_RO_e_Factura
+    anaf_data_inactivare = Column(String(20), nullable=True)
+    anaf_data_reactivare = Column(String(20), nullable=True)
+    anaf_data_radiere = Column(String(20), nullable=True)
+    anaf_data_inceput_tva_inc = Column(String(20), nullable=True)
+    anaf_data_sfarsit_tva_inc = Column(String(20), nullable=True)
+    anaf_data_inceput_split_tva = Column(String(20), nullable=True)
+    # Adresa domiciliu fiscal (poate diferi de sediu)
+    anaf_df_judet = Column(String(100), nullable=True)
+    anaf_df_localitate = Column(String(200), nullable=True)
+    anaf_df_strada = Column(String(300), nullable=True)
+    anaf_df_numar = Column(String(50), nullable=True)
+    anaf_df_cod_postal = Column(String(20), nullable=True)
     anaf_last_sync = Column(DateTime, nullable=True)
     anaf_sync_status = Column(String(50), nullable=True)
     # MFinante
@@ -238,11 +253,20 @@ def _migrate_schema():
         "ALTER TABLE firme ADD COLUMN IF NOT EXISTS anaf_split_tva BOOLEAN",
         "ALTER TABLE firme ADD COLUMN IF NOT EXISTS anaf_inactiv BOOLEAN",
         "ALTER TABLE firme ADD COLUMN IF NOT EXISTS anaf_e_factura BOOLEAN",
-        # MFinante extra
-        "ALTER TABLE firme ADD COLUMN IF NOT EXISTS mf_cod_postal VARCHAR(20)",
-        "ALTER TABLE firme ADD COLUMN IF NOT EXISTS mf_tva_data VARCHAR(200)",
-        "ALTER TABLE firme ADD COLUMN IF NOT EXISTS mf_accize BOOLEAN",
-        "ALTER TABLE firme ADD COLUMN IF NOT EXISTS mf_cas_data VARCHAR(200)",
+        # Extra ANAF fields
+        "ALTER TABLE firme ADD COLUMN IF NOT EXISTS anaf_iban VARCHAR(50)",
+        "ALTER TABLE firme ADD COLUMN IF NOT EXISTS anaf_data_efactura VARCHAR(20)",
+        "ALTER TABLE firme ADD COLUMN IF NOT EXISTS anaf_data_inactivare VARCHAR(20)",
+        "ALTER TABLE firme ADD COLUMN IF NOT EXISTS anaf_data_reactivare VARCHAR(20)",
+        "ALTER TABLE firme ADD COLUMN IF NOT EXISTS anaf_data_radiere VARCHAR(20)",
+        "ALTER TABLE firme ADD COLUMN IF NOT EXISTS anaf_data_inceput_tva_inc VARCHAR(20)",
+        "ALTER TABLE firme ADD COLUMN IF NOT EXISTS anaf_data_sfarsit_tva_inc VARCHAR(20)",
+        "ALTER TABLE firme ADD COLUMN IF NOT EXISTS anaf_data_inceput_split_tva VARCHAR(20)",
+        "ALTER TABLE firme ADD COLUMN IF NOT EXISTS anaf_df_judet VARCHAR(100)",
+        "ALTER TABLE firme ADD COLUMN IF NOT EXISTS anaf_df_localitate VARCHAR(200)",
+        "ALTER TABLE firme ADD COLUMN IF NOT EXISTS anaf_df_strada VARCHAR(300)",
+        "ALTER TABLE firme ADD COLUMN IF NOT EXISTS anaf_df_numar VARCHAR(50)",
+        "ALTER TABLE firme ADD COLUMN IF NOT EXISTS anaf_df_cod_postal VARCHAR(20)",
     ]
     from sqlalchemy import text
     with engine.connect() as conn:

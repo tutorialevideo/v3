@@ -236,6 +236,21 @@ async def run_anaf_sync(limit: int, only_unsynced: bool, judet: str):
                                         firma.anaf_sediu_strada = sediu.get("sdenumire_Strada")
                                         firma.anaf_sediu_numar = sediu.get("snumar_Strada")
                                         firma.anaf_sediu_cod_postal = sediu.get("scod_Postal")
+                                        # Extra fields
+                                        firma.anaf_iban = dg.get("iban") or None
+                                        firma.anaf_data_efactura = dg.get("data_inreg_Reg_RO_e_Factura") or None
+                                        firma.anaf_data_inactivare = inactiv.get("dataInactivare") or None
+                                        firma.anaf_data_reactivare = inactiv.get("dataReactivare") or None
+                                        firma.anaf_data_radiere = inactiv.get("dataRadiere") or None
+                                        firma.anaf_data_inceput_tva_inc = rtvai.get("dataInceputTvaInc") or None
+                                        firma.anaf_data_sfarsit_tva_inc = rtvai.get("dataSfarsitTvaInc") or None
+                                        firma.anaf_data_inceput_split_tva = split.get("dataInceputSplitTVA") or None
+                                        df = item.get("adresa_domiciliu_fiscal", {})
+                                        firma.anaf_df_judet = df.get("ddenumire_Judet") or None
+                                        firma.anaf_df_localitate = df.get("ddenumire_Localitate") or None
+                                        firma.anaf_df_strada = df.get("ddenumire_Strada") or None
+                                        firma.anaf_df_numar = df.get("dnumar_Strada") or None
+                                        firma.anaf_df_cod_postal = df.get("dcod_Postal") or None
                                         firma.anaf_last_sync = now
                                         firma.anaf_sync_status = "found"
                                         state.anaf_sync_progress["found"] += 1
