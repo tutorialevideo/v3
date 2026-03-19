@@ -836,6 +836,28 @@ function App() {
     setAnafLogs([]);
   };
 
+  const fixAnafTimestamps = async () => {
+    try {
+      const res = await axios.post(`${API}/anaf/fix-timestamps`);
+      toast.success(`Timestamps reparate pentru ${res.data.fixed?.toLocaleString()} firme!`);
+      loadAnafStats();
+    } catch (error) {
+      toast.error("Eroare la repararea timestamps");
+    }
+  };
+
+  const resetAnafSyncStatus = async (judet = null) => {
+    if (!window.confirm(`Ești sigur? Vei reseta statusul ANAF pentru TOATE firmele${judet ? ` din ${judet}` : ''}. Vor trebui re-sincronizate.`)) return;
+    try {
+      const params = judet ? `?judet=${encodeURIComponent(judet)}` : '';
+      const res = await axios.post(`${API}/anaf/reset-sync-status${params}`);
+      toast.success(res.data.message);
+      loadAnafStats();
+    } catch (error) {
+      toast.error("Eroare la resetarea statusului");
+    }
+  };
+
   const testAnafCui = async () => {
     if (!anafTestCui) {
       toast.error("Introdu un CUI");
@@ -1106,6 +1128,7 @@ function App() {
     loadDbFinalStats, loadDbFinal, handleDbFinalSearch, handleDbFinalFilterChange,
     testAnafCui, testAnafCuiFull,
     startAnafSync, stopAnafSync, clearAnafLogs, loadAnafStats, loadAnafProgress, formatEta,
+    fixAnafTimestamps, resetAnafSyncStatus,
     loadMfStats, loadMfProgress, setMfSessionId, openCaptchaModal, refreshCaptcha,
     submitCaptcha, closeCaptchaModal, testMfCui, startMfSync, stopMfSync,
     cleanupDuplicateDenumiri, cleanupDuplicateCui, cleanupOrphanedDosare,

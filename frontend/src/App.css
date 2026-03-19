@@ -2460,3 +2460,19 @@ button[data-testid="run-now-btn"] {
 
 /* Profile modal wider */
 .profile-modal { max-width: 760px; width: 95vw; }
+
+/* ANAF fix timestamps banner */
+.anaf-fix-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: rgba(234, 179, 8, 0.1);
+  border: 1px solid rgba(234, 179, 8, 0.35);
+  border-radius: 8px;
+  font-size: 0.84rem;
+  color: var(--text-primary);
+}
+.anaf-fix-banner svg { color: #eab308; flex-shrink: 0; }
+.anaf-fix-banner span { flex: 1; }

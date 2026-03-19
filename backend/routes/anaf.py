@@ -27,14 +27,29 @@ async def get_anaf_stats():
         return {
             "total_firme_cu_cui": 0, "synced": 0, "not_synced": 0,
             "found": 0, "not_found": 0, "errors": 0, "active": 0,
-            "radiate": 0, "platitori_tva": 0, "e_factura": 0, "db_available": False
+            "radiate": 0, "platitori_tva": 0, "e_factura": 0,
+            "fara_timestamp": 0, "db_available": False
         }
     db = database.SessionLocal()
     try:
+        from sqlalchemy import or_
         db.expire_all()
         Firma = database.Firma
         total = db.query(Firma).filter(Firma.cui.isnot(None), Firma.cui != '').count()
-        synced = db.query(Firma).filter(Firma.anaf_last_sync.isnot(None)).count()
+
+        # "Synced" = has anaf_last_sync OR has anaf_sync_status (for old syncs without timestamp)
+        synced = db.query(Firma).filter(
+            Firma.cui.isnot(None), Firma.cui != '',
+            or_(Firma.anaf_last_sync.isnot(None), Firma.anaf_sync_status.isnot(None))
+        ).count()
+
+        # Firms with sync_status but NO timestamp (old syncs) — can be fixed
+        fara_timestamp = db.query(Firma).filter(
+            Firma.cui.isnot(None), Firma.cui != '',
+            Firma.anaf_sync_status.isnot(None),
+            Firma.anaf_last_sync.is_(None)
+        ).count()
+
         found = db.query(Firma).filter(Firma.anaf_sync_status == 'found').count()
         not_found = db.query(Firma).filter(Firma.anaf_sync_status == 'not_found').count()
         errors = db.query(Firma).filter(Firma.anaf_sync_status == 'error').count()
@@ -47,10 +62,14 @@ async def get_anaf_stats():
         platitori_tva = db.query(Firma).filter(Firma.anaf_platitor_tva == True).count()
         e_factura = db.query(Firma).filter(Firma.anaf_e_factura == True).count()
         return {
-            "total_firme_cu_cui": total, "synced": synced, "not_synced": total - synced,
+            "total_firme_cu_cui": total,
+            "synced": synced,
+            "not_synced": total - synced,
+            "fara_timestamp": fara_timestamp,
             "found": found, "not_found": not_found, "errors": errors,
-            "active": active, "radiate": radiate, "platitori_tva": platitori_tva,
-            "e_factura": e_factura, "db_available": True
+            "active": active, "radiate": radiate,
+            "platitori_tva": platitori_tva, "e_factura": e_factura,
+            "db_available": True
         }
     finally:
         db.close()
@@ -90,7 +109,14 @@ async def run_anaf_sync(limit: int, only_unsynced: bool, judet: str):
         query_start = datetime.utcnow()
         base_query = db.query(Firma).filter(Firma.cui.isnot(None), Firma.cui != '')
         if only_unsynced:
-            base_query = base_query.filter(Firma.anaf_last_sync.is_(None))
+            from sqlalchemy import and_, or_
+            # Exclude firms that: have anaf_last_sync OR have anaf_sync_status (old syncs without timestamp)
+            base_query = base_query.filter(
+                and_(
+                    Firma.anaf_last_sync.is_(None),
+                    Firma.anaf_sync_status.is_(None)
+                )
+            )
         if judet:
             base_query = base_query.filter(Firma.judet.ilike(f"%{judet}%"))
 
@@ -238,6 +264,60 @@ async def run_anaf_sync(limit: int, only_unsynced: bool, judet: str):
 async def stop_anaf_sync():
     state.anaf_sync_progress["active"] = False
     return {"message": "Sync stop requested"}
+
+
+@router.post("/anaf/fix-timestamps")
+async def fix_anaf_timestamps():
+    """
+    Setează anaf_last_sync pentru firmele care au anaf_sync_status dar nu au timestamp.
+    Folosit pentru sincronizări vechi care au salvat date ANAF fără timestamp.
+    """
+    db = database.SessionLocal()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    Firma = database.Firma
+    try:
+        now = datetime.utcnow()
+        # Find firms with sync status but no timestamp
+        result = db.query(Firma).filter(
+            Firma.anaf_sync_status.isnot(None),
+            Firma.anaf_last_sync.is_(None)
+        ).update({Firma.anaf_last_sync: now}, synchronize_session=False)
+        db.commit()
+        state.add_anaf_log(f"✓ Timestamp reparat pentru {result:,} firme sincronizate anterior")
+        return {
+            "fixed": result,
+            "message": f"Timestamp setat pentru {result:,} firme sincronizate anterior (fără timestamp)"
+        }
+    finally:
+        db.close()
+
+
+@router.post("/anaf/reset-sync-status")
+async def reset_anaf_sync_status(judet: str = None):
+    """
+    Resetează anaf_last_sync și anaf_sync_status pentru re-sincronizare completă.
+    Opțional: doar pentru un județ specific.
+    """
+    db = database.SessionLocal()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    Firma = database.Firma
+    try:
+        query = db.query(Firma).filter(Firma.cui.isnot(None), Firma.cui != '')
+        if judet:
+            query = query.filter(Firma.judet.ilike(f"%{judet}%"))
+        count = query.count()
+        query.update({
+            Firma.anaf_last_sync: None,
+            Firma.anaf_sync_status: None
+        }, synchronize_session=False)
+        db.commit()
+        msg = f"Reset status sync pentru {count:,} firme" + (f" din județul {judet}" if judet else "")
+        state.add_anaf_log(f"⚠️ {msg}")
+        return {"reset": count, "message": msg}
+    finally:
+        db.close()
 
 
 @router.get("/anaf/test/{cui}")

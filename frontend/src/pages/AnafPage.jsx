@@ -59,6 +59,7 @@ export default function AnafPage({ ctx }) {
     cleanupOrphanedDosare, optimizeDatabase, migrateSchema, createIndexes,
     reconnectDatabase,
     formatDate, formatBytes,
+    fixAnafTimestamps, resetAnafSyncStatus,
     // ANAF-specific (missing from base destructuring)
     clearAnafLogs, formatEta,
     // CAPTCHA
@@ -130,6 +131,26 @@ export default function AnafPage({ ctx }) {
                       <span className="stat-value">{anafStats.e_factura?.toLocaleString() || 0}</span>
                       <span className="stat-label">e-Factura</span>
                     </div>
+                  </div>
+                )}
+
+                {/* Fix timestamps warning */}
+                {anafStats?.fara_timestamp > 0 && (
+                  <div className="anaf-fix-banner" data-testid="anaf-fix-banner">
+                    <AlertCircle size={16} />
+                    <span>
+                      <strong>{anafStats.fara_timestamp?.toLocaleString()}</strong> firme sincronizate anterior nu au timestamp
+                      (sync vechi). Apasă "Repară Timestamps" pentru a fi recunoscute ca sincronizate.
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={fixAnafTimestamps}
+                      data-testid="fix-timestamps-btn"
+                    >
+                      <Wrench size={14} />
+                      Repară Timestamps
+                    </Button>
                   </div>
                 )}
               </CardContent>
@@ -220,6 +241,15 @@ export default function AnafPage({ ctx }) {
                         disabled={anafLoading || anafSyncRunning}
                       >
                         Re-sync toate firmele
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => resetAnafSyncStatus()}
+                        disabled={anafLoading || anafSyncRunning}
+                        style={{borderColor: 'var(--danger, #ef4444)', color: 'var(--danger, #ef4444)'}}
+                        data-testid="reset-sync-btn"
+                      >
+                        Reset Status Sync
                       </Button>
                     </div>
                     <p className="sync-note">
