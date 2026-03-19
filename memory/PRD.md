@@ -84,3 +84,8 @@ bilanturi (NEW)
 ### P3 - Completat 2026-03-19
 - [x] Refactorizare server.py (3879 linii → server.py 82 linii + 5 module routes/ + 5 module shared)
 - [x] Refactorizare App.js (3008 linii → App.js 1180 linii + 5 pages/ + 2 components/modals)
+
+## Test Reports
+- iteration_5.json: Profile Modal, Inline CUI edit, DB Final, ANAF test — 23/23 OK
+- iteration_6.json: Validare completă toate 5 taburi + Export CSV — 31/31 OK
+  - Bug fix: AnafPage.jsx destructuring (7 variabile lipsă ctx)
