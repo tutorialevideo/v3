@@ -22,7 +22,63 @@ async def get_anaf_sync_progress():
     return state.anaf_sync_progress
 
 
-@router.get("/anaf/stats")
+@router.get("/anaf/diagnose-cui")
+async def diagnose_cui_formats():
+    """Show sample CUI formats from DB to debug parsing issues."""
+    db = database.SessionLocal()
+    if db is None:
+        raise HTTPException(status_code=503, detail="DB unavailable")
+    Firma = database.Firma
+    try:
+        from sqlalchemy import func
+        # Sample random CUIs
+        sample = db.query(Firma.cui, Firma.anaf_sync_status).filter(
+            Firma.cui.isnot(None), Firma.cui != ''
+        ).limit(20).all()
+        
+        invalid = db.query(Firma.cui).filter(
+            Firma.anaf_sync_status == 'invalid_cui'
+        ).limit(10).all()
+        
+        counts = {
+            'total_with_cui': db.query(Firma).filter(Firma.cui.isnot(None), Firma.cui != '').count(),
+            'found': db.query(Firma).filter(Firma.anaf_sync_status == 'found').count(),
+            'not_found': db.query(Firma).filter(Firma.anaf_sync_status == 'not_found').count(),
+            'invalid_cui': db.query(Firma).filter(Firma.anaf_sync_status == 'invalid_cui').count(),
+            'unsynced': db.query(Firma).filter(
+                Firma.anaf_sync_status.is_(None),
+                Firma.anaf_last_sync.is_(None),
+                Firma.cui.isnot(None), Firma.cui != ''
+            ).count(),
+        }
+        
+        return {
+            "counts": counts,
+            "cui_samples": [{"cui": r.cui, "status": r.anaf_sync_status} for r in sample],
+            "invalid_cui_samples": [r.cui for r in invalid],
+            "parse_test": {r.cui: str(_parse_cui(r.cui)) for r in invalid[:5]}
+        }
+    finally:
+        db.close()
+
+
+@router.post("/anaf/reset-invalid-cui")
+async def reset_invalid_cui():
+    """Reset invalid_cui status back to NULL so they can be re-tried after CUI format fix."""
+    db = database.SessionLocal()
+    if db is None:
+        raise HTTPException(status_code=503, detail="DB unavailable")
+    Firma = database.Firma
+    try:
+        count = db.query(Firma).filter(Firma.anaf_sync_status == 'invalid_cui').count()
+        db.query(Firma).filter(Firma.anaf_sync_status == 'invalid_cui').update(
+            {Firma.anaf_sync_status: None, Firma.anaf_last_sync: None},
+            synchronize_session=False
+        )
+        db.commit()
+        return {"reset": count, "message": f"Reset {count:,} firme cu CUI invalid → NULL"}
+    finally:
+        db.close()
 async def get_anaf_stats():
     if database.SessionLocal is None:
         return {
@@ -127,11 +183,17 @@ async def run_anaf_sync(limit: int, only_unsynced: bool, judet: str):
     start_time = datetime.utcnow()
     consecutive_failures = 0
     processed_total = 0
-    last_id = 0           # keyset pagination cursor
+    last_id = 0
     chunk_num = 0
 
     # ─── Chunk loop: load 10K IDs at a time ──────────────────────────────────
-    while processed_total < total and state.anaf_sync_progress["active"]:
+    # Uses while True + break when no more chunks — doesn't stop early based on stale total
+    while state.anaf_sync_progress["active"]:
+
+        # Check limit
+        if limit and processed_total >= limit:
+            state.add_anaf_log(f"Limita de {limit:,} firme atinsă.")
+            break
 
         # Load next CHUNK_SIZE IDs using keyset pagination (WHERE id > last_id)
         chunk_db = database.SessionLocal()
@@ -143,12 +205,16 @@ async def run_anaf_sync(limit: int, only_unsynced: bool, judet: str):
                 chunk_q = chunk_q.filter(and_(Firma.anaf_last_sync.is_(None), Firma.anaf_sync_status.is_(None)))
             if judet:
                 chunk_q = chunk_q.filter(Firma.judet.ilike(f"%{judet}%"))
-            remaining_limit = total - processed_total
-            chunk_ids = [row[0] for row in chunk_q.order_by(Firma.id).limit(min(ANAF_CHUNK_SIZE, remaining_limit)).all()]
+
+            fetch_limit = ANAF_CHUNK_SIZE
+            if limit:
+                fetch_limit = min(ANAF_CHUNK_SIZE, limit - processed_total)
+            chunk_ids = [row[0] for row in chunk_q.order_by(Firma.id).limit(fetch_limit).all()]
         finally:
             chunk_db.close()
 
         if not chunk_ids:
+            state.add_anaf_log("Nu mai sunt firme de sincronizat.")
             break
 
         chunk_num += 1
@@ -348,10 +414,17 @@ async def run_anaf_sync(limit: int, only_unsynced: bool, judet: str):
         state.anaf_sync_progress["last_update"] = datetime.utcnow().isoformat()
 
         if current_batch % 10 == 0:
-            state.add_anaf_log(f"📊 Progres: {processed:,}/{total:,}")
+            state.add_anaf_log(
+                f"📊 Progres: {state.anaf_sync_progress['processed']:,} procesate | "
+                f"{state.anaf_sync_progress['found']:,} găsite | "
+                f"{state.anaf_sync_progress['errors']:,} CUI invalid"
+            )
 
         await asyncio.sleep(ANAF_RATE_LIMIT_SECONDS)
         processed_total += len(batch_ids)
+
+        # Update total dynamically (some firms may have been added)
+        state.anaf_sync_progress["total_firms"] = max(total, processed_total)
 
         # ── End of batch loop ──────────────────────────────────────────────────
 
