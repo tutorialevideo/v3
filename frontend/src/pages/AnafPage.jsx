@@ -176,8 +176,36 @@ export default function AnafPage({ ctx }) {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {/* Progress bar + stats — shown during sync AND after last run */}
-                {anafProgress && (anafProgress.active || anafProgress.processed > 0) && (
+                {/* Live stats — always visible */}
+                {anafStats && (
+                  <div className="anaf-live-stats" style={{
+                    display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(130px,1fr))',
+                    gap:'8px', marginBottom:'14px'
+                  }}>
+                    {[
+                      { label:'Total cu CUI', value: anafStats.total_firme_cu_cui, color:'var(--text-primary)' },
+                      { label:'✅ Sincronizate', value: anafStats.synced, color:'#22c55e' },
+                      { label:'⏳ Nesincronizate', value: anafStats.not_synced, color:'#eab308' },
+                      { label:'Găsite ANAF', value: anafStats.found, color:'var(--primary)' },
+                      { label:'Active', value: anafStats.active, color:'#22c55e' },
+                      { label:'Radiate', value: anafStats.radiate, color:'#ef4444' },
+                      { label:'Plătitori TVA', value: anafStats.platitori_tva, color:'var(--primary)' },
+                      { label:'e-Factură', value: anafStats.e_factura, color:'#8b5cf6' },
+                    ].map((s, i) => (
+                      <div key={i} style={{
+                        background:'var(--bg-secondary)', borderRadius:'8px', padding:'10px 12px',
+                        textAlign:'center', border:'1px solid var(--border)'
+                      }}>
+                        <div style={{fontSize:'1.2rem', fontWeight:700, color: s.color}}>
+                          {s.value?.toLocaleString() ?? '-'}
+                        </div>
+                        <div style={{fontSize:'0.72rem', color:'var(--text-muted)', marginTop:'2px'}}>
+                          {s.label}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
                   <div className="progress-info" style={{marginBottom: anafProgress.active ? '0' : '16px'}}>
                     <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'6px'}}>
                       <span style={{fontSize:'0.8rem', color:'var(--text-muted)'}}>
