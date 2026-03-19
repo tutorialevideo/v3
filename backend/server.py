@@ -942,6 +942,9 @@ async def export_firme_csv():
 @api_router.get("/db/firme")
 async def get_firme(skip: int = 0, limit: int = 100, search: str = None, judet: str = None):
     """Get all companies from PostgreSQL"""
+    if SessionLocal is None:
+        return {"firme": [], "total": 0, "db_available": False}
+    
     db = SessionLocal()
     try:
         query = db.query(Firma)
@@ -1092,6 +1095,9 @@ async def get_dosar(dosar_id: int):
 @api_router.get("/db/stats")
 async def get_db_stats():
     """Get PostgreSQL database statistics"""
+    if SessionLocal is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
     db = SessionLocal()
     try:
         firme_count = db.query(Firma).count()
@@ -1423,13 +1429,17 @@ async def get_stats():
     job = scheduler.get_job('daily_download')
     next_run = job.next_run_time.isoformat() if job and job.next_run_time else None
     
-    # Get PostgreSQL stats
-    db = SessionLocal()
-    try:
-        firme_count = db.query(Firma).count()
-        dosare_count = db.query(Dosar).count()
-    finally:
-        db.close()
+    # Get PostgreSQL stats (with fallback if DB unavailable)
+    firme_count = 0
+    dosare_count = 0
+    if SessionLocal is not None:
+        try:
+            db = SessionLocal()
+            firme_count = db.query(Firma).count()
+            dosare_count = db.query(Dosar).count()
+            db.close()
+        except Exception as e:
+            logger.warning(f"Could not get DB stats: {e}")
     
     return {
         "total_runs": total_runs,
@@ -2087,6 +2097,21 @@ async def get_anaf_sync_progress():
 @api_router.get("/anaf/stats")
 async def get_anaf_stats():
     """Get ANAF sync statistics"""
+    if SessionLocal is None:
+        return {
+            "total_firme_cu_cui": 0,
+            "synced": 0,
+            "not_synced": 0,
+            "found": 0,
+            "not_found": 0,
+            "errors": 0,
+            "active": 0,
+            "radiate": 0,
+            "platitori_tva": 0,
+            "e_factura": 0,
+            "db_available": False
+        }
+    
     db = SessionLocal()
     try:
         total_firme = db.query(Firma).filter(Firma.cui.isnot(None), Firma.cui != '').count()
@@ -2109,7 +2134,8 @@ async def get_anaf_stats():
             "active": active,
             "radiate": radiate,
             "platitori_tva": platitori_tva,
-            "e_factura": e_factura
+            "e_factura": e_factura,
+            "db_available": True
         }
     finally:
         db.close()
@@ -2130,6 +2156,9 @@ async def start_anaf_sync(
     """
     global anaf_sync_progress
     
+    if SessionLocal is None:
+        raise HTTPException(status_code=503, detail="Database not available - cannot sync")
+    
     if anaf_sync_progress["active"]:
         raise HTTPException(status_code=400, detail="Sync already in progress")
     
@@ -2144,7 +2173,8 @@ async def start_anaf_sync(
         "current_batch": 0,
         "total_batches": 0,
         "last_update": datetime.utcnow().isoformat(),
-        "eta_seconds": None
+        "eta_seconds": None,
+        "logs": []
     }
     
     # Start background task
@@ -3144,6 +3174,20 @@ async def stop_mfinante_sync():
 @api_router.get("/mfinante/stats")
 async def get_mfinante_stats():
     """Get MFinante sync statistics"""
+    if SessionLocal is None:
+        return {
+            "total_firme": 0,
+            "synced_mfinante": 0,
+            "not_synced": 0,
+            "with_cifra_afaceri": 0,
+            "total_bilanturi_istorice": 0,
+            "session_status": {
+                "has_session": mfinante_session.get("jsessionid") is not None,
+                "session_valid": mfinante_sync_progress.get("session_valid", False)
+            },
+            "db_available": False
+        }
+    
     db = SessionLocal()
     try:
         total = db.query(Firma).filter(Firma.cui.isnot(None)).count()
@@ -3160,7 +3204,8 @@ async def get_mfinante_stats():
             "session_status": {
                 "has_session": mfinante_session.get("jsessionid") is not None,
                 "session_valid": mfinante_sync_progress.get("session_valid", False)
-            }
+            },
+            "db_available": True
         }
     finally:
         db.close()
