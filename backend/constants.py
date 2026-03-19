@@ -16,7 +16,10 @@ SOAP_ACTION_DOSARE2 = "portalquery.just.ro/CautareDosare2"
 # ─── ANAF API ─────────────────────────────────────────────────────────────────
 ANAF_API_URL = "https://webservicesp.anaf.ro/api/PlatitorTvaRest/v9/tva"
 ANAF_BATCH_SIZE = 100
-ANAF_RATE_LIMIT_SECONDS = 1.5
+ANAF_RATE_LIMIT_SECONDS = 3.0       # delay normal între batch-uri succesive
+ANAF_TIMEOUT_SECONDS = 120          # timeout per request (era 60s — prea scurt)
+ANAF_RETRY_DELAYS = [30, 90, 180]   # așteptare între retry-uri: 30s, 90s, 3 min
+ANAF_PAUSE_AFTER_FAILS = 300        # pauză de 5 min după 3+ batch-uri consecutive eșuate
 
 # ─── MFinante ─────────────────────────────────────────────────────────────────
 MFINANTE_URL = "https://mfinante.gov.ro/apps/infocodfiscal.html"
