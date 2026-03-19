@@ -21,7 +21,9 @@ from sqlalchemy import func
 import state
 import database
 from constants import MFINANTE_URL
-from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+
+# emergentintegrations imported lazily in auto_solve_captcha to avoid startup crash
+# if package is not installed
 
 load_dotenv()
 
@@ -238,6 +240,11 @@ async def auto_solve_captcha(test_cui: str = "14918042", max_attempts: int = 5):
         model = "gpt-4o"
     else:
         raise HTTPException(status_code=500, detail="Nicio cheie API configurată (GEMINI_API_KEY sau EMERGENT_LLM_KEY)")
+
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+    except ImportError:
+        raise HTTPException(status_code=500, detail="emergentintegrations nu este instalat.")
 
     logger.info(f"[CAPTCHA] Auto-solve using {provider}/{model}")
 
