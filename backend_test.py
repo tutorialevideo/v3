@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Any
 
 class JustPortalAPITester:
-    def __init__(self, base_url="https://bilant-scraper-hub.preview.emergentagent.com"):
+    def __init__(self, base_url="https://justice-portal-app.preview.emergentagent.com"):
         self.base_url = base_url
         self.api_url = f"{base_url}/api"
         self.tests_run = 0
