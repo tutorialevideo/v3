@@ -4,6 +4,7 @@ Bilanturi routes included here since they depend on the same session.
 """
 import asyncio
 import base64
+import io
 import logging
 import os
 import re
@@ -220,15 +221,24 @@ async def _save_session_to_db():
 @router.post("/mfinante/captcha/auto-solve")
 async def auto_solve_captcha(test_cui: str = "14918042", max_attempts: int = 15):
     """
-    Automatically solve MFinante CAPTCHA using Google Gemini Vision API directly.
-    No external packages needed — uses aiohttp to call Gemini REST API.
+    Automatically solve MFinante CAPTCHA using local Tesseract OCR.
+    No external API needed. Fast and free.
+    Falls back to Gemini if Tesseract is unavailable.
     """
-    gemini_key = os.environ.get("GEMINI_API_KEY")
-    if not gemini_key:
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY nu este configurat în environment")
+    # Check available OCR method
+    ocr_method = "none"
+    try:
+        import pytesseract
+        pytesseract.get_tesseract_version()
+        ocr_method = "tesseract"
+    except Exception:
+        gemini_key = os.environ.get("GEMINI_API_KEY")
+        if gemini_key:
+            ocr_method = "gemini"
+        else:
+            raise HTTPException(status_code=500, detail="Niciun OCR disponibil. Instalează Tesseract sau configurează GEMINI_API_KEY.")
 
-    gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
-    logger.info(f"[CAPTCHA] Auto-solve using Gemini 2.5 Flash (direct API)")
+    logger.info(f"[CAPTCHA] Auto-solve using {ocr_method}")
 
     for attempt in range(1, max_attempts + 1):
         logger.info(f"[CAPTCHA] Auto-solve attempt {attempt}/{max_attempts}")
@@ -284,47 +294,51 @@ async def auto_solve_captcha(test_cui: str = "14918042", max_attempts: int = 15)
                 image_mime = "image/jpeg"
                 logger.info(f"[CAPTCHA] Attempt {attempt}: Got image ({len(image_bytes)} bytes)")
 
-                # Step 3: Gemini reads CAPTCHA (direct REST API call)
-                gemini_payload = {
-                    "contents": [{
-                        "parts": [
-                            {"text": "What text is written in this image? Reply with only the characters, nothing else."},
-                            {"inline_data": {"mime_type": image_mime, "data": image_b64}}
-                        ]
-                    }],
-                    "generationConfig": {"temperature": 0.0, "maxOutputTokens": 50}
-                }
-
-                async with aiohttp.ClientSession() as gemini_session:
-                    async with gemini_session.post(
-                        gemini_url,
-                        json=gemini_payload,
-                        headers={"Content-Type": "application/json"},
-                        timeout=aiohttp.ClientTimeout(total=30)
-                    ) as gemini_response:
-                        if gemini_response.status != 200:
-                            err = await gemini_response.text()
-                            logger.warning(f"[CAPTCHA] Gemini HTTP {gemini_response.status}: {err[:100]}")
-                            continue
-                        gemini_data = await gemini_response.json()
-
-                # Parse Gemini response — handle safety filters and different structures
+                # ── Read CAPTCHA text ──────────────────────────────────────────
                 captcha_text = ""
-                candidates = gemini_data.get("candidates", [])
-                if candidates:
-                    candidate = candidates[0]
-                    finish_reason = candidate.get("finishReason", "STOP")
-                    if finish_reason in ("SAFETY", "RECITATION"):
-                        logger.warning(f"[CAPTCHA] Attempt {attempt}: Gemini filtered ({finish_reason})")
-                    else:
-                        parts = candidate.get("content", {}).get("parts", [])
-                        for part in parts:
-                            text = part.get("text", "").strip().replace(" ", "").replace("\n", "")
-                            if text:
+
+                if ocr_method == "tesseract":
+                    try:
+                        import pytesseract
+                        from PIL import Image, ImageEnhance, ImageFilter
+                        import numpy as np
+                        img_pil = Image.open(io.BytesIO(image_bytes)).convert('L')
+                        # Scale 4x + contrast + sharpen
+                        scaled = img_pil.resize((img_pil.width * 4, img_pil.height * 4), Image.LANCZOS)
+                        sharp = ImageEnhance.Contrast(scaled).enhance(4.0)
+                        sharp = sharp.filter(ImageFilter.SHARPEN).filter(ImageFilter.SHARPEN)
+                        # Binary threshold
+                        arr = np.array(sharp)
+                        binary = Image.fromarray((arr > arr.mean()).astype('uint8') * 255)
+
+                        cfg = '--psm 8 --oem 3 -c tessedit_char_whitelist=abcdefghijklmnopqrstuvwxyz0123456789'
+                        # Try sharp first, then binary
+                        for proc in [sharp, binary]:
+                            text = pytesseract.image_to_string(proc, config=cfg).strip().replace(' ', '').replace('\n', '').lower()
+                            if len(text) >= 2:
                                 captcha_text = text
                                 break
-                
-                logger.info(f"[CAPTCHA] Attempt {attempt}: Gemini read '{captcha_text}' (raw: {str(gemini_data.get('candidates',[{}])[0].get('content',{}))[:100]})")
+                        logger.info(f"[CAPTCHA] Attempt {attempt}: Tesseract read '{captcha_text}'")
+                    except Exception as e:
+                        logger.warning(f"[CAPTCHA] Tesseract error: {e}")
+
+                elif ocr_method == "gemini":
+                    gemini_key = os.environ.get("GEMINI_API_KEY", "")
+                    gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
+                    payload = {
+                        "contents": [{"parts": [
+                            {"text": "What text is written in this image? Reply with only the characters, nothing else."},
+                            {"inline_data": {"mime_type": image_mime, "data": image_b64}}
+                        ]}],
+                        "generationConfig": {"temperature": 0.0, "maxOutputTokens": 50}
+                    }
+                    async with aiohttp.ClientSession() as gs:
+                        async with gs.post(gemini_url, json=payload, headers={"Content-Type": "application/json"}, timeout=aiohttp.ClientTimeout(total=30)) as gr:
+                            if gr.status == 200:
+                                d = await gr.json()
+                                parts = d.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+                                captcha_text = parts[0].get("text", "").strip().replace(" ", "").replace("\n", "") if parts else ""
+                                logger.info(f"[CAPTCHA] Attempt {attempt}: Gemini read '{captcha_text}'")
 
                 if not captcha_text or len(captcha_text) < 1:
                     logger.warning(f"[CAPTCHA] Attempt {attempt}: Empty response from Gemini")
