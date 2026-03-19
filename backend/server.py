@@ -2145,8 +2145,8 @@ async def create_performance_indexes():
 # ============================================
 
 ANAF_API_URL = "https://webservicesp.anaf.ro/api/PlatitorTvaRest/v9/tva"
-ANAF_BATCH_SIZE = 100  # Max 100 CUIs per request
-ANAF_RATE_LIMIT_SECONDS = 1.1  # 1 request per second + buffer
+ANAF_BATCH_SIZE = 100  # Max 100 CUIs per request (ANAF supports up to 500, but 100 is safer)
+ANAF_RATE_LIMIT_SECONDS = 2.0  # 2 seconds between batches to avoid connection resets
 
 
 @api_router.get("/anaf/sync-progress")
@@ -2302,48 +2302,58 @@ async def run_anaf_sync(limit: int, only_unsynced: bool, judet: str):
             request_data = [{"cui": int(f.cui), "data": today} for f in batch if f.cui and f.cui.isdigit()]
             
             if not request_data:
+                offset += ANAF_BATCH_SIZE
                 continue
             
-            try:
-                # Call ANAF API
-                add_anaf_log(f"Batch {current_batch}/{anaf_sync_progress['total_batches']}: Trimit {len(request_data)} CUI-uri...")
-                logger.info(f"[ANAF] Batch {current_batch}: Sending {len(request_data)} CUIs to ANAF API...")
-                batch_start = datetime.utcnow()
-                
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(
-                        ANAF_API_URL,
-                        json=request_data,
-                        headers={"Content-Type": "application/json"},
-                        timeout=aiohttp.ClientTimeout(total=30)
-                    ) as response:
-                        api_time = (datetime.utcnow() - batch_start).total_seconds()
-                        logger.info(f"[ANAF] Batch {current_batch}: API response in {api_time:.2f}s, status={response.status}")
-                        
-                        if response.status == 200:
-                            data = await response.json()
+            # Retry logic for connection errors
+            max_retries = 3
+            retry_delay = 5
+            
+            for attempt in range(max_retries):
+                try:
+                    # Call ANAF API
+                    if attempt == 0:
+                        add_anaf_log(f"Batch {current_batch}/{anaf_sync_progress['total_batches']}: Trimit {len(request_data)} CUI-uri...")
+                    else:
+                        add_anaf_log(f"Batch {current_batch}: Retry {attempt + 1}/{max_retries}...")
+                    
+                    logger.info(f"[ANAF] Batch {current_batch}: Sending {len(request_data)} CUIs (attempt {attempt + 1})")
+                    batch_start = datetime.utcnow()
+                    
+                    async with aiohttp.ClientSession() as session:
+                        async with session.post(
+                            ANAF_API_URL,
+                            json=request_data,
+                            headers={"Content-Type": "application/json"},
+                            timeout=aiohttp.ClientTimeout(total=60)  # Increased timeout
+                        ) as response:
+                            api_time = (datetime.utcnow() - batch_start).total_seconds()
+                            logger.info(f"[ANAF] Batch {current_batch}: API response in {api_time:.2f}s, status={response.status}")
                             
-                            # Process found companies
-                            found_map = {}
-                            for item in data.get("found", []):
-                                cui = str(item.get("date_generale", {}).get("cui", ""))
-                                found_map[cui] = item
-                            
-                            batch_found = len(found_map)
-                            batch_not_found = len(batch) - batch_found
-                            add_anaf_log(f"✓ Batch {current_batch}: {batch_found} găsite, {batch_not_found} negăsite ({api_time:.1f}s)")
-                            logger.info(f"[ANAF] Batch {current_batch}: Found {len(found_map)} companies in ANAF response")
-                            
-                            # Update database
-                            for firma in batch:
-                                if firma.cui in found_map:
-                                    item = found_map[firma.cui]
-                                    dg = item.get("date_generale", {})
-                                    tva = item.get("inregistrare_scop_Tva", {})
-                                    rtvai = item.get("inregistrare_RTVAI", {})
-                                    inactiv = item.get("stare_inactiv", {})
-                                    split = item.get("inregistrare_SplitTVA", {})
-                                    sediu = item.get("adresa_sediu_social", {})
+                            if response.status == 200:
+                                data = await response.json()
+                                
+                                # Process found companies
+                                found_map = {}
+                                for item in data.get("found", []):
+                                    cui = str(item.get("date_generale", {}).get("cui", ""))
+                                    found_map[cui] = item
+                                
+                                batch_found = len(found_map)
+                                batch_not_found = len(batch) - batch_found
+                                add_anaf_log(f"✓ Batch {current_batch}: {batch_found} găsite, {batch_not_found} negăsite ({api_time:.1f}s)")
+                                logger.info(f"[ANAF] Batch {current_batch}: Found {len(found_map)} companies in ANAF response")
+                                
+                                # Update database
+                                for firma in batch:
+                                    if firma.cui in found_map:
+                                        item = found_map[firma.cui]
+                                        dg = item.get("date_generale", {})
+                                        tva = item.get("inregistrare_scop_Tva", {})
+                                        rtvai = item.get("inregistrare_RTVAI", {})
+                                        inactiv = item.get("stare_inactiv", {})
+                                        split = item.get("inregistrare_SplitTVA", {})
+                                        sediu = item.get("adresa_sediu_social", {})
                                     
                                     firma.anaf_denumire = dg.get("denumire")
                                     firma.anaf_adresa = dg.get("adresa")
@@ -2390,22 +2400,53 @@ async def run_anaf_sync(limit: int, only_unsynced: bool, judet: str):
                                 db.rollback()
                                 add_anaf_log(f"✗ Batch {current_batch}: Eroare la salvare în DB")
                         else:
+                            # API returned non-200 status
+                            if response.status == 429:
+                                add_anaf_log(f"⚠️ Batch {current_batch}: Rate limit (429), aștept 15s...")
+                                await asyncio.sleep(15)
+                                continue  # Retry this batch
+                            
                             add_anaf_log(f"✗ Batch {current_batch}: Eroare API status {response.status}")
                             logger.error(f"[ANAF] API error: {response.status}")
+                            # Don't mark as error immediately, retry first
+                            if attempt < max_retries - 1:
+                                await asyncio.sleep(retry_delay * (attempt + 1))
+                                continue
+                            
                             for firma in batch:
                                 firma.anaf_sync_status = "error"
                                 anaf_sync_progress["errors"] += 1
                                 anaf_sync_progress["processed"] += 1
                             db.commit()
+                    
+                    # Success - break out of retry loop
+                    break
                             
-            except Exception as e:
-                add_anaf_log(f"✗ Batch {current_batch}: Eroare - {str(e)[:50]}")
-                logger.error(f"[ANAF] Batch error: {e}")
-                for firma in batch:
-                    firma.anaf_sync_status = "error"
-                    anaf_sync_progress["errors"] += 1
-                    anaf_sync_progress["processed"] += 1
-                db.commit()
+                except (aiohttp.ClientError, asyncio.TimeoutError, ConnectionResetError, OSError) as e:
+                    error_msg = str(e)[:50]
+                    if attempt < max_retries - 1:
+                        add_anaf_log(f"⚠️ Batch {current_batch}: {error_msg} - retry în {retry_delay * (attempt + 1)}s...")
+                        await asyncio.sleep(retry_delay * (attempt + 1))  # Exponential backoff
+                        continue
+                    else:
+                        add_anaf_log(f"✗ Batch {current_batch}: Eroare după {max_retries} încercări - {error_msg}")
+                        logger.error(f"[ANAF] Batch error after {max_retries} retries: {e}")
+                        for firma in batch:
+                            firma.anaf_sync_status = "error"
+                            anaf_sync_progress["errors"] += 1
+                            anaf_sync_progress["processed"] += 1
+                        db.commit()
+                        break
+                        
+                except Exception as e:
+                    add_anaf_log(f"✗ Batch {current_batch}: Eroare neașteptată - {str(e)[:50]}")
+                    logger.error(f"[ANAF] Unexpected batch error: {e}")
+                    for firma in batch:
+                        firma.anaf_sync_status = "error"
+                        anaf_sync_progress["errors"] += 1
+                        anaf_sync_progress["processed"] += 1
+                    db.commit()
+                    break
             
             # Update progress and ETA
             elapsed = (datetime.utcnow() - start_time).total_seconds()
