@@ -66,6 +66,13 @@ async def startup_event():
     except Exception as e:
         logger.warning(f"[MongoDB] Could not load config: {e}")
 
+    # Restore MFinante session from MongoDB
+    try:
+        from routes.mfinante import _load_session_from_db
+        await _load_session_from_db()
+    except Exception as e:
+        logger.warning(f"[MFINANTE] Could not restore session: {e}")
+
     logger.info("Application started")
 
 

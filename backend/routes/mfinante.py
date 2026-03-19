@@ -160,6 +160,8 @@ async def solve_mfinante_captcha(captcha_code: str, test_cui: str = "14918042"):
                 state.mfinante_session["jsessionid"] = new_jsessionid
                 state.mfinante_session["cookies"] = new_cookies
                 state.mfinante_sync_progress["session_valid"] = True
+                # Persist session to MongoDB so it survives backend restarts
+                await _save_session_to_db()
                 
                 # Detect company data in response for confirmation message
                 has_company_data = any(kw in html for kw in [
@@ -184,8 +186,36 @@ async def solve_mfinante_captcha(captcha_code: str, test_cui: str = "14918042"):
 
 # ─── Session management ───────────────────────────────────────────────────────
 
+async def _load_session_from_db():
+    """Load persisted MFinante session from MongoDB on startup."""
+    try:
+        saved = await state.mongo_db.mfinante_session.find_one({}, {"_id": 0})
+        if saved and saved.get("jsessionid"):
+            state.mfinante_session["jsessionid"] = saved["jsessionid"]
+            state.mfinante_session["cookies"] = saved.get("cookies", {})
+            logger.info("[MFINANTE] Session loaded from MongoDB")
+    except Exception as e:
+        logger.warning(f"[MFINANTE] Could not load session from MongoDB: {e}")
+
+
+async def _save_session_to_db():
+    """Persist MFinante session to MongoDB."""
+    try:
+        await state.mongo_db.mfinante_session.replace_one(
+            {},
+            {"jsessionid": state.mfinante_session["jsessionid"],
+             "cookies": state.mfinante_session.get("cookies", {})},
+            upsert=True
+        )
+    except Exception as e:
+        logger.warning(f"[MFINANTE] Could not save session to MongoDB: {e}")
+
+
 @router.get("/mfinante/session-status")
 async def get_mfinante_session_status():
+    # Try to load from DB if not in memory
+    if not state.mfinante_session.get("jsessionid"):
+        await _load_session_from_db()
     return {
         "session_valid": state.mfinante_session.get("jsessionid") is not None,
         "jsessionid": (state.mfinante_session.get("jsessionid", "")[:20] + "...") if state.mfinante_session.get("jsessionid") else None,
@@ -197,6 +227,7 @@ async def get_mfinante_session_status():
 async def set_mfinante_session(jsessionid: str, cookies: dict = None):
     state.mfinante_session["jsessionid"] = jsessionid
     state.mfinante_session["cookies"] = cookies or {}
+    await _save_session_to_db()
     valid = await _test_mfinante_session()
     return {
         "success": True,
@@ -338,71 +369,135 @@ async def _fetch_mfinante_bilant(cui: str, an_value: str) -> dict:
         raise Exception("Session expired - CAPTCHA required")
 
     soup = BeautifulSoup(html, 'html.parser')
+    an_clean = an_value.replace("WEB_UU_AN", "") if "WEB_UU_AN" in an_value else an_value
     bilant = {
-        "an": an_value.replace("WEB_UU_AN", "") if "WEB_UU_AN" in an_value else an_value,
+        "an": an_clean,
         "indicatori": {},
-        "raw_labels": []
+        "raw_labels": [],
+        # Debug: collect first 2000 chars of HTML to understand structure
+        "debug_html_snippet": html[:2000] if not bilant_has_data(soup) else None
     }
+    
+    # Try multiple HTML structures MFinante might use
+    # Strategy 1: div.row > div.col-sm-6 pairs (Bootstrap grid)
+    _parse_bilant_rows(soup, bilant, 'div', 'row', 'div', 'col-sm-6')
+    
+    # Strategy 2: table rows (some MFinante pages use tables)
+    if not bilant["indicatori"]:
+        _parse_bilant_tables(soup, bilant)
+    
+    # Strategy 3: any pair of elements with label-value pattern
+    if not bilant["indicatori"]:
+        _parse_bilant_generic(soup, bilant)
+    
+    # Remove debug snippet if data was found  
+    if bilant["indicatori"]:
+        bilant.pop("debug_html_snippet", None)
+    
+    return bilant
+
+
+def bilant_has_data(soup) -> bool:
+    """Check if soup has any row-col structure"""
     for row in soup.find_all('div', class_='row'):
-        cols = row.find_all('div', class_='col-sm-6')
+        if row.find_all('div', class_='col-sm-6'):
+            return True
+    return bool(soup.find_all('tr'))
+
+
+def _apply_bilant_label(label: str, value, ind: dict):
+    """Map a label string to the correct indicator key."""
+    if not label or value is None:
+        return
+    l = label.lower()
+    if 'cifra' in l and 'afaceri' in l and ('neta' in l or 'net' in l):
+        ind["cifra_afaceri_neta"] = value
+    elif ('cifra' in l and 'afaceri' in l) and "cifra_afaceri_neta" not in ind:
+        ind["cifra_afaceri_neta"] = value
+    elif 'venituri' in l and 'total' in l:
+        ind["venituri_totale"] = value
+    elif 'cheltuieli' in l and 'total' in l:
+        ind["cheltuieli_totale"] = value
+    elif 'profit' in l and 'brut' in l:
+        ind["profit_brut"] = value
+    elif 'pierdere' in l and 'brut' in l:
+        ind["pierdere_bruta"] = value
+    elif 'profit' in l and ('net' in l or 'neta' in l):
+        ind["profit_net"] = value
+    elif 'pierdere' in l and ('net' in l or 'neta' in l):
+        ind["pierdere_neta"] = value
+    elif ('numar' in l or 'nr' in l) and ('salariat' in l or 'angajat' in l or 'personal' in l):
+        ind["numar_angajati"] = int(value) if value else None
+    elif 'active' in l and 'imobilizat' in l:
+        ind["active_imobilizate"] = value
+    elif 'active' in l and 'circulant' in l:
+        ind["active_circulante"] = value
+    elif 'stocuri' in l:
+        ind["stocuri"] = value
+    elif 'creant' in l:
+        ind["creante"] = value
+    elif ('casa' in l or 'disponibil' in l) and ('banci' in l or 'numerar' in l or 'trezorerie' in l):
+        ind["casa_conturi_banci"] = value
+    elif 'capital' in l and ('propri' in l or 'net' in l):
+        ind["capitaluri_proprii"] = value
+    elif 'capital' in l and ('subscris' in l or 'social' in l or 'varsat' in l):
+        ind["capital_subscris"] = value
+    elif 'provizioane' in l:
+        ind["provizioane"] = value
+    elif 'datorii' in l:
+        ind["datorii"] = value
+    elif 'repartizar' in l and 'profit' in l:
+        ind["repartizare_profit"] = value
+
+
+def _parse_bilant_rows(soup, bilant: dict, row_tag: str, row_cls: str, col_tag: str, col_cls: str):
+    """Parse Bootstrap grid rows."""
+    ind = bilant["indicatori"]
+    for row in soup.find_all(row_tag, class_=row_cls):
+        cols = row.find_all(col_tag, class_=col_cls)
         if len(cols) >= 2:
             label_raw = cols[0].get_text(separator=' ', strip=True)
-            label = _clean_mf_text(label_raw).lower()
+            label = _clean_mf_text(label_raw)
             value_text = _clean_mf_text(cols[1].get_text(separator=' ', strip=True))
             value = _parse_value(value_text)
-            # Store all label-value pairs for debugging
             if label and len(label) > 2:
-                bilant["raw_labels"].append({"label": label_raw[:80], "value": value_text[:30]})
-            ind = bilant["indicatori"]
-            if 'cifra' in label and 'afaceri' in label and 'neta' in label:
-                ind["cifra_afaceri_neta"] = value
-            elif 'venituri totale' in label:
-                ind["venituri_totale"] = value
-            elif 'cheltuieli totale' in label:
-                ind["cheltuieli_totale"] = value
-            elif 'profit brut' in label:
-                ind["profit_brut"] = value
-            elif 'pierdere brut' in label:
-                ind["pierdere_bruta"] = value
-            elif 'profit net' in label:
-                ind["profit_net"] = value
-            elif 'pierdere net' in label:
-                ind["pierdere_neta"] = value
-            elif 'numar mediu' in label and 'salariati' in label:
-                ind["numar_angajati"] = int(value) if value else None
-            elif 'active imobilizate' in label and 'total' not in label:
-                ind["active_imobilizate"] = value
-            elif 'active circulante' in label and 'total' not in label:
-                ind["active_circulante"] = value
-            elif 'stocuri' in label:
-                ind["stocuri"] = value
-            elif 'creante' in label:
-                ind["creante"] = value
-            elif 'casa' in label and 'banci' in label:
-                ind["casa_conturi_banci"] = value
-            elif 'cheltuieli' in label and 'avans' in label:
-                ind["cheltuieli_avans"] = value
-            elif 'capitaluri proprii' in label or 'capital propriu' in label:
-                ind["capitaluri_proprii"] = value
-            elif 'capital subscris' in label or 'capital social' in label:
-                ind["capital_subscris"] = value
-            elif 'patrimoniul regiei' in label:
-                ind["patrimoniul_regiei"] = value
-            elif 'provizioane' in label:
-                ind["provizioane"] = value
-            elif 'datorii' in label and 'total' not in label:
-                ind["datorii"] = value
-            elif 'venituri' in label and 'avans' in label:
-                ind["venituri_avans"] = value
-            elif 'repartizare' in label and 'profit' in label:
-                ind["repartizare_profit"] = value
-    return bilant
+                bilant["raw_labels"].append({"label": label[:80], "value": value_text[:30]})
+            _apply_bilant_label(label, value, ind)
+
+
+def _parse_bilant_tables(soup, bilant: dict):
+    """Parse HTML tables for financial data."""
+    ind = bilant["indicatori"]
+    for table in soup.find_all('table'):
+        for row in table.find_all('tr'):
+            cells = row.find_all(['td', 'th'])
+            if len(cells) >= 2:
+                label_raw = cells[0].get_text(separator=' ', strip=True)
+                label = _clean_mf_text(label_raw)
+                # Find numeric value in remaining cells
+                for cell in cells[1:]:
+                    value_text = _clean_mf_text(cell.get_text(separator=' ', strip=True))
+                    value = _parse_value(value_text)
+                    if value is not None:
+                        if label and len(label) > 2:
+                            bilant["raw_labels"].append({"label": label[:80], "value": value_text[:30]})
+                        _apply_bilant_label(label, value, ind)
+                        break
+
+
+def _parse_bilant_generic(soup, bilant: dict):
+    """Generic: collect ALL label-value pairs for debug."""
+    # Find all text that looks like financial labels
+    all_text = soup.get_text(separator='\n')
+    bilant["raw_labels"].append({"label": "HTML_TEXT_SAMPLE", "value": all_text[:500]})
 
 
 # ─── Test & fetch endpoints ───────────────────────────────────────────────────
 
 @router.get("/mfinante/test/{cui}")
 async def test_mfinante_cui(cui: str):
+    if not state.mfinante_session.get("jsessionid"):
+        await _load_session_from_db()
     if not state.mfinante_session.get("jsessionid"):
         raise HTTPException(status_code=400, detail="No session. Solve CAPTCHA first.")
     try:
@@ -414,10 +509,61 @@ async def test_mfinante_cui(cui: str):
 @router.get("/mfinante/bilant/{cui}/{an}")
 async def get_mfinante_bilant(cui: str, an: str):
     if not state.mfinante_session.get("jsessionid"):
+        await _load_session_from_db()
+    if not state.mfinante_session.get("jsessionid"):
         raise HTTPException(status_code=400, detail="No session set")
     try:
         an_value = f"WEB_UU_AN{an}" if not an.startswith("WEB_") else an
         return await _fetch_mfinante_bilant(cui, an_value)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/mfinante/bilant-debug/{cui}/{an}")
+async def debug_mfinante_bilant_html(cui: str, an: str):
+    """Debug endpoint: returns raw HTML from MFinante bilant page for structure analysis."""
+    if not state.mfinante_session.get("jsessionid"):
+        await _load_session_from_db()
+    if not state.mfinante_session.get("jsessionid"):
+        raise HTTPException(status_code=400, detail="No session set")
+    try:
+        an_value = f"WEB_UU_AN{an}" if not an.startswith("WEB_") else an
+        url = f"{MFINANTE_URL};jsessionid={state.mfinante_session['jsessionid']}"
+        data_form = {"cod": cui, "an": an_value, "method.bilant": "VIZUALIZARE"}
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                url, data=data_form,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Referer": f"{MFINANTE_URL}?cod={cui}",
+                },
+                cookies=state.mfinante_session.get("cookies", {}),
+                timeout=aiohttp.ClientTimeout(total=30)
+            ) as response:
+                html = await response.text()
+        soup = BeautifulSoup(html, 'html.parser')
+        # Collect all structural info
+        rows_with_cols = []
+        for row in soup.find_all('div', class_='row'):
+            cols = row.find_all('div', class_='col-sm-6')
+            if cols:
+                rows_with_cols.append([_clean_mf_text(c.get_text(separator=' ', strip=True))[:100] for c in cols])
+        tables_text = []
+        for table in soup.find_all('table'):
+            for tr in table.find_all('tr')[:20]:
+                cells = [_clean_mf_text(td.get_text(separator=' ', strip=True))[:80] for td in tr.find_all(['td','th'])]
+                if cells:
+                    tables_text.append(cells)
+        return {
+            "html_length": len(html),
+            "is_captcha_page": "kaptcha" in html.lower(),
+            "rows_with_cols_count": len(rows_with_cols),
+            "rows_sample": rows_with_cols[:20],
+            "tables_count": len(soup.find_all('table')),
+            "tables_sample": tables_text[:20],
+            "page_text_sample": soup.get_text(separator='\n')[:1000]
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
