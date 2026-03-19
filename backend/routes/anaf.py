@@ -10,8 +10,8 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 
 import state
 import database
-from constants import ANAF_API_URL, ANAF_BATCH_SIZE, ANAF_RATE_LIMIT_SECONDS, \
-    ANAF_TIMEOUT_SECONDS, ANAF_RETRY_DELAYS, ANAF_PAUSE_AFTER_FAILS
+from constants import ANAF_API_URL, ANAF_BATCH_SIZE, ANAF_CHUNK_SIZE, \
+    ANAF_RATE_LIMIT_SECONDS, ANAF_TIMEOUT_SECONDS, ANAF_RETRY_DELAYS, ANAF_PAUSE_AFTER_FAILS
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -105,47 +105,65 @@ async def run_anaf_sync(limit: int, only_unsynced: bool, judet: str):
     state.add_anaf_log("Pornire sincronizare ANAF...")
 
     Firma = database.Firma
+    from sqlalchemy import and_
 
-    # ─── Collect IDs first (lightweight, no full objects in memory) ──────────
-    # Use a short-lived session just to get IDs
-    id_db = database.SessionLocal()
+    # ─── Count total (lightweight) ────────────────────────────────────────────
+    count_db = database.SessionLocal()
     try:
-        query_start = datetime.utcnow()
-        base_query = id_db.query(Firma.id).filter(Firma.cui.isnot(None), Firma.cui != '')
+        count_q = count_db.query(Firma.id).filter(Firma.cui.isnot(None), Firma.cui != '')
         if only_unsynced:
-            from sqlalchemy import and_
-            base_query = base_query.filter(
-                and_(Firma.anaf_last_sync.is_(None), Firma.anaf_sync_status.is_(None))
-            )
+            count_q = count_q.filter(and_(Firma.anaf_last_sync.is_(None), Firma.anaf_sync_status.is_(None)))
         if judet:
-            base_query = base_query.filter(Firma.judet.ilike(f"%{judet}%"))
-
-        # Get only IDs — memory-efficient, fast
-        all_ids = [row[0] for row in base_query.order_by(Firma.id).all()]
-        query_time = (datetime.utcnow() - query_start).total_seconds()
+            count_q = count_q.filter(Firma.judet.ilike(f"%{judet}%"))
+        total_available = count_q.count()
     finally:
-        id_db.close()
+        count_db.close()
 
-    if limit:
-        all_ids = all_ids[:limit]
-
-    total = len(all_ids)
-    state.add_anaf_log(f"IDs colectate în {query_time:.1f}s — {total:,} firme de sincronizat")
+    total = min(limit, total_available) if limit else total_available
     state.anaf_sync_progress["total_firms"] = total
     state.anaf_sync_progress["total_batches"] = (total + ANAF_BATCH_SIZE - 1) // ANAF_BATCH_SIZE
+    state.add_anaf_log(f"Total firme de sincronizat: {total:,} (disponibile: {total_available:,})")
 
     start_time = datetime.utcnow()
-    consecutive_failures = 0   # track consecutive failed batches
+    consecutive_failures = 0
+    processed_total = 0
+    last_id = 0           # keyset pagination cursor
+    chunk_num = 0
 
-    # ─── Process in batches — FRESH SESSION per batch ────────────────────────
-    for batch_idx, offset in enumerate(range(0, total, ANAF_BATCH_SIZE)):
-        if not state.anaf_sync_progress["active"]:
-            state.add_anaf_log("Oprire solicitată.")
+    # ─── Chunk loop: load 10K IDs at a time ──────────────────────────────────
+    while processed_total < total and state.anaf_sync_progress["active"]:
+
+        # Load next CHUNK_SIZE IDs using keyset pagination (WHERE id > last_id)
+        chunk_db = database.SessionLocal()
+        try:
+            chunk_q = chunk_db.query(Firma.id).filter(
+                Firma.cui.isnot(None), Firma.cui != '', Firma.id > last_id
+            )
+            if only_unsynced:
+                chunk_q = chunk_q.filter(and_(Firma.anaf_last_sync.is_(None), Firma.anaf_sync_status.is_(None)))
+            if judet:
+                chunk_q = chunk_q.filter(Firma.judet.ilike(f"%{judet}%"))
+            remaining_limit = total - processed_total
+            chunk_ids = [row[0] for row in chunk_q.order_by(Firma.id).limit(min(ANAF_CHUNK_SIZE, remaining_limit)).all()]
+        finally:
+            chunk_db.close()
+
+        if not chunk_ids:
             break
 
-        batch_ids = all_ids[offset:offset + ANAF_BATCH_SIZE]
-        current_batch = batch_idx + 1
-        state.anaf_sync_progress["current_batch"] = current_batch
+        chunk_num += 1
+        last_id = chunk_ids[-1]
+        state.add_anaf_log(f"── Chunk {chunk_num}: {len(chunk_ids):,} ID-uri (last_id={last_id:,}) ──")
+
+        # ─── Process chunk in batches of 100 ──────────────────────────────────
+        for batch_offset in range(0, len(chunk_ids), ANAF_BATCH_SIZE):
+            if not state.anaf_sync_progress["active"]:
+                state.add_anaf_log("Oprire solicitată.")
+                break
+
+            batch_ids = chunk_ids[batch_offset:batch_offset + ANAF_BATCH_SIZE]
+            current_batch = state.anaf_sync_progress["current_batch"] + 1
+            state.anaf_sync_progress["current_batch"] = current_batch
 
         # Fresh session per batch — prevents identity map accumulation
         db = database.SessionLocal()
@@ -252,9 +270,8 @@ async def run_anaf_sync(limit: int, only_unsynced: bool, judet: str):
                 db.commit()
                 state.add_anaf_log(f"✗ Batch {current_batch}: Eșuat după 3 încercări (consecutive: {consecutive_failures})")
 
-                # After 3 consecutive failures → pause 5 minutes
                 if consecutive_failures >= 3:
-                    state.add_anaf_log(f"⏸ {consecutive_failures} batch-uri consecutive eșuate — pauză {ANAF_PAUSE_AFTER_FAILS}s (ANAF suprasolicitat)")
+                    state.add_anaf_log(f"⏸ {consecutive_failures} eșuate consecutiv — pauză {ANAF_PAUSE_AFTER_FAILS}s")
                     await asyncio.sleep(ANAF_PAUSE_AFTER_FAILS)
                     consecutive_failures = 0
 
@@ -268,7 +285,7 @@ async def run_anaf_sync(limit: int, only_unsynced: bool, judet: str):
         finally:
             db.close()
 
-        # Update ETA
+        # ETA update
         elapsed = (datetime.utcnow() - start_time).total_seconds()
         processed = state.anaf_sync_progress["processed"]
         if processed > 0 and elapsed > 0:
@@ -281,6 +298,11 @@ async def run_anaf_sync(limit: int, only_unsynced: bool, judet: str):
             state.add_anaf_log(f"📊 Progres: {processed:,}/{total:,}")
 
         await asyncio.sleep(ANAF_RATE_LIMIT_SECONDS)
+        processed_total += len(batch_ids)
+
+        # ── End of batch loop ──────────────────────────────────────────────────
+
+    # ── End of chunk loop ─────────────────────────────────────────────────────
 
     state.add_anaf_log(
         f"✅ Sincronizare completă: {state.anaf_sync_progress['found']:,} găsite, "
