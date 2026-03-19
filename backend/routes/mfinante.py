@@ -337,12 +337,15 @@ async def _fetch_mfinante_data(cui: str) -> dict:
 
 
 def _parse_value(value_text: str):
-    if not value_text or value_text in ('-', ''):
+    if not value_text or value_text.strip() in ('-', '', 'lei', '-lei'):
         return None
-    clean = re.sub(r'[^\d.,\-]', '', value_text)
+    clean = re.sub(r'[^\d.,\-]', '', value_text.strip())
+    if clean in ('', '-', '0', '0.0'):
+        return None
     if clean:
         try:
-            return float(clean.replace('.', '').replace(',', '.'))
+            result = float(clean.replace('.', '').replace(',', '.'))
+            return result if result != 0.0 else None
         except Exception:
             return None
     return None
@@ -406,48 +409,76 @@ def bilant_has_data(soup) -> bool:
 
 
 def _apply_bilant_label(label: str, value, ind: dict):
-    """Map a label string to the correct indicator key."""
+    """Map a label string to the correct indicator key — based on actual MFinante table structure."""
     if not label or value is None:
         return
-    l = label.lower()
-    if 'cifra' in l and 'afaceri' in l and ('neta' in l or 'net' in l):
-        ind["cifra_afaceri_neta"] = value
-    elif ('cifra' in l and 'afaceri' in l) and "cifra_afaceri_neta" not in ind:
-        ind["cifra_afaceri_neta"] = value
+    l = label.lower().strip()
+
+    # ── Cifra de afaceri ─────────────────────────────────────────────────────
+    if 'cifra' in l and 'afaceri' in l:
+        ind.setdefault("cifra_afaceri_neta", value)
+    # ── Venituri / Cheltuieli totale ──────────────────────────────────────────
     elif 'venituri' in l and 'total' in l:
-        ind["venituri_totale"] = value
+        ind.setdefault("venituri_totale", value)
     elif 'cheltuieli' in l and 'total' in l:
-        ind["cheltuieli_totale"] = value
+        ind.setdefault("cheltuieli_totale", value)
+    # ── Profit / Pierdere brut(ă) ─────────────────────────────────────────────
+    # Handles: "Profitul sau pierderea brut(a)" header (empty), then "-Profit" / "-Pierdere" subrows
     elif 'profit' in l and 'brut' in l:
-        ind["profit_brut"] = value
+        ind.setdefault("profit_brut", value)
     elif 'pierdere' in l and 'brut' in l:
-        ind["pierdere_bruta"] = value
+        ind.setdefault("pierdere_bruta", value)
+    elif l.rstrip(':').strip() in ('-profit', '- profit', 'profit'):
+        # "-Profit" subrow under "Profitul sau pierderea brut(a)"
+        if 'profit_brut' not in ind:
+            ind["profit_brut"] = value
+        else:
+            ind.setdefault("profit_net", value)
+    elif l.rstrip(':').strip() in ('-pierdere', '- pierdere', 'pierdere'):
+        if 'pierdere_bruta' not in ind:
+            ind["pierdere_bruta"] = value
+        else:
+            ind.setdefault("pierdere_neta", value)
+    # ── Profit / Pierdere net(ă) ──────────────────────────────────────────────
     elif 'profit' in l and ('net' in l or 'neta' in l):
-        ind["profit_net"] = value
+        ind.setdefault("profit_net", value)
     elif 'pierdere' in l and ('net' in l or 'neta' in l):
-        ind["pierdere_neta"] = value
-    elif ('numar' in l or 'nr' in l) and ('salariat' in l or 'angajat' in l or 'personal' in l):
-        ind["numar_angajati"] = int(value) if value else None
+        ind.setdefault("pierdere_neta", value)
+    # ── Angajați ─────────────────────────────────────────────────────────────
+    elif any(kw in l for kw in ['salariat', 'angajat', 'personal', 'numar mediu']):
+        ind.setdefault("numar_angajati", int(value) if value else None)
+    # ── Active ────────────────────────────────────────────────────────────────
     elif 'active' in l and 'imobilizat' in l:
-        ind["active_imobilizate"] = value
+        ind.setdefault("active_imobilizate", value)
     elif 'active' in l and 'circulant' in l:
-        ind["active_circulante"] = value
+        ind.setdefault("active_circulante", value)
     elif 'stocuri' in l:
-        ind["stocuri"] = value
+        ind.setdefault("stocuri", value)
     elif 'creant' in l:
-        ind["creante"] = value
+        ind.setdefault("creante", value)
     elif ('casa' in l or 'disponibil' in l) and ('banci' in l or 'numerar' in l or 'trezorerie' in l):
-        ind["casa_conturi_banci"] = value
+        ind.setdefault("casa_conturi_banci", value)
+    elif 'cheltuieli' in l and 'avans' in l:
+        ind.setdefault("cheltuieli_avans", value)
+    # ── Capitaluri ────────────────────────────────────────────────────────────
+    # "CAPITALURI - TOTAL, din care:" is the main capital total
+    elif 'capitaluri' in l and 'total' in l:
+        ind.setdefault("capitaluri_proprii", value)
     elif 'capital' in l and ('propri' in l or 'net' in l):
-        ind["capitaluri_proprii"] = value
+        ind.setdefault("capitaluri_proprii", value)
     elif 'capital' in l and ('subscris' in l or 'social' in l or 'varsat' in l):
-        ind["capital_subscris"] = value
+        ind.setdefault("capital_subscris", value)
+    elif 'patrimoniul' in l and 'regiei' in l:
+        ind.setdefault("patrimoniul_regiei", value)
+    # ── Pasive ────────────────────────────────────────────────────────────────
     elif 'provizioane' in l:
-        ind["provizioane"] = value
+        ind.setdefault("provizioane", value)
     elif 'datorii' in l:
-        ind["datorii"] = value
+        ind.setdefault("datorii", value)
+    elif 'venituri' in l and 'avans' in l:
+        ind.setdefault("venituri_avans", value)
     elif 'repartizar' in l and 'profit' in l:
-        ind["repartizare_profit"] = value
+        ind.setdefault("repartizare_profit", value)
 
 
 def _parse_bilant_rows(soup, bilant: dict, row_tag: str, row_cls: str, col_tag: str, col_cls: str):
