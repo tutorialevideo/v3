@@ -131,6 +131,8 @@ function App() {
   const [captchaCode, setCaptchaCode] = useState("");
   const [captchaError, setCaptchaError] = useState(null);
   const [showAdvancedConfig, setShowAdvancedConfig] = useState(false);
+  const [downloadLogs, setDownloadLogs] = useState([]);
+  const [downloadProgress, setDownloadProgress] = useState(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -181,6 +183,29 @@ function App() {
     const interval = setInterval(fetchData, 10000);
     return () => clearInterval(interval);
   }, [fetchData]);
+
+  // Poll download logs when a job is running
+  useEffect(() => {
+    let logInterval = null;
+    if (currentRun) {
+      const pollLogs = async () => {
+        try {
+          const res = await axios.get(`${API}/run/logs`);
+          setDownloadLogs(res.data.logs || []);
+          setDownloadProgress(res.data);
+          if (!res.data.active) {
+            // Job finished — refresh data and stop polling
+            fetchData();
+          }
+        } catch (e) {}
+      };
+      pollLogs();
+      logInterval = setInterval(pollLogs, 2000);
+    } else {
+      setDownloadProgress(null);
+    }
+    return () => { if (logInterval) clearInterval(logInterval); };
+  }, [currentRun, fetchData]);
 
   const reconnectDatabase = async () => {
     setReconnecting(true);
@@ -247,10 +272,21 @@ function App() {
         date_end: dateEnd ? format(dateEnd, 'yyyy-MM-dd') : null
       });
       await axios.post(`${API}/run`);
+      setDownloadLogs([]);
       toast.success("Job-ul de descărcare a fost pornit!");
       fetchData();
     } catch (error) {
       toast.error(error.response?.data?.detail || "Eroare la pornirea job-ului");
+    }
+  };
+
+  const stopDownloadJob = async () => {
+    try {
+      await axios.post(`${API}/run/stop`);
+      toast.success("Oprire solicitată. Job-ul se va opri după instituția curentă.");
+      fetchData();
+    } catch (error) {
+      toast.error("Eroare la oprire");
     }
   };
 
@@ -1302,19 +1338,65 @@ function App() {
                 </div>
               </div>
 
-              {/* Start button - primary CTA */}
-              <Button
-                className="w-full run-primary-btn"
-                onClick={triggerRun}
-                disabled={!!currentRun}
-                data-testid="run-now-btn"
-                style={{marginTop: '8px', marginBottom: '4px'}}
-              >
-                {currentRun
-                  ? <><Loader2 className="animate-spin" size={16} style={{marginRight: 8}} />Descărcare în curs...</>
-                  : <><Play size={16} style={{marginRight: 8}} />Start Descărcare</>
-                }
-              </Button>
+              {/* Start / Stop buttons */}
+              <div style={{display: 'flex', gap: '8px', marginTop: '8px', marginBottom: '4px'}}>
+                <Button
+                  className="run-primary-btn"
+                  onClick={triggerRun}
+                  disabled={!!currentRun}
+                  data-testid="run-now-btn"
+                  style={{flex: 1}}
+                >
+                  {currentRun
+                    ? <><Loader2 className="animate-spin" size={16} style={{marginRight: 8}} />Descărcare în curs...</>
+                    : <><Play size={16} style={{marginRight: 8}} />Start Descărcare</>
+                  }
+                </Button>
+                {currentRun && (
+                  <Button
+                    variant="destructive"
+                    onClick={stopDownloadJob}
+                    data-testid="stop-run-btn"
+                    style={{flexShrink: 0}}
+                  >
+                    <XCircle size={16} style={{marginRight: 6}} />
+                    Oprește
+                  </Button>
+                )}
+              </div>
+
+              {/* Live log panel — shown only when running or logs available */}
+              {(currentRun || downloadLogs.length > 0) && (
+                <div className="download-log-panel" data-testid="download-log-panel">
+                  <div className="download-log-header">
+                    <Activity size={14} />
+                    <span>Log descărcare</span>
+                    {downloadProgress && (
+                      <span className="download-log-stats">
+                        {downloadProgress.processed}/{downloadProgress.total} instituții
+                        {downloadProgress.dosare_found > 0 && ` • ${downloadProgress.dosare_found} dosare`}
+                        {downloadProgress.firme_new > 0 && ` • ${downloadProgress.firme_new} firme noi`}
+                      </span>
+                    )}
+                  </div>
+                  {downloadProgress && downloadProgress.total > 0 && (
+                    <Progress
+                      value={(downloadProgress.processed / downloadProgress.total) * 100}
+                      className="download-log-progress"
+                    />
+                  )}
+                  <ScrollArea className="download-log-scroll">
+                    <div className="download-log-content">
+                      {downloadLogs.length === 0
+                        ? <span className="download-log-empty">Se inițializează...</span>
+                        : downloadLogs.map((line, i) => (
+                            <div key={i} className="download-log-line">{line}</div>
+                          ))
+                      }
+                    </div>
+                  </ScrollArea>
+                </div>
+              )}
 
               {/* Advanced settings toggle */}
               <button

@@ -347,6 +347,24 @@ import_progress = {
     "last_update": None
 }
 
+# Download job progress tracking
+download_job_stop_flag = False
+download_job_progress = {
+    "active": False,
+    "processed": 0,
+    "total": 0,
+    "dosare_found": 0,
+    "firme_new": 0,
+    "logs": []
+}
+
+def add_download_log(message: str):
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    download_job_progress["logs"].append(f"[{timestamp}] {message}")
+    if len(download_job_progress["logs"]) > 200:
+        download_job_progress["logs"] = download_job_progress["logs"][-200:]
+
 # ANAF sync progress tracking
 anaf_sync_progress = {
     "active": False,
@@ -752,7 +770,20 @@ async def save_to_postgres(dosare: List[dict], search_term: str) -> dict:
 async def run_download_job(search_term: str, job_run_id: str, date_start: str = "", 
                            date_end: str = "", triggered_by: str = "manual"):
     """Run the download job"""
-    logger.info(f"Starting download job for: {search_term}")
+    global download_job_stop_flag
+    download_job_stop_flag = False
+    
+    label_info = search_term if search_term and search_term.strip() else f"{date_start or '*'} → {date_end or '*'}"
+    logger.info(f"Starting download job: {label_info}")
+    
+    download_job_progress["active"] = True
+    download_job_progress["processed"] = 0
+    download_job_progress["total"] = len(INSTITUTII)
+    download_job_progress["dosare_found"] = 0
+    download_job_progress["firme_new"] = 0
+    download_job_progress["logs"] = []
+    add_download_log(f"Job pornit: {label_info}")
+    add_download_log(f"Procesare {len(INSTITUTII)} instituții...")
     
     all_dosare = []
     processed = 0
@@ -760,16 +791,24 @@ async def run_download_job(search_term: str, job_run_id: str, date_start: str = 
     
     async with aiohttp.ClientSession() as session:
         for institutie in INSTITUTII:
+            if download_job_stop_flag:
+                add_download_log("Oprire solicitată de utilizator.")
+                break
+            
             dosare = await fetch_dosare(session, search_term, institutie, date_start, date_end)
             
             if dosare:
-                # Save to PostgreSQL
                 stats = await save_to_postgres(dosare, search_term)
                 for key in total_stats:
                     total_stats[key] += stats[key]
                 all_dosare.extend(dosare)
+                add_download_log(f"[{processed+1}/{len(INSTITUTII)}] {institutie}: {len(dosare)} dosare, {stats['firme_new']} firme noi")
             
             processed += 1
+            download_job_progress["processed"] = processed
+            download_job_progress["dosare_found"] = len(all_dosare)
+            download_job_progress["firme_new"] = total_stats['firme_new']
+            
             await mongo_db.job_runs.update_one(
                 {"id": job_run_id},
                 {"$set": {
@@ -782,7 +821,9 @@ async def run_download_job(search_term: str, job_run_id: str, date_start: str = 
             )
             await asyncio.sleep(0.5)
     
-    # Also save JSON backup
+    download_job_progress["active"] = False
+    
+    # Save JSON backup
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     label = search_term.replace(' ', '_') if search_term and search_term.strip() else f"{date_start or 'all'}_{date_end or 'all'}"
     filename = f"dosare_{label}_{timestamp}.json"
@@ -798,11 +839,13 @@ async def run_download_job(search_term: str, job_run_id: str, date_start: str = 
             "dosare": all_dosare
         }, f, ensure_ascii=False, indent=2)
     
-    # Update job run
+    final_status = "stopped" if download_job_stop_flag else "completed"
+    add_download_log(f"Job finalizat: {total_stats['dosare_new']} dosare noi, {total_stats['firme_new']} firme noi.")
+    
     await mongo_db.job_runs.update_one(
         {"id": job_run_id},
         {"$set": {
-            "status": "completed",
+            "status": final_status,
             "finished_at": datetime.now(timezone.utc).isoformat(),
             "total_records": len(all_dosare),
             "firme_count": total_stats['firme_new'],
@@ -812,7 +855,7 @@ async def run_download_job(search_term: str, job_run_id: str, date_start: str = 
         }}
     )
     
-    logger.info(f"Job completed: {total_stats}")
+    logger.info(f"Job {final_status}: {total_stats}")
     return total_stats
 
 
@@ -914,10 +957,51 @@ async def trigger_run(background_tasks: BackgroundTasks):
     job_run_dict['started_at'] = job_run_dict['started_at'].isoformat()
     await mongo_db.job_runs.insert_one(job_run_dict)
     
-    background_tasks.add_task(run_download_job, config['search_term'], job_run.id,
+    background_tasks.add_task(run_download_job, config.get('search_term', ''), job_run.id,
                               config.get('date_start', ''), config.get('date_end', ''), "manual")
     
     return {"message": "Job started", "job_id": job_run.id}
+
+
+@api_router.post("/run/stop")
+async def stop_download_job():
+    """Stop the currently running download job"""
+    global download_job_stop_flag
+    download_job_stop_flag = True
+    add_download_log("Cerere de oprire primită...")
+    # Also mark any running job as stopped in DB
+    await mongo_db.job_runs.update_many(
+        {"status": "running"},
+        {"$set": {"status": "stopped", "finished_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    download_job_progress["active"] = False
+    return {"message": "Stop requested"}
+
+
+@api_router.get("/run/logs")
+async def get_download_logs():
+    """Get current download job logs and progress"""
+    return {
+        "active": download_job_progress["active"],
+        "processed": download_job_progress["processed"],
+        "total": download_job_progress["total"],
+        "dosare_found": download_job_progress["dosare_found"],
+        "firme_new": download_job_progress["firme_new"],
+        "logs": download_job_progress["logs"][-50:]  # last 50 lines
+    }
+
+
+@api_router.post("/run/fix-stuck")
+async def fix_stuck_jobs():
+    """Mark orphaned running jobs as failed (jobs stuck > 1 hour)"""
+    from datetime import timezone as tz
+    cutoff = datetime.now(tz.utc).isoformat()
+    result = await mongo_db.job_runs.update_many(
+        {"status": "running"},
+        {"$set": {"status": "failed", "finished_at": cutoff, "error_message": "Job marcat ca eșuat (orfan)"}}
+    )
+    download_job_progress["active"] = False
+    return {"fixed": result.modified_count}
 
 
 @api_router.get("/runs")
