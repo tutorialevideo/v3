@@ -189,8 +189,9 @@ async def reconnect_database():
     if success:
         try:
             database.Base.metadata.create_all(bind=database.engine)
+            database._migrate_schema()
         except Exception as e:
-            logger.warning(f"Table creation after reconnect: {e}")
+            logger.warning(f"Table/schema migration after reconnect: {e}")
         return {"success": True, "message": "Database connection established successfully", "postgres_available": True}
     raise HTTPException(status_code=503, detail="Could not connect to PostgreSQL.")
 

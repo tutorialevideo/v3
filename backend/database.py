@@ -217,8 +217,42 @@ def create_tables():
         try:
             Base.metadata.create_all(bind=engine)
             logger.info("[DB] Tables created/verified")
+            _migrate_schema()
         except Exception as e:
             logger.error(f"[DB] Could not create tables: {e}")
+
+
+def _migrate_schema():
+    """
+    Add any new columns that are in the SQLAlchemy model but missing from the DB.
+    Uses ALTER TABLE ... ADD COLUMN IF NOT EXISTS — safe to run multiple times.
+    """
+    if engine is None:
+        return
+    migrations = [
+        # Localitati
+        "ALTER TABLE firme ADD COLUMN IF NOT EXISTS siruta BIGINT",
+        "CREATE INDEX IF NOT EXISTS idx_firme_siruta ON firme(siruta)",
+        # ANAF extra columns added later
+        "ALTER TABLE firme ADD COLUMN IF NOT EXISTS anaf_sediu_cod_postal VARCHAR(20)",
+        "ALTER TABLE firme ADD COLUMN IF NOT EXISTS anaf_split_tva BOOLEAN",
+        "ALTER TABLE firme ADD COLUMN IF NOT EXISTS anaf_inactiv BOOLEAN",
+        "ALTER TABLE firme ADD COLUMN IF NOT EXISTS anaf_e_factura BOOLEAN",
+        # MFinante extra
+        "ALTER TABLE firme ADD COLUMN IF NOT EXISTS mf_cod_postal VARCHAR(20)",
+        "ALTER TABLE firme ADD COLUMN IF NOT EXISTS mf_tva_data VARCHAR(200)",
+        "ALTER TABLE firme ADD COLUMN IF NOT EXISTS mf_accize BOOLEAN",
+        "ALTER TABLE firme ADD COLUMN IF NOT EXISTS mf_cas_data VARCHAR(200)",
+    ]
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        for sql in migrations:
+            try:
+                conn.execute(text(sql))
+            except Exception:
+                pass
+        conn.commit()
+    logger.info("[DB] Schema migrations applied")
 
 
 # Initialize on import
