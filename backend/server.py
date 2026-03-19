@@ -2157,9 +2157,8 @@ async def get_anaf_sync_progress():
 
 @api_router.get("/anaf/stats")
 async def get_anaf_stats():
-    """Get ANAF sync statistics"""
-    db = get_db_session()
-    if db is None:
+    """Get ANAF sync statistics - always uses fresh DB session"""
+    if SessionLocal is None:
         return {
             "total_firme_cu_cui": 0,
             "synced": 0,
@@ -2174,7 +2173,12 @@ async def get_anaf_stats():
             "db_available": False
         }
     
+    # Create a fresh session to get current data
+    db = SessionLocal()
     try:
+        # Force fresh read from database
+        db.expire_all()
+        
         total_firme = db.query(Firma).filter(Firma.cui.isnot(None), Firma.cui != '').count()
         synced = db.query(Firma).filter(Firma.anaf_last_sync.isnot(None)).count()
         found = db.query(Firma).filter(Firma.anaf_sync_status == 'found').count()
@@ -2254,33 +2258,43 @@ async def run_anaf_sync(limit: int, only_unsynced: bool, judet: str):
     
     db = SessionLocal()
     try:
-        # Build query
-        query = db.query(Firma).filter(Firma.cui.isnot(None), Firma.cui != '')
+        # Count first, then process in chunks
+        query_start = datetime.utcnow()
+        
+        # Build base query
+        base_query = db.query(Firma).filter(Firma.cui.isnot(None), Firma.cui != '')
         
         if only_unsynced:
-            query = query.filter(Firma.anaf_last_sync.is_(None))
+            base_query = base_query.filter(Firma.anaf_last_sync.is_(None))
         
         if judet:
-            query = query.filter(Firma.judet.ilike(f"%{judet}%"))
+            base_query = base_query.filter(Firma.judet.ilike(f"%{judet}%"))
         
+        # Get total count first (fast)
         if limit:
-            query = query.limit(limit)
+            total = min(limit, base_query.count())
+        else:
+            total = base_query.count()
         
-        firms = query.all()
-        total = len(firms)
+        query_time = (datetime.utcnow() - query_start).total_seconds()
+        add_anaf_log(f"Query pregătit în {query_time:.1f}s - {total} firme de sincronizat")
         
         anaf_sync_progress["total_firms"] = total
         anaf_sync_progress["total_batches"] = (total + ANAF_BATCH_SIZE - 1) // ANAF_BATCH_SIZE
         
-        add_anaf_log(f"Găsite {total} firme de sincronizat în {anaf_sync_progress['total_batches']} batch-uri")
         logger.info(f"[ANAF] Starting sync for {total} firms in {anaf_sync_progress['total_batches']} batches")
         
         start_time = datetime.utcnow()
+        offset = 0
         
-        # Process in batches of 100
-        for batch_num in range(0, total, ANAF_BATCH_SIZE):
-            batch = firms[batch_num:batch_num + ANAF_BATCH_SIZE]
-            current_batch = batch_num // ANAF_BATCH_SIZE + 1
+        # Process in batches of 100 - fetch from DB as needed
+        while offset < total:
+            # Fetch only current batch from DB
+            batch = base_query.offset(offset).limit(ANAF_BATCH_SIZE).all()
+            if not batch:
+                break
+                
+            current_batch = offset // ANAF_BATCH_SIZE + 1
             anaf_sync_progress["current_batch"] = current_batch
             
             # Prepare request
@@ -2367,7 +2381,14 @@ async def run_anaf_sync(limit: int, only_unsynced: bool, judet: str):
                                 
                                 anaf_sync_progress["processed"] += 1
                             
-                            db.commit()
+                            # Commit changes to database
+                            try:
+                                db.commit()
+                                logger.debug(f"[ANAF] Batch {current_batch}: Committed {len(batch)} updates to DB")
+                            except Exception as commit_err:
+                                logger.error(f"[ANAF] Batch {current_batch}: Commit failed: {commit_err}")
+                                db.rollback()
+                                add_anaf_log(f"✗ Batch {current_batch}: Eroare la salvare în DB")
                         else:
                             add_anaf_log(f"✗ Batch {current_batch}: Eroare API status {response.status}")
                             logger.error(f"[ANAF] API error: {response.status}")
@@ -2402,6 +2423,9 @@ async def run_anaf_sync(limit: int, only_unsynced: bool, judet: str):
             
             # Rate limiting
             await asyncio.sleep(ANAF_RATE_LIMIT_SECONDS)
+            
+            # Move to next batch
+            offset += ANAF_BATCH_SIZE
         
         add_anaf_log(f"✅ Sincronizare completă: {anaf_sync_progress['found']} găsite, {anaf_sync_progress['not_found']} negăsite, {anaf_sync_progress['errors']} erori")
         logger.info(f"[ANAF] Sync complete: {anaf_sync_progress['processed']} processed, {anaf_sync_progress['found']} found, {anaf_sync_progress['not_found']} not found")
