@@ -176,9 +176,9 @@ export default function AnafPage({ ctx }) {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {/* Live stats — always visible */}
+                {/* Live stats — always visible when data available */}
                 {anafStats && (
-                  <div className="anaf-live-stats" style={{
+                  <div style={{
                     display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(130px,1fr))',
                     gap:'8px', marginBottom:'14px'
                   }}>
@@ -206,24 +206,24 @@ export default function AnafPage({ ctx }) {
                     ))}
                   </div>
                 )}
-                  <div className="progress-info" style={{marginBottom: anafProgress.active ? '0' : '16px'}}>
+
+                {/* Progress bar — shown during sync AND after last run */}
+                {anafProgress && (anafProgress.active || anafProgress.processed > 0) && (
+                  <div className="progress-info" style={{marginBottom:'16px'}}>
                     <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'6px'}}>
                       <span style={{fontSize:'0.8rem', color:'var(--text-muted)'}}>
                         {anafProgress.active ? 'Sincronizare în curs...' : '✅ Ultima rulare finalizată'}
                       </span>
-                      {anafProgress.processed > 0 && (
+                      {anafProgress.processed > 0 && anafProgress.total_firms > 0 && (
                         <span style={{fontSize:'0.8rem', color:'var(--primary)', fontWeight:600}}>
-                          {anafProgress.total_firms > 0
-                            ? `${((anafProgress.processed / anafProgress.total_firms) * 100).toFixed(1)}%`
-                            : ''}
+                          {((anafProgress.processed / anafProgress.total_firms) * 100).toFixed(1)}%
                         </span>
                       )}
                     </div>
                     <div className="progress-bar-container">
-                      <div 
-                        className="progress-bar" 
-                        style={{ width: `${anafProgress.total_firms > 0 ? (anafProgress.processed / anafProgress.total_firms * 100) : 0}%` }}
-                      />
+                      <div className="progress-bar" style={{
+                        width: `${anafProgress.total_firms > 0 ? Math.min((anafProgress.processed / anafProgress.total_firms * 100), 100) : 0}%`
+                      }} />
                     </div>
                     <div className="progress-stats">
                       <span>Procesat: <strong>{anafProgress.processed?.toLocaleString()}</strong> / {anafProgress.total_firms?.toLocaleString()}</span>
