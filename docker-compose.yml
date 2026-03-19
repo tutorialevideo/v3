@@ -65,6 +65,7 @@ services:
       - POSTGRES_URL=postgresql://justapp:justapp123@postgres:5432/justportal
       - CORS_ORIGINS=*
       - EMERGENT_LLM_KEY=sk-emergent-2988e1114097c4908F
+      - GEMINI_API_KEY=AIzaSyDpeicr5gnNo1Rg_GraVfTYyfHLG3f41TE
     volumes:
       - backend_downloads:/app/downloads
     ports:

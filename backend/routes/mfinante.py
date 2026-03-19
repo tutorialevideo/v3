@@ -220,14 +220,25 @@ async def _save_session_to_db():
 @router.post("/mfinante/captcha/auto-solve")
 async def auto_solve_captcha(test_cui: str = "14918042", max_attempts: int = 5):
     """
-    Automatically solve MFinante CAPTCHA using GPT-4o vision.
-    Uses a SINGLE persistent session (cookie jar) for init + image + submit.
+    Automatically solve MFinante CAPTCHA using Gemini Vision.
+    Uses GEMINI_API_KEY if available, falls back to EMERGENT_LLM_KEY.
     """
+    gemini_key = os.environ.get("GEMINI_API_KEY")
     emergent_key = os.environ.get("EMERGENT_LLM_KEY")
-    if not emergent_key:
-        raise HTTPException(status_code=500, detail="EMERGENT_LLM_KEY not configured")
+    
+    # Prefer Gemini if configured, fall back to Emergent key with OpenAI
+    if gemini_key:
+        api_key = gemini_key
+        provider = "gemini"
+        model = "gemini-2.0-flash"
+    elif emergent_key:
+        api_key = emergent_key
+        provider = "openai"
+        model = "gpt-4o"
+    else:
+        raise HTTPException(status_code=500, detail="Nicio cheie API configurată (GEMINI_API_KEY sau EMERGENT_LLM_KEY)")
 
-    from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+    logger.info(f"[CAPTCHA] Auto-solve using {provider}/{model}")
 
     for attempt in range(1, max_attempts + 1):
         logger.info(f"[CAPTCHA] Auto-solve attempt {attempt}/{max_attempts}")
@@ -284,12 +295,23 @@ async def auto_solve_captcha(test_cui: str = "14918042", max_attempts: int = 5):
                 image_base64 = base64.b64encode(image_bytes).decode("utf-8")
                 logger.info(f"[CAPTCHA] Attempt {attempt}: Got image ({len(image_bytes)} bytes)")
 
-                # Step 3: GPT-4o reads CAPTCHA
-                chat = LlmChat(
-                    api_key=emergent_key,
-                    session_id=f"captcha-{uuid.uuid4()}",
-                    system_message="You are a CAPTCHA text reader. Look at the image and return ONLY the characters you see. No spaces, no explanation, just the text."
-                ).with_model("openai", "gpt-4o")
+                # Step 3: Gemini / GPT-4o citește CAPTCHA
+                try:
+                    chat = LlmChat(
+                        api_key=api_key,
+                        session_id=f"captcha-{uuid.uuid4()}",
+                        system_message="You are a CAPTCHA text reader. Look at the image and return ONLY the characters you see. No spaces, no explanation, just the text."
+                    ).with_model(provider, model)
+                except Exception:
+                    # Fallback to Emergent key if Gemini fails
+                    if emergent_key and provider != "openai":
+                        chat = LlmChat(
+                            api_key=emergent_key,
+                            session_id=f"captcha-{uuid.uuid4()}",
+                            system_message="You are a CAPTCHA text reader. Return ONLY the characters."
+                        ).with_model("openai", "gpt-4o")
+                    else:
+                        raise
 
                 image_content = ImageContent(image_base64=image_base64)
                 user_msg = UserMessage(
@@ -352,13 +374,15 @@ async def auto_solve_captcha(test_cui: str = "14918042", max_attempts: int = 5):
 
 @router.get("/mfinante/captcha/auto-status")
 async def get_captcha_auto_status():
-    """Check if session is valid, and if not, suggest auto-solve."""
+    gemini_key = bool(os.environ.get("GEMINI_API_KEY"))
+    emergent_key = bool(os.environ.get("EMERGENT_LLM_KEY"))
     if not state.mfinante_session.get("jsessionid"):
         await _load_session_from_db()
     valid = state.mfinante_session.get("jsessionid") is not None
     return {
         "session_valid": valid,
-        "auto_solve_available": bool(os.environ.get("EMERGENT_LLM_KEY")),
+        "auto_solve_available": gemini_key or emergent_key,
+        "provider": "gemini" if gemini_key else ("openai" if emergent_key else None),
         "message": "Sesiune activă" if valid else "Sesiune expirată — rulați auto-solve"
     }
 async def get_mfinante_session_status():
