@@ -71,11 +71,11 @@ bilanturi (NEW)
 - Backend + Frontend + MongoDB running
 
 ## Backlog (Prioritizat)
-### P1 - Urgent
-- [ ] Completare UI modal "Company Profile" cu toate datele
-- [ ] Completare tab "DB Final" cu tabel + paginare
-- [ ] Log detaliat "Verifică CUI" (afișare JSON raw din ANAF)
-- [ ] Editare manuală CUI pentru o firmă
+### P1 - Completat 2026-03-19
+- [x] Completare UI modal "Company Profile" cu toate datele (ANAF, bilanțuri, dosare + editare CUI)
+- [x] Completare tab "DB Final" cu tabel + paginare + filtre
+- [x] Log detaliat "Verifică CUI" — rezumat vizual + JSON Raw complet expandabil
+- [x] Editare manuală CUI inline în tabel și în modalul de profil
 
 ### P2 - Important
 - [ ] Export CSV/Excel date firme

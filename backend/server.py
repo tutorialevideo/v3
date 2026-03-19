@@ -1175,7 +1175,8 @@ async def update_firma(firma_id: int, update: FirmaUpdate):
             raise HTTPException(status_code=404, detail="Firma not found")
         
         if update.cui is not None:
-            firma.cui = update.cui
+            # Empty string means clear CUI, non-empty means set new CUI
+            firma.cui = update.cui if update.cui else None
         if update.denumire is not None:
             firma.denumire = update.denumire
             firma.denumire_normalized = normalize_company_name(update.denumire)

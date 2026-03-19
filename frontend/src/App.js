@@ -520,7 +520,7 @@ function App() {
 
   const saveInlineCui = async (firmaId) => {
     try {
-      await axios.put(`${API}/db/firme/${firmaId}`, { cui: inlineEditValue.trim() || null });
+      await axios.put(`${API}/db/firme/${firmaId}`, { cui: inlineEditValue.trim() || "" });
       toast.success("CUI salvat!");
       setInlineEditId(null);
       setInlineEditValue("");
@@ -2043,12 +2043,13 @@ function App() {
                     onChange={(e) => setAnafTestCui(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && testAnafCuiFull()}
                     className="test-input"
+                    data-testid="anaf-test-cui-input"
                   />
-                  <Button onClick={testAnafCui} disabled={anafLoading} variant="outline">
+                  <Button onClick={testAnafCui} disabled={anafLoading} variant="outline" data-testid="anaf-verifica-rapid-btn">
                     {anafLoading ? <Loader2 className="animate-spin" size={16} /> : <Search size={16} />}
                     Verifică rapid
                   </Button>
-                  <Button onClick={testAnafCuiFull} disabled={anafLoading}>
+                  <Button onClick={testAnafCuiFull} disabled={anafLoading} data-testid="anaf-date-complete-btn">
                     {anafLoading ? <Loader2 className="animate-spin" size={16} /> : <BarChart3 size={16} />}
                     Date complete
                   </Button>
