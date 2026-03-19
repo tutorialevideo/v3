@@ -59,6 +59,12 @@ export default function AnafPage({ ctx }) {
     cleanupOrphanedDosare, optimizeDatabase, migrateSchema, createIndexes,
     reconnectDatabase,
     formatDate, formatBytes,
+    // ANAF-specific (missing from base destructuring)
+    clearAnafLogs, formatEta,
+    // CAPTCHA
+    captchaLoading,
+    // MFinante-specific
+    setMfSession, setMfSessionId, startMfSync, stopMfSync,
   } = ctx;
 
   return (
