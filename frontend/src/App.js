@@ -240,15 +240,15 @@ function App() {
   };
 
   const searchPreviewDosare = async () => {
-    if (!searchTerm.trim()) {
-      toast.error("Introduceți un termen de căutare");
+    if (!searchTerm.trim() && !dateStart && !dateEnd) {
+      toast.error("Introduceți un nume de firmă sau o perioadă de timp");
       return;
     }
     
     setSearchLoading(true);
     try {
       const res = await axios.post(`${API}/search`, { 
-        company_name: searchTerm,
+        company_name: searchTerm.trim() || null,
         date_start: dateStart ? format(dateStart, 'yyyy-MM-dd') : null,
         date_end: dateEnd ? format(dateEnd, 'yyyy-MM-dd') : null
       });
@@ -1233,14 +1233,14 @@ function App() {
             </CardHeader>
             <CardContent className="config-content">
               <div className="form-group">
-                <Label htmlFor="searchTerm">Nume Firmă</Label>
+                <Label htmlFor="searchTerm">Nume Firmă <span style={{fontWeight: 'normal', opacity: 0.6, fontSize: '0.85em'}}>(opțional)</span></Label>
                 <div className="search-input-group">
                   <Input
                     id="searchTerm"
                     data-testid="search-term-input"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="Ex: SC EXEMPLU SRL"
+                    placeholder="Ex: SC EXEMPLU SRL — lasă gol pentru toate firmele"
                   />
                   <Button 
                     variant="outline" 

@@ -1,72 +1,86 @@
 # Portal JUST Downloader - PRD
 
 ## Problem Statement
-Aplicație pentru descărcarea automată a dosarelor de firme din portalquery.just.ro zilnic, cu stocare în PostgreSQL pentru procesare ulterioară.
+Aplicație pentru descărcarea automată a dosarelor de firme din portalquery.just.ro, cu stocare în PostgreSQL pentru procesare ulterioară. Suportă filtrare pe perioadă de timp și/sau firmă, plus îmbogățire date din ANAF și MFinante.
 
 ## User Persona
 - Utilizator care monitorizează dosarele juridice ale firmelor din România
 - Necesită date structurate pentru asignare CUI și analiză
 
 ## Core Requirements
-1. ✅ Descărcare automată dosare pentru firme
+1. ✅ Descărcare automată dosare pentru firme (opțional: fără firmă, pe perioadă)
 2. ✅ Extragere doar companii (SC, SRL, SA, etc.) - nu persoane fizice
 3. ✅ Stocare în PostgreSQL cu relații: firme → dosare → timeline
 4. ✅ Fiecare firmă poate avea CUI pentru identificare
 5. ✅ Cron job zilnic configurabil
-6. ✅ Filtrare pe perioadă
+6. ✅ Filtrare pe perioadă (date_start / date_end)
+7. ✅ Căutare FĂRĂ firmă specificată (doar pe perioadă de timp)
+8. ✅ Sync ANAF pentru îmbogățire date
+9. ✅ Scraper MFinante cu CAPTCHA interactiv
+10. ✅ Bilanțuri istorice (tabel separat)
 
 ## Database Schema (PostgreSQL)
 
 ```
 firme
 ├── id (PK, BIGINT)
-├── cui (VARCHAR, UNIQUE, NULL) -- completat manual
-├── denumire (VARCHAR)
-├── denumire_normalized (VARCHAR) -- pentru căutare
+├── cui (VARCHAR, UNIQUE, NULL)
+├── denumire, denumire_normalized
+├── date juridice (cod_inregistrare, forma_juridica, etc.)
+├── date ANAF (anaf_denumire, anaf_adresa, anaf_stare, etc.)
+├── date MFinante (mf_cifra_afaceri, mf_profit_net, etc.)
 ├── created_at, updated_at
 
-dosare  
-├── id (PK, BIGINT)
-├── firma_id (FK → firme)
-├── numar_dosar
-├── institutie, obiect, stadiu, categorie, materie
-├── data_dosar
-├── raw_data (JSON) -- date originale complete
+dosare
+├── id, firma_id (FK), numar_dosar
+├── institutie, obiect, stadiu, categorie, materie, data_dosar
+├── raw_data (JSON)
 
 timeline
-├── id (PK, BIGINT)
-├── dosar_id (FK → dosare)
-├── tip (sedinta, hotarare, cale_atac)
-├── data, descriere
-├── detalii (JSON)
+├── id, dosar_id (FK), tip, data, descriere, detalii (JSON)
+
+bilanturi (NEW)
+├── id, firma_id (FK), an_bilant
+├── cifra_afaceri_neta, profit_brut, pierdere_bruta
+├── numar_mediu_salariati, active_imobilizate, etc.
 ```
 
 ## API Endpoints
-
-### Configurare & Rulare
 - `GET/PUT /api/config` - Configurare job
-- `POST /api/run` - Rulare manuală
-- `GET /api/cron/status` - Status cron
-
-### PostgreSQL Data
+- `POST /api/run` - Rulare manuală (search_term opțional, date_range obligatoriu dacă nu e search_term)
+- `POST /api/search` - Preview dosare (company_name opțional)
 - `GET /api/db/stats` - Statistici DB
 - `GET /api/db/firme` - Lista firme (cu paginare)
-- `GET /api/db/firme/{id}` - Detalii firmă + dosare
+- `GET /api/firma/{id}` - Profil firmă complet
 - `PUT /api/db/firme/{id}` - Actualizare CUI
-- `GET /api/db/dosare/{id}` - Detalii dosar + timeline
-
-## Current Stats (2026-03-18)
-- **287 firme** extrase
-- **298 dosare** salvate
-- **547 evenimente timeline**
-- **246 instituții** verificate
+- `GET /api/db/firme-cu-cui` - Firme cu CUI (tab DB Final)
+- `GET /api/anaf/sync` - Sync ANAF
+- `POST /api/anaf/test-cui-details` - Test CUI cu detalii raw
+- `GET /api/mfinante/captcha/init|image|solve` - CAPTCHA MFinante
+- `GET /api/bilanturi/{firma_id}` - Bilanțuri istorice
+- `POST /api/db/reconnect` - Reconectare PostgreSQL
 
 ## Tech Stack
-- Backend: FastAPI + SQLAlchemy + asyncpg + APScheduler
-- Database: PostgreSQL (firme, dosare, timeline) + MongoDB (config, logs)
-- Frontend: React + Shadcn UI
+- Backend: FastAPI + SQLAlchemy + asyncpg + APScheduler + aiohttp
+- Database: PostgreSQL (firme, dosare, timeline, bilanturi) + MongoDB (config, logs)
+- Frontend: React + Shadcn UI + Tailwind CSS
+- Deployment: Docker Compose + Nginx
 
-## Next Steps (P1)
-1. [ ] Import CSV cu CUI-uri pentru firme
-2. [ ] Export date pentru analiză
-3. [ ] Dashboard cu vizualizare dosare pe firmă
+## Current Stats (2026-03-19)
+- Aplicație funcțională în mediul preview
+- Backend + Frontend + MongoDB running
+
+## Backlog (Prioritizat)
+### P1 - Urgent
+- [ ] Completare UI modal "Company Profile" cu toate datele
+- [ ] Completare tab "DB Final" cu tabel + paginare
+- [ ] Log detaliat "Verifică CUI" (afișare JSON raw din ANAF)
+- [ ] Editare manuală CUI pentru o firmă
+
+### P2 - Important
+- [ ] Export CSV/Excel date firme
+- [ ] Selector instituție multi-select pentru Justice Portal
+
+### P3 - Backlog
+- [ ] Refactorizare server.py (~3762 linii) în module separate
+- [ ] Refactorizare App.js (~2784 linii) în componente separate

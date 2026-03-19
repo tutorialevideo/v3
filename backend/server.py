@@ -512,7 +512,7 @@ class JobRun(BaseModel):
 
 
 class SearchRequest(BaseModel):
-    company_name: str
+    company_name: Optional[str] = None
     institutie: Optional[str] = None
     date_start: Optional[str] = None
     date_end: Optional[str] = None
@@ -580,6 +580,8 @@ def build_soap_request(nume_parte: str, institutie: str, date_start: str = "", d
     """Build SOAP request for CautareDosare2"""
     data_start = f"<dataStart>{date_start}</dataStart>" if date_start else "<dataStart xsi:nil=\"true\" />"
     data_stop = f"<dataStop>{date_end}</dataStop>" if date_end else "<dataStop xsi:nil=\"true\" />"
+    # When no company name is provided, use xsi:nil to return all cases in the date range
+    nume_parte_xml = f"<numeParte>{nume_parte}</numeParte>" if nume_parte and nume_parte.strip() else '<numeParte xsi:nil="true" />'
     
     return f'''<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
@@ -589,7 +591,7 @@ def build_soap_request(nume_parte: str, institutie: str, date_start: str = "", d
     <CautareDosare2 xmlns="portalquery.just.ro">
       <numarDosar xsi:nil="true" />
       <obiectDosar xsi:nil="true" />
-      <numeParte>{nume_parte}</numeParte>
+      {nume_parte_xml}
       <institutie>{institutie}</institutie>
       {data_start}
       {data_stop}
@@ -782,7 +784,8 @@ async def run_download_job(search_term: str, job_run_id: str, date_start: str = 
     
     # Also save JSON backup
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"dosare_{search_term.replace(' ', '_')}_{timestamp}.json"
+    label = search_term.replace(' ', '_') if search_term and search_term.strip() else f"{date_start or 'all'}_{date_end or 'all'}"
+    filename = f"dosare_{label}_{timestamp}.json"
     filepath = DOWNLOADS_DIR / filename
     
     with open(filepath, 'w', encoding='utf-8') as f:
@@ -816,7 +819,13 @@ async def run_download_job(search_term: str, job_run_id: str, date_start: str = 
 async def scheduled_job():
     """Scheduled cron job"""
     config = await mongo_db.job_config.find_one({}, {"_id": 0})
-    if not config or not config.get('search_term') or not config.get('cron_enabled'):
+    if not config or not config.get('cron_enabled'):
+        return
+    
+    # Require at least a date range or search term
+    has_search_term = bool(config.get('search_term', '').strip())
+    has_date_range = bool(config.get('date_start') or config.get('date_end'))
+    if not has_search_term and not has_date_range:
         return
     
     running = await mongo_db.job_runs.find_one({"status": "running"}, {"_id": 0})
@@ -828,7 +837,7 @@ async def scheduled_job():
     job_run_dict['started_at'] = job_run_dict['started_at'].isoformat()
     await mongo_db.job_runs.insert_one(job_run_dict)
     
-    await run_download_job(config['search_term'], job_run.id, 
+    await run_download_job(config.get('search_term', ''), job_run.id, 
                            config.get('date_start', ''), config.get('date_end', ''), "cron")
 
 
@@ -887,8 +896,14 @@ async def update_config(update: JobConfigUpdate):
 @api_router.post("/run")
 async def trigger_run(background_tasks: BackgroundTasks):
     config = await mongo_db.job_config.find_one({}, {"_id": 0})
-    if not config or not config.get('search_term'):
-        raise HTTPException(status_code=400, detail="No search term configured")
+    if not config:
+        raise HTTPException(status_code=400, detail="No configuration found. Please save configuration first.")
+    
+    # Require at least a date range OR a search term
+    has_search_term = bool(config.get('search_term', '').strip())
+    has_date_range = bool(config.get('date_start') or config.get('date_end'))
+    if not has_search_term and not has_date_range:
+        raise HTTPException(status_code=400, detail="Configurați cel puțin o perioadă sau un nume de firmă")
     
     running = await mongo_db.job_runs.find_one({"status": "running"}, {"_id": 0})
     if running:
@@ -917,18 +932,19 @@ async def get_current_run():
 
 @api_router.post("/search")
 async def search_dosare(request: SearchRequest):
+    company = request.company_name or ""
     async with aiohttp.ClientSession() as session:
         if not request.institutie:
             all_dosare = []
             for inst in ["TribunalulBUCURESTI", "CurteadeApelBUCURESTI", "TribunalulCLUJ"]:
-                dosare = await fetch_dosare(session, request.company_name, inst,
+                dosare = await fetch_dosare(session, company, inst,
                                            request.date_start or "", request.date_end or "")
                 all_dosare.extend(dosare)
                 if len(all_dosare) >= 20:
                     break
             return {"total": len(all_dosare), "dosare": all_dosare[:20]}
         else:
-            dosare = await fetch_dosare(session, request.company_name, request.institutie,
+            dosare = await fetch_dosare(session, company, request.institutie,
                                        request.date_start or "", request.date_end or "")
             return {"total": len(dosare), "dosare": dosare[:20]}
 
