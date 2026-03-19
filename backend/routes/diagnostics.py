@@ -260,6 +260,11 @@ async def create_performance_indexes():
     index_queries = [
         ("idx_firme_denumire_normalized", "CREATE INDEX IF NOT EXISTS idx_firme_denumire_normalized ON firme(denumire_normalized)"),
         ("idx_firme_cui", "CREATE INDEX IF NOT EXISTS idx_firme_cui ON firme(cui) WHERE cui IS NOT NULL AND cui != ''"),
+        ("idx_firme_anaf_sync_status", "CREATE INDEX IF NOT EXISTS idx_firme_anaf_sync_status ON firme(anaf_sync_status)"),
+        ("idx_firme_anaf_last_sync", "CREATE INDEX IF NOT EXISTS idx_firme_anaf_last_sync ON firme(anaf_last_sync) WHERE anaf_last_sync IS NOT NULL"),
+        ("idx_firme_anaf_stare", "CREATE INDEX IF NOT EXISTS idx_firme_anaf_stare ON firme(anaf_stare)"),
+        ("idx_firme_judet", "CREATE INDEX IF NOT EXISTS idx_firme_judet ON firme(judet)"),
+        ("idx_firme_active", "CREATE INDEX IF NOT EXISTS idx_firme_active ON firme(anaf_sync_status, anaf_stare) WHERE anaf_sync_status = 'found'"),
         ("idx_dosare_firma_id", "CREATE INDEX IF NOT EXISTS idx_dosare_firma_id ON dosare(firma_id)"),
         ("idx_dosare_numar", "CREATE INDEX IF NOT EXISTS idx_dosare_numar ON dosare(numar_dosar)"),
         ("idx_timeline_dosar_id", "CREATE INDEX IF NOT EXISTS idx_timeline_dosar_id ON timeline_events(dosar_id)"),

@@ -37,7 +37,14 @@ def init_postgres_connection(max_retries=5, retry_delay=3):
     from sqlalchemy import text
     for attempt in range(max_retries):
         try:
-            engine = create_engine(POSTGRES_URL)
+            engine = create_engine(
+                POSTGRES_URL,
+                pool_size=20,           # conexiuni permanente în pool
+                max_overflow=40,        # conexiuni extra la peak
+                pool_timeout=30,        # așteptare pentru o conexiune liberă
+                pool_pre_ping=True,     # verifică conexiunea înainte de folosire
+                pool_recycle=3600,      # reciclează conexiunile la fiecare oră
+            )
             with engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
             SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
