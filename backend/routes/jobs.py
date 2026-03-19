@@ -41,18 +41,48 @@ async def fetch_dosare(session: aiohttp.ClientSession, nume_parte: str, institut
     return []
 
 
-async def save_to_postgres(dosare: list, search_term: str, categorie_caz: str = None) -> dict:
+def _build_firma_cache(db, Firma) -> dict:
+    """
+    Build a lookup cache: normalized_name -> Firma.
+    Prioritizes anaf_denumire (official ANAF name) over denumire.
+    Used for local matching when only_match_existing=True.
+    """
+    cache = {}
+    firme = db.query(Firma).filter(Firma.cui.isnot(None), Firma.cui != '').all()
+    for f in firme:
+        # Index by normalized anaf_denumire (highest priority)
+        if f.anaf_denumire:
+            key = normalize_company_name(f.anaf_denumire)
+            if key not in cache:
+                cache[key] = f
+        # Also index by normalized denumire
+        if f.denumire_normalized:
+            if f.denumire_normalized not in cache:
+                cache[f.denumire_normalized] = f
+    return cache
+
+
+async def save_to_postgres(dosare: list, search_term: str,
+                           categorie_caz: str = None,
+                           only_match_existing: bool = False) -> dict:
     db = database.SessionLocal()
     Firma = database.Firma
     Dosar = database.Dosar
     TimelineEvent = database.TimelineEvent
-    stats = {'firme_new': 0, 'firme_existing': 0, 'dosare_new': 0, 'timeline_new': 0, 'skipped_categorie': 0}
+    stats = {
+        'firme_new': 0, 'firme_existing': 0, 'firme_matched_anaf': 0,
+        'dosare_new': 0, 'timeline_new': 0,
+        'skipped_categorie': 0, 'skipped_no_match': 0
+    }
+
+    # Build match cache once for the whole batch
+    firma_cache = _build_firma_cache(db, Firma) if only_match_existing else {}
+
     try:
         for dosar_data in dosare:
-            # Filter by categorie if specified
+            # Filter by category
             if categorie_caz:
-                dosar_categorie = dosar_data.get('categorieCaz', '')
-                if dosar_categorie != categorie_caz:
+                if dosar_data.get('categorieCaz', '') != categorie_caz:
                     stats['skipped_categorie'] += 1
                     continue
 
@@ -62,28 +92,64 @@ async def save_to_postgres(dosare: list, search_term: str, categorie_caz: str = 
             companies = extract_companies_from_parti(parti)
             if not companies:
                 continue
+
             for company in companies:
-                firma = db.query(Firma).filter(Firma.denumire_normalized == company['denumire_normalized']).first()
-                if not firma:
-                    firma = Firma(denumire=company['denumire'], denumire_normalized=company['denumire_normalized'])
-                    db.add(firma)
-                    db.flush()
-                    stats['firme_new'] += 1
-                else:
+                if only_match_existing:
+                    # Match ONLY against existing firms (no new firm creation)
+                    norm = company['denumire_normalized']
+                    firma = firma_cache.get(norm)
+
+                    # Try partial match if exact not found
+                    if not firma and len(norm) >= 5:
+                        for cache_key, cached_firma in firma_cache.items():
+                            if (cache_key.startswith(norm[:min(len(norm), 20)]) or
+                                    norm.startswith(cache_key[:min(len(cache_key), 20)])):
+                                firma = cached_firma
+                                break
+
+                    if not firma:
+                        stats['skipped_no_match'] += 1
+                        continue
+
+                    if firma_cache.get(norm) == firma and company['denumire_normalized'] != firma.denumire_normalized:
+                        stats['firme_matched_anaf'] += 1
                     stats['firme_existing'] += 1
+                else:
+                    # Original behavior: find or create
+                    firma = db.query(Firma).filter(
+                        Firma.denumire_normalized == company['denumire_normalized']
+                    ).first()
+                    if not firma:
+                        firma = Firma(
+                            denumire=company['denumire'],
+                            denumire_normalized=company['denumire_normalized']
+                        )
+                        db.add(firma)
+                        db.flush()
+                        stats['firme_new'] += 1
+                    else:
+                        stats['firme_existing'] += 1
+
                 numar_dosar = dosar_data.get('numar', '')
-                if db.query(Dosar).filter(Dosar.firma_id == firma.id, Dosar.numar_dosar == numar_dosar).first():
+                if db.query(Dosar).filter(
+                    Dosar.firma_id == firma.id, Dosar.numar_dosar == numar_dosar
+                ).first():
                     continue
+
                 dosar = Dosar(
                     firma_id=firma.id, numar_dosar=numar_dosar,
-                    institutie=dosar_data.get('institutie', ''), obiect=dosar_data.get('obiect', ''),
-                    data_dosar=parse_date(dosar_data.get('data', '')), stadiu=dosar_data.get('stadiuProcesual', ''),
-                    categorie=dosar_data.get('categorieCaz', ''), materie=dosar_data.get('materie', ''),
+                    institutie=dosar_data.get('institutie', ''),
+                    obiect=dosar_data.get('obiect', ''),
+                    data_dosar=parse_date(dosar_data.get('data', '')),
+                    stadiu=dosar_data.get('stadiuProcesual', ''),
+                    categorie=dosar_data.get('categorieCaz', ''),
+                    materie=dosar_data.get('materie', ''),
                     raw_data=dosar_data
                 )
                 db.add(dosar)
                 db.flush()
                 stats['dosare_new'] += 1
+
                 for sedinta in (dosar_data.get('sedinte', []) or []):
                     db.add(TimelineEvent(
                         dosar_id=dosar.id, tip='sedinta',
@@ -113,16 +179,19 @@ async def save_to_postgres(dosare: list, search_term: str, categorie_caz: str = 
 
 async def run_download_job(search_term: str, job_run_id: str,
                            date_start: str = "", date_end: str = "",
-                           triggered_by: str = "manual", categorie_caz: str = None):
+                           triggered_by: str = "manual", categorie_caz: str = None,
+                           only_match_existing: bool = False):
     state.download_job_stop_flag = False
     label_info = search_term if search_term and search_term.strip() else f"{date_start or '*'} → {date_end or '*'}"
     cat_label = CATEGORII_NUME.get(categorie_caz, categorie_caz) if categorie_caz else "Toate categoriile"
-    logger.info(f"Starting download job: {label_info} | categorie: {cat_label}")
+    logger.info(f"Starting download job: {label_info} | categorie: {cat_label} | match_existing={only_match_existing}")
 
     state.download_job_progress["active"] = True
     state.download_job_progress.update({"processed": 0, "total": len(INSTITUTII), "dosare_found": 0, "firme_new": 0, "logs": []})
     state.add_download_log(f"Job pornit: {label_info}")
     state.add_download_log(f"Categorie: {cat_label}")
+    if only_match_existing:
+        state.add_download_log("Mod: Match local — doar firme existente în DB (fără firme noi)")
     state.add_download_log(f"Procesare {len(INSTITUTII)} instituții...")
 
     all_dosare = []
@@ -136,19 +205,21 @@ async def run_download_job(search_term: str, job_run_id: str,
                 break
             dosare = await fetch_dosare(session, search_term, institutie, date_start, date_end)
             if dosare:
-                stats = await save_to_postgres(dosare, search_term, categorie_caz)
+                stats = await save_to_postgres(dosare, search_term, categorie_caz, only_match_existing)
                 for key in total_stats:
                     total_stats[key] = total_stats.get(key, 0) + stats.get(key, 0)
-                # Only count dosare that passed the category filter
                 all_dosare.extend(d for d in dosare if not categorie_caz or d.get('categorieCaz') == categorie_caz)
                 saved = stats['dosare_new']
-                skipped = stats.get('skipped_categorie', 0)
-                if saved > 0 or (dosare and not skipped):
+                skipped_cat = stats.get('skipped_categorie', 0)
+                skipped_match = stats.get('skipped_no_match', 0)
+                if saved > 0 or skipped_match > 0:
                     msg = f"[{processed+1}/{len(INSTITUTII)}] {institutie}: {len(dosare)} total"
-                    if categorie_caz:
-                        msg += f", {saved} salvate ({skipped} alte categorii)"
-                    else:
-                        msg += f", {saved} firme noi"
+                    if saved > 0:
+                        msg += f", {saved} salvate"
+                    if skipped_cat > 0:
+                        msg += f" ({skipped_cat} alte categorii)"
+                    if skipped_match > 0:
+                        msg += f" ({skipped_match} fără match)"
                     state.add_download_log(msg)
             processed += 1
             state.download_job_progress.update({"processed": processed, "dosare_found": len(all_dosare), "firme_new": total_stats['firme_new']})
@@ -285,7 +356,8 @@ async def trigger_run(background_tasks: BackgroundTasks):
         run_download_job,
         config.get('search_term', ''), job_run.id,
         config.get('date_start', ''), config.get('date_end', ''),
-        "manual", config.get('categorie_caz')
+        "manual", config.get('categorie_caz'),
+        bool(config.get('only_match_existing', False))
     )
     return {"message": "Job started", "job_id": job_run.id}
 

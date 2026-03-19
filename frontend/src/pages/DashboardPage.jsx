@@ -30,6 +30,7 @@ export default function DashboardPage({ ctx }) {
     scheduleMinute, setScheduleMinute, cronEnabled, setCronEnabled,
     dateStart, setDateStart, dateEnd, setDateEnd,
     categoriiCaz, categorieCaz, setCategorieCaz,
+    onlyMatchExisting, setOnlyMatchExisting,
     searchPreview, setSearchPreview, searchLoading, showAdvancedConfig, setShowAdvancedConfig,
     downloadLogs, downloadProgress,
     importLoading, importResult, importLog, importError,
@@ -414,6 +415,27 @@ export default function DashboardPage({ ctx }) {
                         Vor fi salvate doar dosarele din categoria: <strong>{categoriiCaz.find(c => c.value === categorieCaz)?.label || categorieCaz}</strong>
                       </p>
                     )}
+                  </div>
+
+                  {/* Match mode */}
+                  <div className="form-group" style={{marginTop:'4px'}}>
+                    <div style={{display:'flex', alignItems:'flex-start', gap:'8px', padding:'10px 12px', background:'var(--bg-secondary)', borderRadius:'8px', border: onlyMatchExisting ? '1px solid var(--primary)' : '1px solid var(--border)'}}>
+                      <input
+                        type="checkbox"
+                        id="only-match-existing"
+                        checked={onlyMatchExisting}
+                        onChange={(e) => setOnlyMatchExisting(e.target.checked)}
+                        style={{marginTop:'2px', flexShrink:0}}
+                        data-testid="only-match-existing-checkbox"
+                      />
+                      <label htmlFor="only-match-existing" style={{cursor:'pointer', userSelect:'none', lineHeight:'1.4'}}>
+                        <strong>Match local — doar firme existente în DB</strong>
+                        <span style={{display:'block', fontSize:'0.78rem', color:'var(--text-muted)', marginTop:'2px'}}>
+                          Dosarele se leagă <em>doar</em> de firme care au deja CUI + date ANAF în DB.
+                          Firme noi din portal <strong>nu se creează</strong>. Recomandat când ai deja firmele importate din ONRC.
+                        </span>
+                      </label>
+                    </div>
                   </div>
 
                   <div className="form-group">

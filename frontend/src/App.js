@@ -77,6 +77,7 @@ function App() {
   const [dateEnd, setDateEnd] = useState(null);
   const [categoriiCaz, setCategoriiCaz] = useState([]);
   const [categorieCaz, setCategorieCaz] = useState("");
+  const [onlyMatchExisting, setOnlyMatchExisting] = useState(false);
   const [searchPreview, setSearchPreview] = useState(null);
   const [searchLoading, setSearchLoading] = useState(false);
   const [importLoading, setImportLoading] = useState(false);
@@ -197,6 +198,9 @@ function App() {
         if (configRes.data.categorie_caz !== undefined) {
           setCategorieCaz(configRes.data.categorie_caz || "");
         }
+        if (configRes.data.only_match_existing !== undefined) {
+          setOnlyMatchExisting(!!configRes.data.only_match_existing);
+        }
       }
     } catch (error) {
       console.error("Error fetching data:", error);
@@ -284,7 +288,8 @@ function App() {
         cron_enabled: cronEnabled,
         date_start: dateStart ? format(dateStart, 'yyyy-MM-dd') : null,
         date_end: dateEnd ? format(dateEnd, 'yyyy-MM-dd') : null,
-        categorie_caz: categorieCaz || ""
+        categorie_caz: categorieCaz || "",
+        only_match_existing: onlyMatchExisting
       });
       toast.success("Configurație salvată cu succes!");
       fetchData();
@@ -306,7 +311,8 @@ function App() {
         cron_enabled: cronEnabled,
         date_start: dateStart ? format(dateStart, 'yyyy-MM-dd') : null,
         date_end: dateEnd ? format(dateEnd, 'yyyy-MM-dd') : null,
-        categorie_caz: categorieCaz || ""
+        categorie_caz: categorieCaz || "",
+        only_match_existing: onlyMatchExisting
       });
       await axios.post(`${API}/run`);
       setDownloadLogs([]);
@@ -1235,6 +1241,7 @@ function App() {
     scheduleMinute, setScheduleMinute, cronEnabled, setCronEnabled,
     dateStart, setDateStart, dateEnd, setDateEnd,
     categoriiCaz, categorieCaz, setCategorieCaz,
+    onlyMatchExisting, setOnlyMatchExisting,
     searchPreview, setSearchPreview, searchLoading, setSearchLoading,
     showAdvancedConfig, setShowAdvancedConfig,
     downloadLogs, downloadProgress,

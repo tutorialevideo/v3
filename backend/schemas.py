@@ -48,6 +48,8 @@ class JobConfig(BaseModel):
     is_active: bool = True
     # Category filter — None means all categories
     categorie_caz: Optional[str] = None
+    # Match mode — True = only link to existing firms (no new firm creation)
+    only_match_existing: bool = False
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -61,6 +63,7 @@ class JobConfigUpdate(BaseModel):
     cron_enabled: Optional[bool] = None
     is_active: Optional[bool] = None
     categorie_caz: Optional[str] = None
+    only_match_existing: Optional[bool] = None
 
 
 class JobRun(BaseModel):
