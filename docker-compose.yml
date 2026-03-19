@@ -64,6 +64,7 @@ services:
       - DB_NAME=justportal
       - POSTGRES_URL=postgresql://justapp:justapp123@postgres:5432/justportal
       - CORS_ORIGINS=*
+      - EMERGENT_LLM_KEY=sk-emergent-2988e1114097c4908F
     volumes:
       - backend_downloads:/app/downloads
     ports:
