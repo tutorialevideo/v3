@@ -2185,6 +2185,9 @@ async def run_anaf_sync(limit: int, only_unsynced: bool, judet: str):
             
             try:
                 # Call ANAF API
+                logger.info(f"[ANAF] Batch {anaf_sync_progress['current_batch']}: Sending {len(request_data)} CUIs to ANAF API...")
+                batch_start = datetime.utcnow()
+                
                 async with aiohttp.ClientSession() as session:
                     async with session.post(
                         ANAF_API_URL,
@@ -2192,6 +2195,9 @@ async def run_anaf_sync(limit: int, only_unsynced: bool, judet: str):
                         headers={"Content-Type": "application/json"},
                         timeout=aiohttp.ClientTimeout(total=30)
                     ) as response:
+                        api_time = (datetime.utcnow() - batch_start).total_seconds()
+                        logger.info(f"[ANAF] Batch {anaf_sync_progress['current_batch']}: API response in {api_time:.2f}s, status={response.status}")
+                        
                         if response.status == 200:
                             data = await response.json()
                             
@@ -2200,6 +2206,8 @@ async def run_anaf_sync(limit: int, only_unsynced: bool, judet: str):
                             for item in data.get("found", []):
                                 cui = str(item.get("date_generale", {}).get("cui", ""))
                                 found_map[cui] = item
+                            
+                            logger.info(f"[ANAF] Batch {anaf_sync_progress['current_batch']}: Found {len(found_map)} companies in ANAF response")
                             
                             # Update database
                             for firma in batch:
