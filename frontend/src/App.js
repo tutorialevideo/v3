@@ -1110,15 +1110,31 @@ function App() {
     }
   };
 
+  const [mfOnlyActive, setMfOnlyActive] = useState(true);
+  const [mfLogs, setMfLogs] = useState([]);
+
   const startMfSync = async (limit = 100) => {
     setMfLoading(true);
+    setMfLogs([]);
     try {
-      await axios.post(`${API}/mfinante/sync?limit=${limit}`);
+      await axios.post(`${API}/mfinante/sync?limit=${limit}&only_anaf_active=${mfOnlyActive}`);
       toast.success("Sincronizare MFinante pornită!");
       loadMfProgress();
+      // Poll logs
+      const pollInterval = setInterval(async () => {
+        try {
+          const res = await axios.get(`${API}/mfinante/sync-logs`);
+          setMfLogs(res.data.logs || []);
+          if (!res.data.active) {
+            clearInterval(pollInterval);
+            setMfLoading(false);
+            loadMfProgress();
+            loadMfStats();
+          }
+        } catch (e) { clearInterval(pollInterval); setMfLoading(false); }
+      }, 2500);
     } catch (error) {
       toast.error(error.response?.data?.detail || "Eroare la pornirea sincronizării");
-    } finally {
       setMfLoading(false);
     }
   };
@@ -1181,6 +1197,7 @@ function App() {
     mfStats, mfProgress, mfLoading, mfSession, setMfSession,
     mfTestCui, setMfTestCui, mfTestResult, setMfTestResult,
     mfBilantYear, mfBilantResult, mfBilantLoading,
+    mfOnlyActive, setMfOnlyActive, mfLogs,
     fetchMfBilant,
     // CAPTCHA
     captchaModalOpen, setCaptchaModalOpen, captchaLoading, setCaptchaLoading,

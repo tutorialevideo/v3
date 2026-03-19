@@ -86,10 +86,21 @@ mfinante_sync_progress = {
     "total_firms": 0,
     "processed": 0,
     "found": 0,
+    "not_found": 0,
+    "skipped": 0,
     "errors": 0,
     "last_update": None,
-    "last_cui": None
+    "last_cui": None,
+    "logs": []
 }
+
+
+def add_mfinante_log(message: str):
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    mfinante_sync_progress["logs"].append(f"[{timestamp}] {message}")
+    if len(mfinante_sync_progress["logs"]) > 300:
+        mfinante_sync_progress["logs"] = mfinante_sync_progress["logs"][-300:]
 
 mfinante_session = {
     "jsessionid": None,

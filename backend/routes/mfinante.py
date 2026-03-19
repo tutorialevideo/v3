@@ -622,40 +622,83 @@ async def get_mfinante_full(cui: str):
 async def start_mfinante_sync(
     background_tasks: BackgroundTasks,
     limit: int = 100,
-    only_without_bilant: bool = True
+    only_without_bilant: bool = True,
+    only_anaf_active: bool = True
 ):
+    if not state.mfinante_session.get("jsessionid"):
+        await _load_session_from_db()
     if not state.mfinante_session.get("jsessionid"):
         raise HTTPException(status_code=400, detail="No session. Solve CAPTCHA first.")
     if state.mfinante_sync_progress["active"]:
         raise HTTPException(status_code=400, detail="Sync already in progress")
     state.mfinante_sync_progress.update({
         "active": True, "session_valid": True, "total_firms": 0,
-        "processed": 0, "found": 0, "errors": 0,
-        "last_update": datetime.utcnow().isoformat(), "last_cui": None
+        "processed": 0, "found": 0, "not_found": 0, "skipped": 0, "errors": 0,
+        "last_update": datetime.utcnow().isoformat(), "last_cui": None, "logs": []
     })
-    background_tasks.add_task(_run_mfinante_sync, limit, only_without_bilant)
+    background_tasks.add_task(_run_mfinante_sync, limit, only_without_bilant, only_anaf_active)
     return {"message": "MFinante sync started", "status": "running"}
 
 
-async def _run_mfinante_sync(limit: int, only_without_bilant: bool):
+@router.get("/mfinante/sync-logs")
+async def get_mfinante_sync_logs():
+    """Get current MFinante sync logs and progress."""
+    return {
+        "active": state.mfinante_sync_progress["active"],
+        "processed": state.mfinante_sync_progress["processed"],
+        "total_firms": state.mfinante_sync_progress["total_firms"],
+        "found": state.mfinante_sync_progress["found"],
+        "not_found": state.mfinante_sync_progress.get("not_found", 0),
+        "skipped": state.mfinante_sync_progress.get("skipped", 0),
+        "errors": state.mfinante_sync_progress["errors"],
+        "last_cui": state.mfinante_sync_progress["last_cui"],
+        "session_valid": state.mfinante_sync_progress["session_valid"],
+        "logs": state.mfinante_sync_progress["logs"][-80:]
+    }
+
+
+async def _run_mfinante_sync(limit: int, only_without_bilant: bool, only_anaf_active: bool = True):
     db = database.SessionLocal()
     Firma = database.Firma
     Bilant = database.Bilant
     try:
         query = db.query(Firma).filter(Firma.cui.isnot(None), Firma.cui != '')
+
+        if only_anaf_active:
+            query = query.filter(
+                Firma.anaf_sync_status == 'found',
+                Firma.anaf_stare.isnot(None),
+                Firma.anaf_stare.ilike('%ACTIV%'),
+                ~Firma.anaf_stare.ilike('%INACTIV%'),
+                ~Firma.anaf_stare.ilike('%RADIERE%')
+            )
+            state.add_mfinante_log("Filtru: doar firme ACTIVE conform ANAF")
+        else:
+            state.add_mfinante_log("Filtru: toate firmele cu CUI")
+
         if only_without_bilant:
             query = query.filter(
                 (Firma.mf_cifra_afaceri.is_(None)) | (Firma.mf_last_sync.is_(None))
             )
+            state.add_mfinante_log("Filtru suplimentar: fara bilant salvat")
+
         firms = query.limit(limit).all()
         state.mfinante_sync_progress["total_firms"] = len(firms)
+        state.add_mfinante_log(f"Total firme de procesat: {len(firms)}")
+        logger.info(f"[MFINANTE] Starting sync for {len(firms)} firms (active={only_anaf_active})")
 
         for firma in firms:
             if not state.mfinante_sync_progress["active"]:
+                state.add_mfinante_log("Oprire solicitata de utilizator.")
                 break
+
             state.mfinante_sync_progress["last_cui"] = firma.cui
+            denumire_short = (firma.denumire or firma.anaf_denumire or firma.cui or "")[:45]
+            idx = state.mfinante_sync_progress["processed"] + 1
+
             try:
                 data = await _fetch_mfinante_data(firma.cui)
+
                 if data.get("found"):
                     di = data.get("date_identificare", {})
                     df = data.get("date_fiscale", {})
@@ -674,7 +717,12 @@ async def _run_mfinante_sync(limit: int, only_without_bilant: bool):
                     firma.mf_cas_data = df.get("cas_data")
                     ani = [b["an"] for b in data.get("bilanturi_disponibili", [])]
                     firma.mf_ani_disponibili = ",".join(ani) if ani else None
+
+                    ani_str = ", ".join(ani) if ani else "niciun an disponibil"
+                    state.add_mfinante_log(f"[{idx}/{len(firms)}] {firma.cui} | {denumire_short} | ani: {ani_str}")
+
                     latest_bilant = None
+                    bilanturi_salvate = 0
                     for bilant_info in data.get("bilanturi_disponibili", []):
                         try:
                             await asyncio.sleep(0.5)
@@ -715,10 +763,18 @@ async def _run_mfinante_sync(limit: int, only_without_bilant: bool):
                                     existing.updated_at = datetime.utcnow()
                                 else:
                                     db.add(Bilant(firma_id=firma.id, an=an, **fields))
+                                bilanturi_salvate += 1
                                 if latest_bilant is None or an > latest_bilant["an"]:
                                     latest_bilant = {"an": an, "indicatori": indicatori}
                         except Exception as e:
-                            logger.warning(f"[MFINANTE] Bilant error for CUI {firma.cui}: {e}")
+                            state.add_mfinante_log(f"  !! Bilant {bilant_info['an']}: {str(e)[:50]}")
+                            logger.warning(f"[MFINANTE] Bilant error {bilant_info['an']} for {firma.cui}: {e}")
+
+                    if bilanturi_salvate > 0:
+                        ca = latest_bilant["indicatori"].get("cifra_afaceri_neta") if latest_bilant else None
+                        ca_str = f" | CA: {ca:,.0f} RON" if ca else ""
+                        state.add_mfinante_log(f"  -> {bilanturi_salvate} bilanturi salvate{ca_str}")
+
                     if latest_bilant:
                         ind = latest_bilant["indicatori"]
                         firma.mf_an_bilant = latest_bilant["an"]
@@ -734,24 +790,41 @@ async def _run_mfinante_sync(limit: int, only_without_bilant: bool):
                         firma.mf_active_circulante = ind.get("active_circulante")
                         firma.mf_capitaluri_proprii = ind.get("capitaluri_proprii")
                         firma.mf_datorii = ind.get("datorii")
+
                     firma.mf_last_sync = datetime.utcnow()
                     firma.mf_sync_status = "found"
                     state.mfinante_sync_progress["found"] += 1
                 else:
                     firma.mf_sync_status = "not_found"
+                    state.mfinante_sync_progress["not_found"] = state.mfinante_sync_progress.get("not_found", 0) + 1
+                    state.add_mfinante_log(f"[{idx}/{len(firms)}] {firma.cui} | {denumire_short} | negasit in MFinante")
+
                 db.commit()
+
             except Exception as e:
                 error_msg = str(e)
                 if "Session expired" in error_msg or "CAPTCHA" in error_msg:
                     state.mfinante_sync_progress["session_valid"] = False
+                    state.add_mfinante_log("!! Sesiune expirata! Rezolvati CAPTCHA din nou.")
                     break
                 firma.mf_sync_status = "error"
                 db.commit()
                 state.mfinante_sync_progress["errors"] += 1
+                state.add_mfinante_log(f"[{idx}/{len(firms)}] {firma.cui} | Eroare: {error_msg[:50]}")
+
             state.mfinante_sync_progress["processed"] += 1
             state.mfinante_sync_progress["last_update"] = datetime.utcnow().isoformat()
             await asyncio.sleep(2)
+
+        state.add_mfinante_log(
+            f"Sync finalizat: {state.mfinante_sync_progress['found']} gasite, "
+            f"{state.mfinante_sync_progress.get('not_found', 0)} negasite, "
+            f"{state.mfinante_sync_progress['errors']} erori"
+        )
+        logger.info(f"[MFINANTE] Sync complete: {state.mfinante_sync_progress['processed']} processed")
+
     except Exception as e:
+        state.add_mfinante_log(f"Eroare generala: {str(e)[:60]}")
         logger.error(f"[MFINANTE] Sync error: {e}")
     finally:
         db.close()

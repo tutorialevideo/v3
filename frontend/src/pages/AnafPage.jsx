@@ -56,6 +56,7 @@ export default function AnafPage({ ctx }) {
     loadAnafProgress, loadAnafStats, loadMfStats, loadMfProgress,
     openCaptchaModal, testMfCui, fetchMfBilant,
     mfBilantYear, mfBilantResult, mfBilantLoading,
+    mfOnlyActive, setMfOnlyActive, mfLogs,
     loadDiagnostics, cleanupDuplicateDenumiri, cleanupDuplicateCui,
     cleanupOrphanedDosare, optimizeDatabase, migrateSchema, createIndexes,
     reconnectDatabase,
@@ -567,53 +568,112 @@ export default function AnafPage({ ctx }) {
                   <h4>3. Sincronizează firme</h4>
                   {mfStats && (
                     <div className="mf-stats-mini">
-                      <span>Total: {mfStats.total_firme?.toLocaleString()}</span>
-                      <span>Sincronizate: {mfStats.synced_mfinante?.toLocaleString()}</span>
-                      <span>Cu cifră afaceri: {mfStats.with_cifra_afaceri?.toLocaleString()}</span>
+                      <span>Total cu CUI: {mfStats.total_firme?.toLocaleString()}</span>
+                      <span>Sincronizate MF: {mfStats.synced_mfinante?.toLocaleString()}</span>
+                      <span>Cu bilanț: {mfStats.with_cifra_afaceri?.toLocaleString()}</span>
                     </div>
                   )}
+
+                  {/* Filtru doar active ANAF */}
+                  <div className="mf-filter-row" style={{display:'flex',alignItems:'center',gap:'8px',margin:'8px 0',padding:'8px 12px',background:'var(--bg-secondary)',borderRadius:'8px',fontSize:'0.84rem'}}>
+                    <input
+                      type="checkbox"
+                      id="mf-only-active"
+                      checked={mfOnlyActive}
+                      onChange={(e) => setMfOnlyActive(e.target.checked)}
+                      data-testid="mf-only-active-checkbox"
+                    />
+                    <label htmlFor="mf-only-active" style={{cursor:'pointer',userSelect:'none'}}>
+                      Verifică <strong>doar firmele ACTIVE</strong> conform ANAF
+                      <span style={{color:'var(--text-muted)',marginLeft:'6px',fontWeight:'normal'}}>
+                        (recomandat — evită firme radiate/inactive)
+                      </span>
+                    </label>
+                  </div>
+
                   <div className="sync-options">
-                    <Button 
+                    <Button
                       onClick={() => startMfSync(50)}
                       disabled={mfLoading || !mfProgress?.session_valid}
+                      data-testid="mf-sync-50-btn"
                     >
+                      {mfLoading ? <Loader2 className="animate-spin" size={14} style={{marginRight:4}} /> : null}
                       Test 50 firme
                     </Button>
-                    <Button 
+                    <Button
                       variant="outline"
                       onClick={() => startMfSync(500)}
                       disabled={mfLoading || !mfProgress?.session_valid}
+                      data-testid="mf-sync-500-btn"
                     >
                       Sync 500 firme
                     </Button>
-                    <Button 
+                    <Button
+                      variant="outline"
+                      onClick={() => startMfSync(1000)}
+                      disabled={mfLoading || !mfProgress?.session_valid}
+                    >
+                      Sync 1.000 firme
+                    </Button>
+                    <Button
                       variant="destructive"
                       onClick={stopMfSync}
                       disabled={!mfProgress?.progress?.active}
+                      data-testid="mf-sync-stop-btn"
                     >
                       <XCircle size={16} />
                       Stop
                     </Button>
                   </div>
+
+                  {/* Progress bar */}
                   {mfProgress?.progress?.active && (
                     <div className="mf-progress">
                       <div className="progress-bar-container">
-                        <div 
-                          className="progress-bar" 
+                        <div
+                          className="progress-bar"
                           style={{ width: `${mfProgress.progress.total_firms > 0 ? (mfProgress.progress.processed / mfProgress.progress.total_firms * 100) : 0}%` }}
                         />
                       </div>
                       <div className="progress-stats">
                         <span>Procesat: {mfProgress.progress.processed} / {mfProgress.progress.total_firms}</span>
-                        <span>Găsite: {mfProgress.progress.found}</span>
-                        <span>Erori: {mfProgress.progress.errors}</span>
-                        <span>Ultimul CUI: {mfProgress.progress.last_cui}</span>
+                        <span style={{color:'#22c55e'}}>Găsite: {mfProgress.progress.found}</span>
+                        <span style={{color:'var(--text-muted)'}}>Negăsite: {mfProgress.progress.not_found || 0}</span>
+                        <span style={{color:'#ef4444'}}>Erori: {mfProgress.progress.errors}</span>
                       </div>
                     </div>
                   )}
+
+                  {/* Live log panel */}
+                  {(mfLogs.length > 0 || mfProgress?.progress?.active) && (
+                    <div className="download-log-panel" style={{marginTop:'10px'}} data-testid="mf-sync-log-panel">
+                      <div className="download-log-header">
+                        <Activity size={14} />
+                        <span>Log sincronizare MFinante</span>
+                        {mfProgress?.progress?.active && (
+                          <span className="download-log-stats">
+                            {mfProgress.progress.processed}/{mfProgress.progress.total_firms} firme
+                          </span>
+                        )}
+                      </div>
+                      <ScrollArea className="download-log-scroll">
+                        <div className="download-log-content">
+                          {mfLogs.length === 0
+                            ? <span className="download-log-empty">Se inițializează...</span>
+                            : mfLogs.map((line, i) => (
+                                <div key={i} className={`download-log-line ${line.includes('!!') || line.includes('Eroare') ? 'error' : line.includes('->') ? 'success' : ''}`}
+                                     style={{color: line.includes('negasit') ? 'var(--text-muted)' : line.includes('->') ? '#22c55e' : line.includes('!!') || line.includes('Eroare') ? '#ef4444' : undefined}}>
+                                  {line}
+                                </div>
+                              ))
+                          }
+                        </div>
+                      </ScrollArea>
+                    </div>
+                  )}
+
                   <p className="sync-note">
-                    ⚠️ MFinante este lent (~2 sec/firmă). Pentru 1000 de firme = ~30 minute.
-                    Sesiunea expiră după ~15-30 min inactivitate.
+                    MFinante este lent (~2 sec/firmă). Sesiunea expiră după ~15-30 min inactivitate.
                   </p>
                 </div>
               </CardContent>
