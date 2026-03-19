@@ -173,8 +173,37 @@ async def run_anaf_sync(limit: int, only_unsynced: bool, judet: str):
                 continue
 
             today = datetime.utcnow().strftime("%Y-%m-%d")
-            request_data = [{"cui": int(f.cui), "data": today} for f in batch if f.cui and f.cui.isdigit()]
+
+            def _parse_cui(cui_raw: str):
+                """Parse CUI regardless of format: '14918042', 'RO14918042', '14918042.0', ' 14918042 '"""
+                if not cui_raw:
+                    return None
+                c = cui_raw.strip().upper()
+                if c.startswith("RO"):
+                    c = c[2:].strip()
+                c = c.split(".")[0].strip()          # remove decimal part
+                c = ''.join(ch for ch in c if ch.isdigit())  # keep only digits
+                try:
+                    val = int(c)
+                    return val if val > 0 else None
+                except (ValueError, OverflowError):
+                    return None
+
+            request_data = []
+            cui_map = {}  # cui_int_str -> firma (for matching response back)
+            for f in batch:
+                cui_int = _parse_cui(f.cui)
+                if cui_int:
+                    request_data.append({"cui": cui_int, "data": today})
+                    cui_map[str(cui_int)] = f
+
             if not request_data:
+                # All CUIs in batch are invalid — mark as error and continue
+                for f in batch:
+                    f.anaf_sync_status = "invalid_cui"
+                    state.anaf_sync_progress["errors"] += 1
+                    state.anaf_sync_progress["processed"] += 1
+                db.commit()
                 continue
 
             success = False
@@ -201,12 +230,14 @@ async def run_anaf_sync(limit: int, only_unsynced: bool, judet: str):
                                     str(item.get("date_generale", {}).get("cui", "")): item
                                     for item in data.get("found", [])
                                 }
-                                state.add_anaf_log(f"✓ Batch {current_batch}: {len(found_map)} găsite, {len(batch)-len(found_map)} negăsite ({api_time:.1f}s)")
+                                state.add_anaf_log(f"✓ Batch {current_batch}: {len(found_map)} găsite, {len(request_data)-len(found_map)} negăsite ({api_time:.1f}s)")
 
                                 now = datetime.utcnow()
                                 for firma in batch:
-                                    if firma.cui in found_map:
-                                        item = found_map[firma.cui]
+                                    cui_int = _parse_cui(firma.cui)
+                                    cui_key = str(cui_int) if cui_int else ""
+                                    if cui_key in found_map:
+                                        item = found_map[cui_key]
                                         dg = item.get("date_generale", {})
                                         tva = item.get("inregistrare_scop_Tva", {})
                                         rtvai = item.get("inregistrare_RTVAI", {})
@@ -255,9 +286,16 @@ async def run_anaf_sync(limit: int, only_unsynced: bool, judet: str):
                                         firma.anaf_sync_status = "found"
                                         state.anaf_sync_progress["found"] += 1
                                     else:
-                                        firma.anaf_last_sync = now
-                                        firma.anaf_sync_status = "not_found"
-                                        state.anaf_sync_progress["not_found"] += 1
+                                        # Firm is in batch but cui not in found_map
+                                        # (either invalid CUI or not found by ANAF)
+                                        cui_int = _parse_cui(firma.cui)
+                                        if cui_int:
+                                            firma.anaf_last_sync = now
+                                            firma.anaf_sync_status = "not_found"
+                                            state.anaf_sync_progress["not_found"] += 1
+                                        else:
+                                            firma.anaf_sync_status = "invalid_cui"
+                                            state.anaf_sync_progress["errors"] += 1
                                     state.anaf_sync_progress["processed"] += 1
 
                                 db.commit()
