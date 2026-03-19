@@ -234,6 +234,16 @@ export default function AnafPage({ ctx }) {
                         >
                           5.000 firme
                         </Button>
+                        <Button
+                          onClick={() => startAnafSync({ only_unsynced: true, limit: 1000000 })}
+                          disabled={anafLoading || anafSyncRunning}
+                          variant="outline"
+                          size="sm"
+                          style={{fontWeight: 700, borderColor: 'var(--primary)', color: 'var(--primary)'}}
+                          data-testid="sync-1m-btn"
+                        >
+                          1.000.000 firme
+                        </Button>
                       </div>
                     </div>
                     <Separator className="my-4" />
