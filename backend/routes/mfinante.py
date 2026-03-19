@@ -21,6 +21,7 @@ from sqlalchemy import func
 import state
 import database
 from constants import MFINANTE_URL
+from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
 
 load_dotenv()
 
@@ -230,7 +231,7 @@ async def auto_solve_captcha(test_cui: str = "14918042", max_attempts: int = 5):
     if gemini_key:
         api_key = gemini_key
         provider = "gemini"
-        model = "gemini-2.0-flash"
+        model = "gemini-2.5-flash"
     elif emergent_key:
         api_key = emergent_key
         provider = "openai"
