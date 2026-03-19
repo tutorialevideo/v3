@@ -80,6 +80,20 @@ export default function DbFinalPage({ ctx }) {
                     <RefreshCw size={16} />
                     Reîncarcă
                   </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      const params = new URLSearchParams();
+                      if (dbFinalSearch) params.set('search', dbFinalSearch);
+                      if (dbFinalFilters?.doarActive) params.set('doar_active', 'true');
+                      if (dbFinalFilters?.doarCuBilant) params.set('doar_cu_bilant', 'true');
+                      window.open(`${API}/dbfinal/export?${params.toString()}`, '_blank');
+                    }}
+                    data-testid="export-dbfinal-btn"
+                  >
+                    <Download size={16} />
+                    Export CSV
+                  </Button>
                 </div>
               </CardHeader>
               <CardContent>

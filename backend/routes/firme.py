@@ -512,3 +512,79 @@ async def get_dbfinal_firme(skip: int = 0, limit: int = 100, search: str = None,
         }
     finally:
         db.close()
+
+
+@router.get("/dbfinal/export")
+async def export_dbfinal_csv(
+    search: str = None,
+    judet: str = None,
+    doar_active: bool = False,
+    doar_cu_bilant: bool = False,
+    format: str = "csv"
+):
+    """Export all DB Final firms (with CUI) as CSV with full financial data."""
+    db = database.get_db_session()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    Firma = database.Firma
+    try:
+        query = db.query(Firma).filter(Firma.cui.isnot(None), Firma.cui != '')
+        if search:
+            query = query.filter((Firma.denumire.ilike(f"%{search}%")) | (Firma.cui.ilike(f"%{search}%")))
+        if judet:
+            query = query.filter(Firma.judet.ilike(f"%{judet}%"))
+        if doar_active:
+            query = query.filter(Firma.anaf_stare.ilike('%ACTIV%'), ~Firma.anaf_stare.ilike('%INACTIV%'), ~Firma.anaf_stare.ilike('%RADIERE%'))
+        if doar_cu_bilant:
+            query = query.filter(Firma.mf_cifra_afaceri.isnot(None))
+        firme = query.order_by(Firma.denumire).all()
+
+        output = io.StringIO()
+        writer = csv.writer(output, delimiter=';')
+        writer.writerow([
+            'CUI', 'Denumire', 'Forma Juridica', 'Judet', 'Localitate', 'Strada', 'Nr',
+            'Stare ANAF', 'Nr Reg Com', 'Cod CAEN',
+            'Platitor TVA', 'e-Factura', 'Inactiv',
+            'An Bilant', 'Cifra Afaceri (RON)', 'Venituri Totale (RON)',
+            'Profit Brut (RON)', 'Profit Net (RON)', 'Pierdere Neta (RON)',
+            'Nr Angajati', 'Active Imobilizate (RON)', 'Active Circulante (RON)',
+            'Capitaluri Proprii (RON)', 'Datorii Totale (RON)',
+            'Ani Disponibili MF', 'Sync ANAF', 'Sync MFinante'
+        ])
+        for f in firme:
+            writer.writerow([
+                f.cui or '', f.denumire or '', f.forma_juridica or '',
+                f.judet or '', f.localitate or '', f.strada or '', f.numar or '',
+                f.anaf_stare or f.mf_stare or '', f.anaf_nr_reg_com or '', f.anaf_cod_caen or '',
+                'DA' if f.anaf_platitor_tva else 'NU',
+                'DA' if f.anaf_e_factura else 'NU',
+                'DA' if f.anaf_inactiv else 'NU',
+                f.mf_an_bilant or '',
+                round(f.mf_cifra_afaceri) if f.mf_cifra_afaceri else '',
+                round(f.mf_venituri_totale) if f.mf_venituri_totale else '',
+                round(f.mf_profit_brut) if f.mf_profit_brut else '',
+                round(f.mf_profit_net) if f.mf_profit_net else '',
+                round(f.mf_pierdere_neta) if f.mf_pierdere_neta else '',
+                f.mf_numar_angajati or '',
+                round(f.mf_active_imobilizate) if f.mf_active_imobilizate else '',
+                round(f.mf_active_circulante) if f.mf_active_circulante else '',
+                round(f.mf_capitaluri_proprii) if f.mf_capitaluri_proprii else '',
+                round(f.mf_datorii) if f.mf_datorii else '',
+                f.mf_ani_disponibili or '',
+                'DA' if f.anaf_last_sync else 'NU',
+                'DA' if f.mf_last_sync else 'NU',
+            ])
+
+        output.seek(0)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"dbfinal_export_{timestamp}.csv"
+        filepath = DOWNLOADS_DIR / filename
+        with open(filepath, 'w', encoding='utf-8-sig', newline='') as file:
+            file.write(output.getvalue())
+
+        return FileResponse(
+            filepath, filename=filename, media_type='text/csv',
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    finally:
+        db.close()
