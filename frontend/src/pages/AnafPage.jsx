@@ -176,8 +176,21 @@ export default function AnafPage({ ctx }) {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {anafProgress && anafProgress.active ? (
-                  <div className="progress-info">
+                {/* Progress bar + stats — shown during sync AND after last run */}
+                {anafProgress && (anafProgress.active || anafProgress.processed > 0) && (
+                  <div className="progress-info" style={{marginBottom: anafProgress.active ? '0' : '16px'}}>
+                    <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'6px'}}>
+                      <span style={{fontSize:'0.8rem', color:'var(--text-muted)'}}>
+                        {anafProgress.active ? 'Sincronizare în curs...' : '✅ Ultima rulare finalizată'}
+                      </span>
+                      {anafProgress.processed > 0 && (
+                        <span style={{fontSize:'0.8rem', color:'var(--primary)', fontWeight:600}}>
+                          {anafProgress.total_firms > 0
+                            ? `${((anafProgress.processed / anafProgress.total_firms) * 100).toFixed(1)}%`
+                            : ''}
+                        </span>
+                      )}
+                    </div>
                     <div className="progress-bar-container">
                       <div 
                         className="progress-bar" 
@@ -185,19 +198,24 @@ export default function AnafPage({ ctx }) {
                       />
                     </div>
                     <div className="progress-stats">
-                      <span>Procesat: {anafProgress.processed?.toLocaleString()} / {anafProgress.total_firms?.toLocaleString()}</span>
-                      <span>Batch: {anafProgress.current_batch} / {anafProgress.total_batches}</span>
-                      <span>Găsite: {anafProgress.found?.toLocaleString()}</span>
+                      <span>Procesat: <strong>{anafProgress.processed?.toLocaleString()}</strong> / {anafProgress.total_firms?.toLocaleString()}</span>
+                      <span>Batch: {anafProgress.current_batch?.toLocaleString()} / {anafProgress.total_batches?.toLocaleString()}</span>
+                      <span style={{color:'#22c55e'}}>Găsite: <strong>{anafProgress.found?.toLocaleString()}</strong></span>
                       <span>Negăsite: {anafProgress.not_found?.toLocaleString()}</span>
-                      <span>Erori: {anafProgress.errors?.toLocaleString()}</span>
-                      <span>ETA: {formatEta(anafProgress.eta_seconds)}</span>
+                      <span style={{color: anafProgress.errors > 0 ? '#ef4444' : undefined}}>Erori: {anafProgress.errors?.toLocaleString()}</span>
+                      {anafProgress.active && <span>ETA: {formatEta(anafProgress.eta_seconds)}</span>}
                     </div>
-                    <Button variant="destructive" onClick={stopAnafSync} className="stop-btn">
-                      <XCircle size={16} />
-                      Oprește Sincronizarea
-                    </Button>
+                    {anafProgress.active && (
+                      <Button variant="destructive" onClick={stopAnafSync} className="stop-btn" style={{marginTop:'8px'}}>
+                        <XCircle size={16} />
+                        Oprește Sincronizarea
+                      </Button>
+                    )}
                   </div>
-                ) : (
+                )}
+
+                {/* Batch buttons — always visible */}
+                {!anafProgress?.active && (
                   <div className="sync-actions">
                     <div className="sync-batch-controls">
                       <h4>Sincronizare în Batch-uri</h4>

@@ -894,6 +894,12 @@ function App() {
     if (activeTab === 'anaf') {
       loadAnafStats();
       loadAnafProgress();
+      // Refresh stats every 10s while on ANAF tab
+      const interval = setInterval(() => {
+        loadAnafStats();
+        loadAnafProgress();
+      }, 10000);
+      return () => clearInterval(interval);
     }
   }, [activeTab, loadAnafStats, loadAnafProgress]);
 
