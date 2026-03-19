@@ -3,13 +3,17 @@ MFinante routes: CAPTCHA management, session management, data fetch, sync, stats
 Bilanturi routes included here since they depend on the same session.
 """
 import asyncio
+import base64
 import logging
+import os
 import re
 import time
+import uuid
 from datetime import datetime
 
 import aiohttp
 from bs4 import BeautifulSoup
+from dotenv import load_dotenv
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from fastapi.responses import Response
 from sqlalchemy import func
@@ -17,6 +21,8 @@ from sqlalchemy import func
 import state
 import database
 from constants import MFINANTE_URL
+
+load_dotenv()
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -211,7 +217,150 @@ async def _save_session_to_db():
         logger.warning(f"[MFINANTE] Could not save session to MongoDB: {e}")
 
 
-@router.get("/mfinante/session-status")
+@router.post("/mfinante/captcha/auto-solve")
+async def auto_solve_captcha(test_cui: str = "14918042", max_attempts: int = 5):
+    """
+    Automatically solve MFinante CAPTCHA using GPT-4o vision.
+    Uses a SINGLE persistent session (cookie jar) for init + image + submit.
+    """
+    emergent_key = os.environ.get("EMERGENT_LLM_KEY")
+    if not emergent_key:
+        raise HTTPException(status_code=500, detail="EMERGENT_LLM_KEY not configured")
+
+    from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+
+    for attempt in range(1, max_attempts + 1):
+        logger.info(f"[CAPTCHA] Auto-solve attempt {attempt}/{max_attempts}")
+
+        try:
+            jar = aiohttp.CookieJar(unsafe=True)
+            headers_browser = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                "Accept-Language": "ro-RO,ro;q=0.9,en-US;q=0.8,en;q=0.7",
+                "Accept-Encoding": "gzip, deflate, br",
+                "Connection": "keep-alive",
+                "Upgrade-Insecure-Requests": "1",
+            }
+
+            async with aiohttp.ClientSession(cookie_jar=jar, headers=headers_browser) as session:
+                # Step 1: Init session — same session object throughout
+                async with session.get(
+                    MFINANTE_URL,
+                    timeout=aiohttp.ClientTimeout(total=30),
+                    allow_redirects=True
+                ) as response:
+                    await response.read()
+                    jsessionid = None
+                    final_url = str(response.url)
+                    if "jsessionid=" in final_url:
+                        jsessionid = final_url.split("jsessionid=")[1].split("?")[0].split(";")[0]
+                    for cookie in jar:
+                        if cookie.key.upper() == "JSESSIONID":
+                            jsessionid = cookie.value
+
+                if not jsessionid:
+                    logger.warning(f"[CAPTCHA] Attempt {attempt}: No jsessionid")
+                    continue
+
+                await asyncio.sleep(1)
+
+                # Step 2: Fetch CAPTCHA image — SAME session
+                captcha_url = f"https://mfinante.gov.ro/apps/kaptcha.jpg;jsessionid={jsessionid}"
+                async with session.get(
+                    captcha_url,
+                    headers={**headers_browser, "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
+                             "Referer": MFINANTE_URL},
+                    timeout=aiohttp.ClientTimeout(total=15)
+                ) as response:
+                    if response.status != 200:
+                        logger.warning(f"[CAPTCHA] Attempt {attempt}: Image HTTP {response.status}")
+                        continue
+                    image_bytes = await response.read()
+                    if len(image_bytes) < 500:
+                        logger.warning(f"[CAPTCHA] Attempt {attempt}: Image too small ({len(image_bytes)} bytes)")
+                        continue
+
+                image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+                logger.info(f"[CAPTCHA] Attempt {attempt}: Got image ({len(image_bytes)} bytes)")
+
+                # Step 3: GPT-4o reads CAPTCHA
+                chat = LlmChat(
+                    api_key=emergent_key,
+                    session_id=f"captcha-{uuid.uuid4()}",
+                    system_message="You are a CAPTCHA text reader. Look at the image and return ONLY the characters you see. No spaces, no explanation, just the text."
+                ).with_model("openai", "gpt-4o")
+
+                image_content = ImageContent(image_base64=image_base64)
+                user_msg = UserMessage(
+                    text="Read the text in this CAPTCHA. Return ONLY the characters, nothing else.",
+                    file_contents=[image_content]
+                )
+                captcha_text = (await chat.send_message(user_msg)).strip().replace(" ", "").replace("\n", "")
+                logger.info(f"[CAPTCHA] Attempt {attempt}: AI read '{captcha_text}'")
+
+                if not captcha_text or len(captcha_text) < 2:
+                    logger.warning(f"[CAPTCHA] Attempt {attempt}: AI returned empty/short text")
+                    continue
+
+                # Step 4: Submit CAPTCHA — SAME session
+                await asyncio.sleep(0.5)
+                url = f"{MFINANTE_URL};jsessionid={jsessionid}"
+                form_data = {"cod": test_cui, "captcha": captcha_text, "method.vizualizare": "VIZUALIZARE"}
+                async with session.post(
+                    url, data=form_data,
+                    headers={**headers_browser,
+                             "Content-Type": "application/x-www-form-urlencoded",
+                             "Referer": f"{MFINANTE_URL}?cod={test_cui}"},
+                    timeout=aiohttp.ClientTimeout(total=30),
+                    allow_redirects=True
+                ) as response:
+                    html = await response.text()
+
+            is_captcha_page = "kaptcha" in html.lower() or "Cod de validare" in html
+
+            if not is_captcha_page:
+                # Collect all cookies
+                cookies_dict = {c.key: c.value for c in jar}
+                state.captcha_session["jsessionid"] = jsessionid
+                state.captcha_session["cookies"] = cookies_dict
+                state.mfinante_session["jsessionid"] = jsessionid
+                state.mfinante_session["cookies"] = cookies_dict
+                state.mfinante_sync_progress["session_valid"] = True
+                await _save_session_to_db()
+                logger.info(f"[CAPTCHA] Auto-solved on attempt {attempt}! Code: '{captcha_text}'")
+                return {
+                    "success": True,
+                    "message": f"CAPTCHA rezolvat automat la încercarea {attempt}!",
+                    "captcha_code": captcha_text,
+                    "attempts": attempt,
+                    "session_valid": True
+                }
+            else:
+                logger.info(f"[CAPTCHA] Attempt {attempt}: Wrong code '{captcha_text}', retrying...")
+
+        except Exception as e:
+            logger.warning(f"[CAPTCHA] Attempt {attempt}: Error: {str(e)[:80]}")
+
+        await asyncio.sleep(2)
+
+    raise HTTPException(
+        status_code=400,
+        detail=f"Nu s-a putut rezolva CAPTCHA-ul automat după {max_attempts} încercări. Încearcă manual."
+    )
+
+
+@router.get("/mfinante/captcha/auto-status")
+async def get_captcha_auto_status():
+    """Check if session is valid, and if not, suggest auto-solve."""
+    if not state.mfinante_session.get("jsessionid"):
+        await _load_session_from_db()
+    valid = state.mfinante_session.get("jsessionid") is not None
+    return {
+        "session_valid": valid,
+        "auto_solve_available": bool(os.environ.get("EMERGENT_LLM_KEY")),
+        "message": "Sesiune activă" if valid else "Sesiune expirată — rulați auto-solve"
+    }
 async def get_mfinante_session_status():
     # Try to load from DB if not in memory
     if not state.mfinante_session.get("jsessionid"):

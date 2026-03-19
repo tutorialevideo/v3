@@ -1054,6 +1054,22 @@ function App() {
   };
 
   // CAPTCHA Functions
+  const [autoSolving, setAutoSolving] = useState(false);
+
+  const autoSolveCaptcha = async () => {
+    setAutoSolving(true);
+    try {
+      const res = await axios.post(`${API}/mfinante/captcha/auto-solve`);
+      toast.success(`CAPTCHA rezolvat automat la încercarea ${res.data.attempts}! Cod: "${res.data.captcha_code}"`);
+      loadMfProgress();
+    } catch (error) {
+      const msg = error.response?.data?.detail || "Auto-solve eșuat";
+      toast.error(msg);
+    } finally {
+      setAutoSolving(false);
+    }
+  };
+
   const openCaptchaModal = async () => {
     setCaptchaModalOpen(true);
     setCaptchaLoading(true);
@@ -1282,6 +1298,7 @@ function App() {
     fixAnafTimestamps, resetAnafSyncStatus,
     loadMfStats, loadMfProgress, setMfSessionId, openCaptchaModal, refreshCaptcha,
     submitCaptcha, closeCaptchaModal, testMfCui, startMfSync, stopMfSync,
+    autoSolveCaptcha, autoSolving,
     cleanupDuplicateDenumiri, cleanupDuplicateCui, cleanupOrphanedDosare,
     optimizeDatabase, createIndexes, migrateSchema,
     loadDiagnostics, reconnectDatabase, fetchData,

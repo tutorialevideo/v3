@@ -57,6 +57,7 @@ export default function AnafPage({ ctx }) {
     openCaptchaModal, testMfCui, fetchMfBilant,
     mfBilantYear, mfBilantResult, mfBilantLoading,
     mfOnlyActive, setMfOnlyActive, mfLogs,
+    autoSolveCaptcha, autoSolving,
     loadDiagnostics, cleanupDuplicateDenumiri, cleanupDuplicateCui,
     cleanupOrphanedDosare, optimizeDatabase, migrateSchema, createIndexes,
     reconnectDatabase,
@@ -399,23 +400,42 @@ export default function AnafPage({ ctx }) {
                 {/* Session Setup */}
                 <div className="mf-session-section">
                   <h4>1. Rezolvă CAPTCHA și setează sesiunea</h4>
-                  
-                  {/* New CAPTCHA Button */}
+
+                  {/* Auto-Solve button — primary CTA */}
+                  <div style={{marginBottom:'12px'}}>
+                    <Button
+                      onClick={autoSolveCaptcha}
+                      disabled={autoSolving}
+                      data-testid="auto-solve-captcha-btn"
+                      style={{width:'100%', height:'44px', fontSize:'0.95rem', fontWeight:600}}
+                    >
+                      {autoSolving
+                        ? <><Loader2 className="animate-spin" size={16} style={{marginRight:8}} />Se rezolvă automat... (AI citește CAPTCHA)</>
+                        : <><Shield size={16} style={{marginRight:8}} />Auto-Solve CAPTCHA (AI)</>
+                      }
+                    </Button>
+                    <p style={{fontSize:'0.78rem', color:'var(--text-muted)', marginTop:'4px', textAlign:'center'}}>
+                      GPT-4o citește imaginea CAPTCHA și o trimite automat — până la 5 încercări
+                    </p>
+                  </div>
+
+                  {/* Manual CAPTCHA Button */}
                   <div className="captcha-button-section">
-                    <Button 
-                      onClick={openCaptchaModal} 
+                    <Button
+                      onClick={openCaptchaModal}
                       className="captcha-main-btn"
                       disabled={captchaLoading}
+                      variant="outline"
                     >
                       {captchaLoading ? (
                         <Loader2 className="animate-spin" size={16} />
                       ) : (
                         <Shield size={16} />
                       )}
-                      Rezolvă CAPTCHA aici
+                      Rezolvă CAPTCHA manual
                     </Button>
                     <span className="captcha-hint">
-                      sau folosește metoda manuală de mai jos
+                      dacă auto-solve nu funcționează
                     </span>
                   </div>
 
