@@ -114,8 +114,6 @@ function App() {
   const [anafTestResult, setAnafTestResult] = useState(null);
   const [anafTestCui, setAnafTestCui] = useState("");
   const [anafLogs, setAnafLogs] = useState([]);
-  const [anafBatchSize, setAnafBatchSize] = useState(100);
-  const [anafWorkers, setAnafWorkers] = useState(1); // Number of parallel workers
 
   // MFinante sync state
   const [mfStats, setMfStats] = useState(null);
@@ -701,22 +699,19 @@ function App() {
 
   const startAnafSync = async (options = {}) => {
     setAnafLoading(true);
-    // Add log entry
     const timestamp = new Date().toLocaleTimeString('ro-RO');
-    const workersToUse = options.workers || anafWorkers;
-    setAnafLogs(prev => [...prev, `[${timestamp}] Pornire sincronizare ANAF cu ${workersToUse} worker(s)...`].slice(-50));
+    setAnafLogs(prev => [...prev, `[${timestamp}] Pornire sincronizare ANAF...`].slice(-50));
     
     try {
       const params = new URLSearchParams();
       if (options.limit) params.append('limit', options.limit);
       if (options.only_unsynced !== undefined) params.append('only_unsynced', options.only_unsynced);
       if (options.judet) params.append('judet', options.judet);
-      params.append('workers', workersToUse);
       
-      const res = await axios.post(`${API}/anaf/sync?${params.toString()}`);
-      toast.success(`Sincronizare ANAF pornită cu ${workersToUse} worker(s)!`);
+      await axios.post(`${API}/anaf/sync?${params.toString()}`);
+      toast.success("Sincronizare ANAF pornită!");
       setAnafSyncRunning(true);
-      setAnafLogs(prev => [...prev, `[${timestamp}] ✓ Sincronizare pornită cu succes (${workersToUse} workers)`].slice(-50));
+      setAnafLogs(prev => [...prev, `[${timestamp}] ✓ Sincronizare pornită cu succes`].slice(-50));
       loadAnafProgress();
     } catch (error) {
       const errMsg = error.response?.data?.detail || "Eroare la pornirea sincronizării";
@@ -1765,30 +1760,6 @@ function App() {
                   </div>
                 ) : (
                   <div className="sync-actions">
-                    {/* Workers Control */}
-                    <div className="workers-control">
-                      <label>Procesare Paralelă (Workers):</label>
-                      <div className="workers-buttons">
-                        {[1, 2, 3, 4].map(w => (
-                          <button
-                            key={w}
-                            className={`worker-btn ${anafWorkers === w ? 'active' : ''}`}
-                            onClick={() => setAnafWorkers(w)}
-                          >
-                            {w}x
-                          </button>
-                        ))}
-                      </div>
-                      <span className="workers-hint">
-                        {anafWorkers === 1 && "1 worker = sigur, mai lent"}
-                        {anafWorkers === 2 && "2 workers = echilibrat"}
-                        {anafWorkers === 3 && "3 workers = rapid"}
-                        {anafWorkers === 4 && "4 workers = maxim (risc rate limit)"}
-                      </span>
-                    </div>
-                    
-                    <Separator className="my-3" />
-                    
                     <div className="sync-batch-controls">
                       <h4>Sincronizare în Batch-uri</h4>
                       <div className="batch-buttons">
