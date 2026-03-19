@@ -218,7 +218,7 @@ async def _save_session_to_db():
 
 
 @router.post("/mfinante/captcha/auto-solve")
-async def auto_solve_captcha(test_cui: str = "14918042", max_attempts: int = 5):
+async def auto_solve_captcha(test_cui: str = "14918042", max_attempts: int = 15):
     """
     Automatically solve MFinante CAPTCHA using Google Gemini Vision API directly.
     No external packages needed — uses aiohttp to call Gemini REST API.
@@ -281,17 +281,18 @@ async def auto_solve_captcha(test_cui: str = "14918042", max_attempts: int = 5):
                         continue
 
                 image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+                image_mime = "image/jpeg"
                 logger.info(f"[CAPTCHA] Attempt {attempt}: Got image ({len(image_bytes)} bytes)")
 
                 # Step 3: Gemini reads CAPTCHA (direct REST API call)
                 gemini_payload = {
                     "contents": [{
                         "parts": [
-                            {"text": "This is a CAPTCHA image. Read the text exactly as shown. Return ONLY the characters, nothing else — no spaces, no explanation."},
-                            {"inline_data": {"mime_type": "image/jpeg", "data": image_b64}}
+                            {"text": "What text is written in this image? Reply with only the characters, nothing else."},
+                            {"inline_data": {"mime_type": image_mime, "data": image_b64}}
                         ]
                     }],
-                    "generationConfig": {"temperature": 0.1, "maxOutputTokens": 20}
+                    "generationConfig": {"temperature": 0.0, "maxOutputTokens": 50}
                 }
 
                 async with aiohttp.ClientSession() as gemini_session:
@@ -307,18 +308,25 @@ async def auto_solve_captcha(test_cui: str = "14918042", max_attempts: int = 5):
                             continue
                         gemini_data = await gemini_response.json()
 
-                captcha_text = (
-                    gemini_data.get("candidates", [{}])[0]
-                    .get("content", {})
-                    .get("parts", [{}])[0]
-                    .get("text", "")
-                    .strip()
-                    .replace(" ", "")
-                    .replace("\n", "")
-                )
-                logger.info(f"[CAPTCHA] Attempt {attempt}: Gemini read '{captcha_text}'")
+                # Parse Gemini response — handle safety filters and different structures
+                captcha_text = ""
+                candidates = gemini_data.get("candidates", [])
+                if candidates:
+                    candidate = candidates[0]
+                    finish_reason = candidate.get("finishReason", "STOP")
+                    if finish_reason in ("SAFETY", "RECITATION"):
+                        logger.warning(f"[CAPTCHA] Attempt {attempt}: Gemini filtered ({finish_reason})")
+                    else:
+                        parts = candidate.get("content", {}).get("parts", [])
+                        for part in parts:
+                            text = part.get("text", "").strip().replace(" ", "").replace("\n", "")
+                            if text:
+                                captcha_text = text
+                                break
+                
+                logger.info(f"[CAPTCHA] Attempt {attempt}: Gemini read '{captcha_text}' (raw: {str(gemini_data.get('candidates',[{}])[0].get('content',{}))[:100]})")
 
-                if not captcha_text or len(captcha_text) < 2:
+                if not captcha_text or len(captcha_text) < 1:
                     logger.warning(f"[CAPTCHA] Attempt {attempt}: Empty response from Gemini")
                     continue
 
