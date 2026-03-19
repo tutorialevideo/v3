@@ -16,11 +16,6 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install emergentintegrations (custom PyPI index — required for AI CAPTCHA solving)
-RUN pip install --no-cache-dir \
-    --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/ \
-    emergentintegrations || echo "WARNING: emergentintegrations install failed, AI CAPTCHA disabled"
-
 # Copy application code
 COPY . .
 

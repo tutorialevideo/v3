@@ -22,9 +22,6 @@ import state
 import database
 from constants import MFINANTE_URL
 
-# emergentintegrations imported lazily in auto_solve_captcha to avoid startup crash
-# if package is not installed
-
 load_dotenv()
 
 router = APIRouter()
@@ -223,30 +220,15 @@ async def _save_session_to_db():
 @router.post("/mfinante/captcha/auto-solve")
 async def auto_solve_captcha(test_cui: str = "14918042", max_attempts: int = 5):
     """
-    Automatically solve MFinante CAPTCHA using Gemini Vision.
-    Uses GEMINI_API_KEY if available, falls back to EMERGENT_LLM_KEY.
+    Automatically solve MFinante CAPTCHA using Google Gemini Vision API directly.
+    No external packages needed — uses aiohttp to call Gemini REST API.
     """
     gemini_key = os.environ.get("GEMINI_API_KEY")
-    emergent_key = os.environ.get("EMERGENT_LLM_KEY")
-    
-    # Prefer Gemini if configured, fall back to Emergent key with OpenAI
-    if gemini_key:
-        api_key = gemini_key
-        provider = "gemini"
-        model = "gemini-2.5-flash"
-    elif emergent_key:
-        api_key = emergent_key
-        provider = "openai"
-        model = "gpt-4o"
-    else:
-        raise HTTPException(status_code=500, detail="Nicio cheie API configurată (GEMINI_API_KEY sau EMERGENT_LLM_KEY)")
+    if not gemini_key:
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY nu este configurat în environment")
 
-    try:
-        from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
-    except ImportError:
-        raise HTTPException(status_code=500, detail="emergentintegrations nu este instalat.")
-
-    logger.info(f"[CAPTCHA] Auto-solve using {provider}/{model}")
+    gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
+    logger.info(f"[CAPTCHA] Auto-solve using Gemini 2.5 Flash (direct API)")
 
     for attempt in range(1, max_attempts + 1):
         logger.info(f"[CAPTCHA] Auto-solve attempt {attempt}/{max_attempts}")
@@ -257,13 +239,11 @@ async def auto_solve_captcha(test_cui: str = "14918042", max_attempts: int = 5):
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
                 "Accept-Language": "ro-RO,ro;q=0.9,en-US;q=0.8,en;q=0.7",
-                "Accept-Encoding": "gzip, deflate, br",
                 "Connection": "keep-alive",
-                "Upgrade-Insecure-Requests": "1",
             }
 
             async with aiohttp.ClientSession(cookie_jar=jar, headers=headers_browser) as session:
-                # Step 1: Init session — same session object throughout
+                # Step 1: Init session
                 async with session.get(
                     MFINANTE_URL,
                     timeout=aiohttp.ClientTimeout(total=30),
@@ -284,7 +264,7 @@ async def auto_solve_captcha(test_cui: str = "14918042", max_attempts: int = 5):
 
                 await asyncio.sleep(1)
 
-                # Step 2: Fetch CAPTCHA image — SAME session
+                # Step 2: Fetch CAPTCHA image (same session)
                 captcha_url = f"https://mfinante.gov.ro/apps/kaptcha.jpg;jsessionid={jsessionid}"
                 async with session.get(
                     captcha_url,
@@ -300,40 +280,49 @@ async def auto_solve_captcha(test_cui: str = "14918042", max_attempts: int = 5):
                         logger.warning(f"[CAPTCHA] Attempt {attempt}: Image too small ({len(image_bytes)} bytes)")
                         continue
 
-                image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+                image_b64 = base64.b64encode(image_bytes).decode("utf-8")
                 logger.info(f"[CAPTCHA] Attempt {attempt}: Got image ({len(image_bytes)} bytes)")
 
-                # Step 3: Gemini / GPT-4o citește CAPTCHA
-                try:
-                    chat = LlmChat(
-                        api_key=api_key,
-                        session_id=f"captcha-{uuid.uuid4()}",
-                        system_message="You are a CAPTCHA text reader. Look at the image and return ONLY the characters you see. No spaces, no explanation, just the text."
-                    ).with_model(provider, model)
-                except Exception:
-                    # Fallback to Emergent key if Gemini fails
-                    if emergent_key and provider != "openai":
-                        chat = LlmChat(
-                            api_key=emergent_key,
-                            session_id=f"captcha-{uuid.uuid4()}",
-                            system_message="You are a CAPTCHA text reader. Return ONLY the characters."
-                        ).with_model("openai", "gpt-4o")
-                    else:
-                        raise
+                # Step 3: Gemini reads CAPTCHA (direct REST API call)
+                gemini_payload = {
+                    "contents": [{
+                        "parts": [
+                            {"text": "This is a CAPTCHA image. Read the text exactly as shown. Return ONLY the characters, nothing else — no spaces, no explanation."},
+                            {"inline_data": {"mime_type": "image/jpeg", "data": image_b64}}
+                        ]
+                    }],
+                    "generationConfig": {"temperature": 0.1, "maxOutputTokens": 20}
+                }
 
-                image_content = ImageContent(image_base64=image_base64)
-                user_msg = UserMessage(
-                    text="Read the text in this CAPTCHA. Return ONLY the characters, nothing else.",
-                    file_contents=[image_content]
+                async with aiohttp.ClientSession() as gemini_session:
+                    async with gemini_session.post(
+                        gemini_url,
+                        json=gemini_payload,
+                        headers={"Content-Type": "application/json"},
+                        timeout=aiohttp.ClientTimeout(total=30)
+                    ) as gemini_response:
+                        if gemini_response.status != 200:
+                            err = await gemini_response.text()
+                            logger.warning(f"[CAPTCHA] Gemini HTTP {gemini_response.status}: {err[:100]}")
+                            continue
+                        gemini_data = await gemini_response.json()
+
+                captcha_text = (
+                    gemini_data.get("candidates", [{}])[0]
+                    .get("content", {})
+                    .get("parts", [{}])[0]
+                    .get("text", "")
+                    .strip()
+                    .replace(" ", "")
+                    .replace("\n", "")
                 )
-                captcha_text = (await chat.send_message(user_msg)).strip().replace(" ", "").replace("\n", "")
-                logger.info(f"[CAPTCHA] Attempt {attempt}: AI read '{captcha_text}'")
+                logger.info(f"[CAPTCHA] Attempt {attempt}: Gemini read '{captcha_text}'")
 
                 if not captcha_text or len(captcha_text) < 2:
-                    logger.warning(f"[CAPTCHA] Attempt {attempt}: AI returned empty/short text")
+                    logger.warning(f"[CAPTCHA] Attempt {attempt}: Empty response from Gemini")
                     continue
 
-                # Step 4: Submit CAPTCHA — SAME session
+                # Step 4: Submit CAPTCHA (same session)
                 await asyncio.sleep(0.5)
                 url = f"{MFINANTE_URL};jsessionid={jsessionid}"
                 form_data = {"cod": test_cui, "captcha": captcha_text, "method.vizualizare": "VIZUALIZARE"}
@@ -350,7 +339,6 @@ async def auto_solve_captcha(test_cui: str = "14918042", max_attempts: int = 5):
             is_captcha_page = "kaptcha" in html.lower() or "Cod de validare" in html
 
             if not is_captcha_page:
-                # Collect all cookies
                 cookies_dict = {c.key: c.value for c in jar}
                 state.captcha_session["jsessionid"] = jsessionid
                 state.captcha_session["cookies"] = cookies_dict
@@ -379,6 +367,19 @@ async def auto_solve_captcha(test_cui: str = "14918042", max_attempts: int = 5):
         detail=f"Nu s-a putut rezolva CAPTCHA-ul automat după {max_attempts} încercări. Încearcă manual."
     )
 
+
+@router.get("/mfinante/captcha/auto-status")
+async def get_captcha_auto_status():
+    gemini_key = bool(os.environ.get("GEMINI_API_KEY"))
+    if not state.mfinante_session.get("jsessionid"):
+        await _load_session_from_db()
+    valid = state.mfinante_session.get("jsessionid") is not None
+    return {
+        "session_valid": valid,
+        "auto_solve_available": gemini_key,
+        "provider": "gemini-2.5-flash" if gemini_key else None,
+        "message": "Sesiune activă" if valid else "Sesiune expirată — rulați auto-solve"
+    }
 
 @router.get("/mfinante/captcha/auto-status")
 async def get_captcha_auto_status():
