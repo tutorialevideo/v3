@@ -229,6 +229,15 @@ async def _test_mfinante_session() -> bool:
 
 # ─── Data fetch helpers ───────────────────────────────────────────────────────
 
+def _clean_mf_text(text: str) -> str:
+    """Clean MFinante HTML text: remove \r\n\t, collapse whitespace."""
+    if not text:
+        return text
+    cleaned = re.sub(r'[\r\n\t]+', ' ', text)
+    cleaned = re.sub(r'\s+', ' ', cleaned)
+    return cleaned.strip()
+
+
 async def _fetch_mfinante_data(cui: str) -> dict:
     url = f"{MFINANTE_URL};jsessionid={state.mfinante_session['jsessionid']}?cod={cui}"
     async with aiohttp.ClientSession() as session:
@@ -258,7 +267,7 @@ async def _fetch_mfinante_data(cui: str) -> dict:
         cols = row.find_all('div', class_='col-sm-6')
         if len(cols) >= 2:
             label = cols[0].get_text(strip=True).lower()
-            value = cols[1].get_text(strip=True)
+            value = _clean_mf_text(cols[1].get_text(separator=' ', strip=True))
             di = result["date_identificare"]
             df = result["date_fiscale"]
             if 'denumire' in label:
@@ -290,7 +299,7 @@ async def _fetch_mfinante_data(cui: str) -> dict:
     for select in soup.find_all('select', {'name': 'an'}):
         for opt in select.find_all('option'):
             v = opt.get('value', '')
-            t = opt.get_text(strip=True)
+            t = _clean_mf_text(opt.get_text(strip=True))
             if v and t:
                 result["bilanturi_disponibili"].append({"an": t, "value": v})
     return result
@@ -331,13 +340,19 @@ async def _fetch_mfinante_bilant(cui: str, an_value: str) -> dict:
     soup = BeautifulSoup(html, 'html.parser')
     bilant = {
         "an": an_value.replace("WEB_UU_AN", "") if "WEB_UU_AN" in an_value else an_value,
-        "indicatori": {}
+        "indicatori": {},
+        "raw_labels": []
     }
     for row in soup.find_all('div', class_='row'):
         cols = row.find_all('div', class_='col-sm-6')
         if len(cols) >= 2:
-            label = cols[0].get_text(strip=True).lower()
-            value = _parse_value(cols[1].get_text(strip=True))
+            label_raw = cols[0].get_text(separator=' ', strip=True)
+            label = _clean_mf_text(label_raw).lower()
+            value_text = _clean_mf_text(cols[1].get_text(separator=' ', strip=True))
+            value = _parse_value(value_text)
+            # Store all label-value pairs for debugging
+            if label and len(label) > 2:
+                bilant["raw_labels"].append({"label": label_raw[:80], "value": value_text[:30]})
             ind = bilant["indicatori"]
             if 'cifra' in label and 'afaceri' in label and 'neta' in label:
                 ind["cifra_afaceri_neta"] = value

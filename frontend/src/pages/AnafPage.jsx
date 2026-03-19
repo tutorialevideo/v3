@@ -54,7 +54,8 @@ export default function AnafPage({ ctx }) {
     loadDbFinalStats, loadDbFinal, handleDbFinalSearch, handleDbFinalFilterChange,
     testAnafCui, testAnafCuiFull, startAnafSync, stopAnafSync,
     loadAnafProgress, loadAnafStats, loadMfStats, loadMfProgress,
-    openCaptchaModal, testMfCui,
+    openCaptchaModal, testMfCui, fetchMfBilant,
+    mfBilantYear, mfBilantResult, mfBilantLoading,
     loadDiagnostics, cleanupDuplicateDenumiri, cleanupDuplicateCui,
     cleanupOrphanedDosare, optimizeDatabase, migrateSchema, createIndexes,
     reconnectDatabase,
@@ -450,20 +451,114 @@ export default function AnafPage({ ctx }) {
                   <div className="test-form">
                     <input
                       type="text"
-                      placeholder="CUI (ex: 14918042)"
+                      placeholder="CUI (ex: 37044065)"
                       value={mfTestCui}
                       onChange={(e) => setMfTestCui(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && testMfCui()}
                       className="test-input"
+                      data-testid="mf-test-cui-input"
                     />
-                    <Button onClick={testMfCui} disabled={mfLoading || !mfProgress?.session_valid}>
+                    <Button onClick={testMfCui} disabled={mfLoading || !mfProgress?.session_valid} data-testid="mf-test-btn">
                       {mfLoading ? <Loader2 className="animate-spin" size={16} /> : <Search size={16} />}
                       Test
                     </Button>
                   </div>
-                  {mfTestResult && (
-                    <div className="test-result">
-                      <pre>{JSON.stringify(mfTestResult, null, 2)}</pre>
+
+                  {mfTestResult && !mfTestResult.error && (
+                    <div className="mf-test-result">
+                      {/* Date identificare */}
+                      {mfTestResult.found && mfTestResult.date_identificare && (
+                        <div className="mf-id-section">
+                          <div className="mf-id-header">
+                            <CheckCircle2 size={16} style={{color:'#22c55e'}} />
+                            <strong>{mfTestResult.date_identificare.denumire}</strong>
+                          </div>
+                          <div className="mf-id-grid">
+                            <div className="mf-id-row"><span>Județ:</span><span>{mfTestResult.date_identificare.judet}</span></div>
+                            <div className="mf-id-row"><span>Adresă:</span><span>{mfTestResult.date_identificare.adresa}</span></div>
+                            <div className="mf-id-row"><span>Nr. Reg. Com.:</span><span>{mfTestResult.date_identificare.nr_reg_com}</span></div>
+                            <div className="mf-id-row"><span>Stare:</span><span>{mfTestResult.date_identificare.stare}</span></div>
+                            <div className="mf-id-row"><span>Telefon:</span><span>{mfTestResult.date_identificare.telefon || '-'}</span></div>
+                            <div className="mf-id-row"><span>Cod Postal:</span><span>{mfTestResult.date_identificare.cod_postal || '-'}</span></div>
+                          </div>
+                          {mfTestResult.date_fiscale && (
+                            <div className="mf-fiscal-row">
+                              <Badge variant={mfTestResult.date_fiscale.platitor_tva ? 'success' : 'secondary'}>
+                                {mfTestResult.date_fiscale.platitor_tva ? 'Plătitor TVA' : 'Ne-plătitor TVA'}
+                              </Badge>
+                              {mfTestResult.date_fiscale.tva_data && (
+                                <span className="mf-fiscal-detail">TVA din: {mfTestResult.date_fiscale.tva_data}</span>
+                              )}
+                              {mfTestResult.date_fiscale.micro_data && (
+                                <span className="mf-fiscal-detail">Micro din: {mfTestResult.date_fiscale.micro_data}</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {!mfTestResult.found && (
+                        <div style={{color:'var(--text-muted)',fontStyle:'italic',padding:'8px'}}>
+                          Firma nu a fost găsită în MFinante.
+                        </div>
+                      )}
+
+                      {/* Bilanturi disponibile */}
+                      {mfTestResult.found && mfTestResult.bilanturi_disponibili?.length > 0 && (
+                        <div className="mf-bilanturi-section">
+                          <h5>Bilanțuri disponibile — click pentru a încărca datele:</h5>
+                          <div className="mf-year-buttons">
+                            {mfTestResult.bilanturi_disponibili.map((b) => (
+                              <button
+                                key={b.value}
+                                className={`mf-year-btn ${mfBilantYear === b.an ? 'active' : ''}`}
+                                onClick={() => fetchMfBilant(b.value, b.an)}
+                                disabled={mfBilantLoading}
+                                data-testid={`mf-year-btn-${b.an}`}
+                              >
+                                {mfBilantLoading && mfBilantYear === b.an
+                                  ? <Loader2 className="animate-spin" size={12} />
+                                  : b.an
+                                }
+                              </button>
+                            ))}
+                          </div>
+
+                          {/* Bilant result */}
+                          {mfBilantResult && !mfBilantResult.error && (
+                            <div className="mf-bilant-result" data-testid="mf-bilant-result">
+                              <h5>Bilanț {mfBilantYear} — Indicatori financiari:</h5>
+                              {Object.keys(mfBilantResult.indicatori || {}).length === 0 ? (
+                                <p style={{color:'var(--text-muted)',fontStyle:'italic',fontSize:'0.85rem'}}>
+                                  Nu s-au putut extrage indicatori pentru acest an.
+                                  Structura paginii MFinante poate fi diferită.
+                                </p>
+                              ) : (
+                                <table className="mf-bilant-table">
+                                  <thead>
+                                    <tr><th>Indicator</th><th>Valoare (RON)</th></tr>
+                                  </thead>
+                                  <tbody>
+                                    {Object.entries(mfBilantResult.indicatori).map(([key, val]) => (
+                                      <tr key={key}>
+                                        <td>{key.replace(/_/g, ' ')}</td>
+                                        <td className="text-right">{val != null ? Number(val).toLocaleString('ro-RO') : '-'}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              )}
+                            </div>
+                          )}
+                          {mfBilantResult?.error && (
+                            <div className="mf-bilant-error">Eroare: {mfBilantResult.error}</div>
+                          )}
+                        </div>
+                      )}
                     </div>
+                  )}
+                  {mfTestResult?.error && (
+                    <div className="mf-bilant-error">{mfTestResult.error}</div>
                   )}
                 </div>
 

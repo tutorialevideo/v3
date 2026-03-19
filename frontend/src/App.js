@@ -137,6 +137,9 @@ function App() {
   const [mfSession, setMfSession] = useState("");
   const [mfTestCui, setMfTestCui] = useState("");
   const [mfTestResult, setMfTestResult] = useState(null);
+  const [mfBilantYear, setMfBilantYear] = useState(null);
+  const [mfBilantResult, setMfBilantResult] = useState(null);
+  const [mfBilantLoading, setMfBilantLoading] = useState(false);
   
   // CAPTCHA popup state
   const [captchaModalOpen, setCaptchaModalOpen] = useState(false);
@@ -1029,15 +1032,31 @@ function App() {
       return;
     }
     setMfLoading(true);
+    setMfBilantResult(null);
+    setMfBilantYear(null);
     try {
       const res = await axios.get(`${API}/mfinante/test/${mfTestCui}`);
       setMfTestResult(res.data);
-      toast.success("Test MFinante reușit!");
+      toast.success(res.data.found ? "Firmă găsită!" : "Firma nu a fost găsită în MFinante");
     } catch (error) {
       toast.error(error.response?.data?.detail || "Eroare la testare");
       setMfTestResult({ error: error.response?.data?.detail || error.message });
     } finally {
       setMfLoading(false);
+    }
+  };
+
+  const fetchMfBilant = async (an_value, an_label) => {
+    setMfBilantLoading(true);
+    setMfBilantYear(an_label);
+    try {
+      const res = await axios.get(`${API}/mfinante/bilant/${mfTestCui}/${encodeURIComponent(an_value)}`);
+      setMfBilantResult(res.data);
+    } catch (error) {
+      toast.error("Eroare la încărcarea bilanțului");
+      setMfBilantResult({ error: error.response?.data?.detail || error.message });
+    } finally {
+      setMfBilantLoading(false);
     }
   };
 
@@ -1111,6 +1130,8 @@ function App() {
     // MFinante
     mfStats, mfProgress, mfLoading, mfSession, setMfSession,
     mfTestCui, setMfTestCui, mfTestResult, setMfTestResult,
+    mfBilantYear, mfBilantResult, mfBilantLoading,
+    fetchMfBilant,
     // CAPTCHA
     captchaModalOpen, setCaptchaModalOpen, captchaLoading, setCaptchaLoading,
     captchaImageUrl, setCaptchaImageUrl, captchaCode, setCaptchaCode, captchaError, setCaptchaError,

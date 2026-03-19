@@ -2476,3 +2476,51 @@ button[data-testid="run-now-btn"] {
 }
 .anaf-fix-banner svg { color: #eab308; flex-shrink: 0; }
 .anaf-fix-banner span { flex: 1; }
+
+/* MFinante test result UI */
+.mf-test-result { margin-top: 12px; }
+
+.mf-id-section {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+.mf-id-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 0.9rem; }
+.mf-id-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; font-size: 0.82rem; }
+.mf-id-row { display: flex; gap: 6px; }
+.mf-id-row span:first-child { color: var(--text-muted); min-width: 100px; }
+
+.mf-fiscal-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.mf-fiscal-detail { font-size: 0.78rem; color: var(--text-muted); }
+
+.mf-bilanturi-section { margin-top: 10px; }
+.mf-bilanturi-section h5 { font-size: 0.84rem; color: var(--text-muted); margin-bottom: 8px; font-weight: 500; }
+
+.mf-year-buttons { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.mf-year-btn {
+  padding: 5px 14px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 500;
+  transition: all 0.15s;
+  display: flex; align-items: center; gap: 4px;
+}
+.mf-year-btn:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
+.mf-year-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+.mf-year-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.mf-bilant-result { background: var(--bg-secondary); border-radius: 8px; padding: 12px; }
+.mf-bilant-result h5 { font-size: 0.84rem; margin-bottom: 8px; color: var(--text-muted); }
+.mf-bilant-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.mf-bilant-table th { text-align: left; color: var(--text-muted); font-size: 0.72rem; padding: 4px 8px; border-bottom: 1px solid var(--border); text-transform: uppercase; }
+.mf-bilant-table td { padding: 5px 8px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+.mf-bilant-table td:first-child { text-transform: capitalize; }
+.mf-bilant-table .text-right { text-align: right; font-variant-numeric: tabular-nums; }
+.mf-bilant-table tr:hover { background: rgba(255,255,255,0.03); }
+.mf-bilant-error { color: #ef4444; font-size: 0.82rem; padding: 8px; }
