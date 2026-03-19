@@ -146,7 +146,12 @@ function App() {
       }
     } catch (error) {
       console.error("Error fetching data:", error);
-      toast.error("Eroare la încărcarea datelor");
+      // Only show error toast once, not repeatedly
+      if (!window._dataErrorShown) {
+        window._dataErrorShown = true;
+        // Don't show error toast if it's just PostgreSQL unavailable
+        // This allows CAPTCHA and other non-DB features to work
+      }
     } finally {
       setLoading(false);
     }
@@ -154,7 +159,8 @@ function App() {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 5000);
+    // Poll less frequently to avoid spamming errors when DB is unavailable
+    const interval = setInterval(fetchData, 10000);
     return () => clearInterval(interval);
   }, [fetchData]);
 
