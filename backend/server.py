@@ -2489,7 +2489,7 @@ async def stop_anaf_sync():
 
 @api_router.get("/anaf/test/{cui}")
 async def test_anaf_api(cui: str):
-    """Test ANAF API with a single CUI"""
+    """Test ANAF API with a single CUI - returns ALL raw data"""
     try:
         today = datetime.utcnow().strftime("%Y-%m-%d")
         request_data = [{"cui": int(cui), "data": today}]
@@ -2501,9 +2501,323 @@ async def test_anaf_api(cui: str):
                 headers={"Content-Type": "application/json"},
                 timeout=aiohttp.ClientTimeout(total=30)
             ) as response:
-                return await response.json()
+                data = await response.json()
+                
+                # Add to logs for visibility
+                if data.get("found"):
+                    item = data["found"][0]
+                    add_anaf_log(f"🔍 Test CUI {cui}: Găsit!")
+                    add_anaf_log(f"   → Secțiuni disponibile: {list(item.keys())}")
+                    
+                    # Log each section's fields
+                    for section, values in item.items():
+                        if isinstance(values, dict):
+                            non_empty = {k: v for k, v in values.items() if v}
+                            add_anaf_log(f"   → {section}: {len(non_empty)} câmpuri cu date")
+                else:
+                    add_anaf_log(f"🔍 Test CUI {cui}: Negăsit în ANAF")
+                
+                return data
+    except Exception as e:
+        add_anaf_log(f"🔍 Test CUI {cui}: Eroare - {str(e)[:50]}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/anaf/test-full/{cui}")
+async def test_anaf_api_full(cui: str):
+    """Test ANAF API with a single CUI - returns detailed analysis of available data"""
+    try:
+        today = datetime.utcnow().strftime("%Y-%m-%d")
+        request_data = [{"cui": int(cui), "data": today}]
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                ANAF_API_URL,
+                json=request_data,
+                headers={"Content-Type": "application/json"},
+                timeout=aiohttp.ClientTimeout(total=30)
+            ) as response:
+                data = await response.json()
+                
+                analysis = {
+                    "cui": cui,
+                    "found": len(data.get("found", [])) > 0,
+                    "raw_response": data,
+                    "sections_analysis": {}
+                }
+                
+                if data.get("found"):
+                    item = data["found"][0]
+                    
+                    for section, values in item.items():
+                        if isinstance(values, dict):
+                            analysis["sections_analysis"][section] = {
+                                "total_fields": len(values),
+                                "non_empty_fields": len({k: v for k, v in values.items() if v}),
+                                "fields": {k: {"value": v, "has_data": bool(v)} for k, v in values.items()}
+                            }
+                        else:
+                            analysis["sections_analysis"][section] = {"value": values}
+                
+                return analysis
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/db/firma/{firma_id}")
+async def get_firma_profile(firma_id: int):
+    """Get complete profile for a single company - ALL available data"""
+    db = get_db_session()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    try:
+        firma = db.query(Firma).filter(Firma.id == firma_id).first()
+        if not firma:
+            raise HTTPException(status_code=404, detail=f"Firma cu ID {firma_id} nu a fost găsită")
+        
+        # Get all bilanturi for this company
+        bilanturi = db.query(Bilant).filter(Bilant.firma_id == firma_id).order_by(Bilant.an.desc()).all()
+        
+        # Build complete profile
+        profile = {
+            "id": firma.id,
+            "basic_info": {
+                "denumire": firma.denumire,
+                "cui": firma.cui,
+                "cod_inregistrare": firma.cod_inregistrare,
+                "numar_ordine": firma.numar_ordine,
+                "data_inregistrare": firma.data_inregistrare,
+                "forma_juridica": firma.forma_juridica,
+            },
+            "onrc_data": {
+                "euid": firma.euid,
+                "cod_inmatriculare": firma.cod_inmatriculare,
+                "firma_radiata": firma.firma_radiata,
+                "stare_firma": firma.stare_firma,
+                "judet": firma.judet,
+                "localitate": firma.localitate,
+                "strada": firma.strada,
+                "numar": firma.numar,
+                "bloc": firma.bloc,
+                "scara": firma.scara,
+                "etaj": firma.etaj,
+                "apartament": firma.apartament,
+                "cod_postal": firma.cod_postal,
+                "caen_principal": firma.caen_principal,
+                "cod_caen_principal": firma.cod_caen_principal,
+                "obiect_activitate": firma.obiect_activitate,
+                "capital_social": firma.capital_social,
+            },
+            "anaf_data": {
+                "anaf_denumire": firma.anaf_denumire,
+                "anaf_adresa": firma.anaf_adresa,
+                "anaf_stare": firma.anaf_stare,
+                "anaf_nr_reg_com": firma.anaf_nr_reg_com,
+                "anaf_telefon": firma.anaf_telefon,
+                "anaf_fax": firma.anaf_fax,
+                "anaf_cod_postal": firma.anaf_cod_postal,
+                "anaf_data_inregistrare": firma.anaf_data_inregistrare,
+                "anaf_cod_caen": firma.anaf_cod_caen,
+                "anaf_forma_juridica": firma.anaf_forma_juridica,
+                "anaf_forma_organizare": firma.anaf_forma_organizare,
+                "anaf_forma_proprietate": firma.anaf_forma_proprietate,
+                "anaf_organ_fiscal": firma.anaf_organ_fiscal,
+                "anaf_platitor_tva": firma.anaf_platitor_tva,
+                "anaf_tva_incasare": firma.anaf_tva_incasare,
+                "anaf_e_factura": firma.anaf_e_factura,
+                "anaf_last_sync": firma.anaf_last_sync.isoformat() if firma.anaf_last_sync else None,
+                "anaf_sync_status": firma.anaf_sync_status,
+            },
+            "mfinante_data": {
+                "mf_denumire": firma.mf_denumire,
+                "mf_adresa": firma.mf_adresa,
+                "mf_judet": firma.mf_judet,
+                "mf_cod_postal": firma.mf_cod_postal,
+                "mf_telefon": firma.mf_telefon,
+                "mf_nr_reg_com": firma.mf_nr_reg_com,
+                "mf_stare": firma.mf_stare,
+                "mf_platitor_tva": firma.mf_platitor_tva,
+                "mf_tva_data": firma.mf_tva_data,
+                "mf_impozit_profit": firma.mf_impozit_profit,
+                "mf_impozit_micro": firma.mf_impozit_micro,
+                "mf_accize": firma.mf_accize,
+                "mf_cas_data": firma.mf_cas_data,
+                "mf_an_bilant": firma.mf_an_bilant,
+                "mf_cifra_afaceri": firma.mf_cifra_afaceri,
+                "mf_venituri_totale": firma.mf_venituri_totale,
+                "mf_cheltuieli_totale": firma.mf_cheltuieli_totale,
+                "mf_profit_brut": firma.mf_profit_brut,
+                "mf_pierdere_bruta": firma.mf_pierdere_bruta,
+                "mf_profit_net": firma.mf_profit_net,
+                "mf_pierdere_neta": firma.mf_pierdere_neta,
+                "mf_numar_angajati": firma.mf_numar_angajati,
+                "mf_active_imobilizate": firma.mf_active_imobilizate,
+                "mf_active_circulante": firma.mf_active_circulante,
+                "mf_capitaluri_proprii": firma.mf_capitaluri_proprii,
+                "mf_datorii": firma.mf_datorii,
+                "mf_ani_disponibili": firma.mf_ani_disponibili,
+                "mf_last_sync": firma.mf_last_sync.isoformat() if firma.mf_last_sync else None,
+                "mf_sync_status": firma.mf_sync_status,
+            },
+            "bilanturi_history": [
+                {
+                    "an": b.an,
+                    "cifra_afaceri_neta": b.cifra_afaceri_neta,
+                    "venituri_totale": b.venituri_totale,
+                    "cheltuieli_totale": b.cheltuieli_totale,
+                    "profit_brut": b.profit_brut,
+                    "pierdere_bruta": b.pierdere_bruta,
+                    "profit_net": b.profit_net,
+                    "pierdere_neta": b.pierdere_neta,
+                    "numar_angajati": b.numar_angajati,
+                    "active_imobilizate": b.active_imobilizate,
+                    "active_circulante": b.active_circulante,
+                    "capitaluri_proprii": b.capitaluri_proprii,
+                    "datorii": b.datorii,
+                }
+                for b in bilanturi
+            ],
+            "metadata": {
+                "created_at": firma.created_at.isoformat() if firma.created_at else None,
+                "updated_at": firma.updated_at.isoformat() if firma.updated_at else None,
+            }
+        }
+        
+        return profile
+    finally:
+        db.close()
+
+
+@api_router.get("/db/firma-by-cui/{cui}")
+async def get_firma_by_cui(cui: str):
+    """Get complete profile for a company by CUI"""
+    db = get_db_session()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    try:
+        firma = db.query(Firma).filter(Firma.cui == cui).first()
+        if not firma:
+            raise HTTPException(status_code=404, detail=f"Firma cu CUI {cui} nu a fost găsită")
+        
+        return await get_firma_profile(firma.id)
+    finally:
+        db.close()
+
+
+# ============== DB FINAL - Firme cu CUI ==============
+
+@api_router.get("/dbfinal/stats")
+async def get_dbfinal_stats():
+    """Get statistics for DB Final (companies with CUI)"""
+    db = get_db_session()
+    if db is None:
+        return {"total": 0, "db_available": False}
+    
+    try:
+        total_cu_cui = db.query(Firma).filter(Firma.cui.isnot(None), Firma.cui != '').count()
+        cu_anaf = db.query(Firma).filter(
+            Firma.cui.isnot(None), 
+            Firma.cui != '',
+            Firma.anaf_last_sync.isnot(None)
+        ).count()
+        cu_mfinante = db.query(Firma).filter(
+            Firma.cui.isnot(None), 
+            Firma.cui != '',
+            Firma.mf_last_sync.isnot(None)
+        ).count()
+        cu_bilant = db.query(Firma).filter(
+            Firma.cui.isnot(None), 
+            Firma.cui != '',
+            Firma.mf_cifra_afaceri.isnot(None)
+        ).count()
+        active = db.query(Firma).filter(
+            Firma.cui.isnot(None), 
+            Firma.cui != '',
+            Firma.anaf_stare.ilike('%ACTIV%'),
+            ~Firma.anaf_stare.ilike('%INACTIV%'),
+            ~Firma.anaf_stare.ilike('%RADIERE%')
+        ).count()
+        
+        return {
+            "total_cu_cui": total_cu_cui,
+            "sincronizate_anaf": cu_anaf,
+            "sincronizate_mfinante": cu_mfinante,
+            "cu_date_bilant": cu_bilant,
+            "active": active,
+            "db_available": True
+        }
+    finally:
+        db.close()
+
+
+@api_router.get("/dbfinal/firme")
+async def get_dbfinal_firme(
+    skip: int = 0, 
+    limit: int = 100, 
+    search: str = None,
+    judet: str = None,
+    doar_active: bool = False,
+    doar_cu_bilant: bool = False
+):
+    """Get companies from DB Final (only those with CUI)"""
+    db = get_db_session()
+    if db is None:
+        return {"firme": [], "total": 0, "db_available": False}
+    
+    try:
+        # Base query - only companies with CUI
+        query = db.query(Firma).filter(Firma.cui.isnot(None), Firma.cui != '')
+        
+        if search:
+            query = query.filter(
+                (Firma.denumire.ilike(f"%{search}%")) |
+                (Firma.cui.ilike(f"%{search}%"))
+            )
+        
+        if judet:
+            query = query.filter(Firma.judet.ilike(f"%{judet}%"))
+        
+        if doar_active:
+            query = query.filter(
+                Firma.anaf_stare.ilike('%ACTIV%'),
+                ~Firma.anaf_stare.ilike('%INACTIV%'),
+                ~Firma.anaf_stare.ilike('%RADIERE%')
+            )
+        
+        if doar_cu_bilant:
+            query = query.filter(Firma.mf_cifra_afaceri.isnot(None))
+        
+        total = query.count()
+        firme = query.order_by(Firma.denumire).offset(skip).limit(limit).all()
+        
+        return {
+            "firme": [
+                {
+                    "id": f.id,
+                    "denumire": f.denumire,
+                    "cui": f.cui,
+                    "judet": f.judet,
+                    "localitate": f.localitate,
+                    "stare": f.anaf_stare or f.stare_firma,
+                    "cifra_afaceri": f.mf_cifra_afaceri,
+                    "profit": f.mf_profit_net,
+                    "angajati": f.mf_numar_angajati,
+                    "an_bilant": f.mf_an_bilant,
+                    "platitor_tva": f.anaf_platitor_tva,
+                    "anaf_sync": f.anaf_last_sync is not None,
+                    "mf_sync": f.mf_last_sync is not None,
+                }
+                for f in firme
+            ],
+            "total": total,
+            "skip": skip,
+            "limit": limit,
+            "db_available": True
+        }
+    finally:
+        db.close()
 
 
 # ============================================

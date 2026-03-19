@@ -74,12 +74,27 @@ function App() {
   const [importError, setImportError] = useState(null);
   
   // Firme viewer state
-  const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard', 'firme', or 'diagnostics'
+  const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard', 'firme', 'dbfinal', 'anaf', 'diagnostics'
   const [firmeList, setFirmeList] = useState([]);
   const [firmeTotal, setFirmeTotal] = useState(0);
   const [firmePage, setFirmePage] = useState(0);
   const [firmeSearch, setFirmeSearch] = useState("");
   const [firmeLoading, setFirmeLoading] = useState(false);
+  
+  // Company profile modal
+  const [selectedFirma, setSelectedFirma] = useState(null);
+  const [firmaProfile, setFirmaProfile] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+  
+  // DB Final state
+  const [dbFinalStats, setDbFinalStats] = useState(null);
+  const [dbFinalList, setDbFinalList] = useState([]);
+  const [dbFinalTotal, setDbFinalTotal] = useState(0);
+  const [dbFinalPage, setDbFinalPage] = useState(0);
+  const [dbFinalSearch, setDbFinalSearch] = useState("");
+  const [dbFinalLoading, setDbFinalLoading] = useState(false);
+  const [dbFinalFilters, setDbFinalFilters] = useState({ doarActive: false, doarCuBilant: false });
   
   // Diagnostics state
   const [diagnosticsData, setDiagnosticsData] = useState(null);
@@ -406,6 +421,123 @@ function App() {
   const handleFirmeSearch = () => {
     setFirmePage(0);
     loadFirme(0, firmeSearch);
+  };
+
+  // Company Profile functions
+  const openFirmaProfile = async (firmaId) => {
+    setProfileLoading(true);
+    setProfileModalOpen(true);
+    try {
+      const res = await axios.get(`${API}/db/firma/${firmaId}`);
+      setFirmaProfile(res.data);
+    } catch (error) {
+      toast.error("Eroare la încărcarea profilului firmei");
+      setProfileModalOpen(false);
+    } finally {
+      setProfileLoading(false);
+    }
+  };
+
+  const closeFirmaProfile = () => {
+    setProfileModalOpen(false);
+    setFirmaProfile(null);
+  };
+
+  // DB Final functions
+  const loadDbFinalStats = useCallback(async () => {
+    try {
+      const res = await axios.get(`${API}/dbfinal/stats`);
+      setDbFinalStats(res.data);
+    } catch (error) {
+      console.error("Error loading DB Final stats:", error);
+    }
+  }, []);
+
+  const loadDbFinal = useCallback(async (page = 0, search = "") => {
+    setDbFinalLoading(true);
+    try {
+      const res = await axios.get(`${API}/dbfinal/firme`, {
+        params: { 
+          skip: page * 50, 
+          limit: 50, 
+          search: search || undefined,
+          doar_active: dbFinalFilters.doarActive || undefined,
+          doar_cu_bilant: dbFinalFilters.doarCuBilant || undefined
+        }
+      });
+      setDbFinalList(res.data.firme);
+      setDbFinalTotal(res.data.total);
+    } catch (error) {
+      toast.error("Eroare la încărcarea firmelor");
+    } finally {
+      setDbFinalLoading(false);
+    }
+  }, [dbFinalFilters]);
+
+  useEffect(() => {
+    if (activeTab === 'dbfinal') {
+      loadDbFinalStats();
+      loadDbFinal(dbFinalPage, dbFinalSearch);
+    }
+  }, [activeTab, dbFinalPage, loadDbFinal, loadDbFinalStats]);
+
+  const handleDbFinalSearch = () => {
+    setDbFinalPage(0);
+    loadDbFinal(0, dbFinalSearch);
+  };
+
+  const handleDbFinalFilterChange = (filter) => {
+    setDbFinalFilters(prev => ({ ...prev, ...filter }));
+    setDbFinalPage(0);
+  };
+
+  useEffect(() => {
+    if (activeTab === 'dbfinal') {
+      loadDbFinal(0, dbFinalSearch);
+    }
+  }, [dbFinalFilters]);
+
+  // Enhanced ANAF test with logging
+  const testAnafCuiFull = async () => {
+    if (!anafTestCui) {
+      toast.error("Introdu un CUI");
+      return;
+    }
+    setAnafLoading(true);
+    const timestamp = new Date().toLocaleTimeString('ro-RO');
+    setAnafLogs(prev => [...prev, `[${timestamp}] 🔍 Test complet CUI: ${anafTestCui}...`].slice(-50));
+    
+    try {
+      const res = await axios.get(`${API}/anaf/test-full/${anafTestCui}`);
+      setAnafTestResult(res.data);
+      
+      // Log detailed analysis
+      if (res.data.found) {
+        const sections = Object.keys(res.data.sections_analysis || {});
+        setAnafLogs(prev => [...prev, 
+          `[${timestamp}] ✓ CUI ${anafTestCui}: Găsit!`,
+          `[${timestamp}]    Secțiuni: ${sections.join(', ')}`,
+        ].slice(-50));
+        
+        // Log each section's data
+        for (const [section, data] of Object.entries(res.data.sections_analysis || {})) {
+          if (data.total_fields) {
+            setAnafLogs(prev => [...prev, 
+              `[${timestamp}]    → ${section}: ${data.non_empty_fields}/${data.total_fields} câmpuri cu date`
+            ].slice(-50));
+          }
+        }
+      } else {
+        setAnafLogs(prev => [...prev, `[${timestamp}] ✗ CUI ${anafTestCui}: Negăsit`].slice(-50));
+      }
+      
+      toast.success("Test complet ANAF reușit!");
+    } catch (error) {
+      toast.error("Eroare la testarea ANAF API");
+      setAnafLogs(prev => [...prev, `[${timestamp}] ✗ Eroare: ${error.message}`].slice(-50));
+    } finally {
+      setAnafLoading(false);
+    }
   };
 
   // Diagnostics functions
@@ -870,6 +1002,14 @@ function App() {
           >
             <Download size={18} />
             Sync ANAF
+          </button>
+          <button 
+            className={`tab-btn ${activeTab === 'dbfinal' ? 'active' : ''}`}
+            onClick={() => setActiveTab('dbfinal')}
+            data-testid="tab-dbfinal"
+          >
+            <CheckCircle2 size={18} />
+            DB Final
           </button>
           <button 
             className={`tab-btn ${activeTab === 'diagnostics' ? 'active' : ''}`}
@@ -1461,7 +1601,7 @@ function App() {
                       </thead>
                       <tbody>
                         {firmeList.map((firma) => (
-                          <tr key={firma.id} data-testid={`firma-row-${firma.id}`}>
+                          <tr key={firma.id} data-testid={`firma-row-${firma.id}`} className="clickable-row" onClick={() => openFirmaProfile(firma.id)}>
                             <td className="col-cui">
                               {firma.cui ? (
                                 <Badge variant="outline" className="badge-cui">{firma.cui}</Badge>
@@ -1902,6 +2042,172 @@ function App() {
               </CardContent>
             </Card>
           </div>
+        ) : activeTab === 'dbfinal' ? (
+          /* DB Final Tab - Companies with CUI */
+          <div className="dbfinal-section" data-testid="dbfinal-section">
+            <Card className="dbfinal-stats-card">
+              <CardHeader>
+                <div className="card-header-with-action">
+                  <div>
+                    <CardTitle className="card-title">
+                      <CheckCircle2 size={20} />
+                      DB Final - Firme cu CUI
+                    </CardTitle>
+                    <CardDescription>
+                      Firme validate cu CUI, pregătite pentru procesare avansată
+                    </CardDescription>
+                  </div>
+                  <Button variant="outline" onClick={() => { loadDbFinalStats(); loadDbFinal(dbFinalPage, dbFinalSearch); }}>
+                    <RefreshCw size={16} />
+                    Reîncarcă
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {dbFinalStats && (
+                  <div className="stats-grid-4">
+                    <div className="stat-card primary">
+                      <span className="stat-value">{dbFinalStats.total_cu_cui?.toLocaleString() || 0}</span>
+                      <span className="stat-label">Total cu CUI</span>
+                    </div>
+                    <div className="stat-card success">
+                      <span className="stat-value">{dbFinalStats.sincronizate_anaf?.toLocaleString() || 0}</span>
+                      <span className="stat-label">Sincronizate ANAF</span>
+                    </div>
+                    <div className="stat-card info">
+                      <span className="stat-value">{dbFinalStats.cu_date_bilant?.toLocaleString() || 0}</span>
+                      <span className="stat-label">Cu Bilanț</span>
+                    </div>
+                    <div className="stat-card warning">
+                      <span className="stat-value">{dbFinalStats.active?.toLocaleString() || 0}</span>
+                      <span className="stat-label">Active</span>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Filters and Search */}
+            <Card className="dbfinal-filters-card">
+              <CardContent>
+                <div className="dbfinal-controls">
+                  <div className="search-box">
+                    <input
+                      type="text"
+                      placeholder="Caută după denumire sau CUI..."
+                      value={dbFinalSearch}
+                      onChange={(e) => setDbFinalSearch(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && handleDbFinalSearch()}
+                    />
+                    <Button onClick={handleDbFinalSearch}>
+                      <Search size={16} />
+                      Caută
+                    </Button>
+                  </div>
+                  <div className="filter-toggles">
+                    <label className="filter-toggle">
+                      <input
+                        type="checkbox"
+                        checked={dbFinalFilters.doarActive}
+                        onChange={(e) => handleDbFinalFilterChange({ doarActive: e.target.checked })}
+                      />
+                      <span>Doar Active</span>
+                    </label>
+                    <label className="filter-toggle">
+                      <input
+                        type="checkbox"
+                        checked={dbFinalFilters.doarCuBilant}
+                        onChange={(e) => handleDbFinalFilterChange({ doarCuBilant: e.target.checked })}
+                      />
+                      <span>Doar cu Bilanț</span>
+                    </label>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Companies List */}
+            <Card className="dbfinal-list-card">
+              <CardHeader>
+                <CardTitle className="card-title">
+                  Firme ({dbFinalTotal.toLocaleString()})
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {dbFinalLoading ? (
+                  <div className="loading-spinner">
+                    <Loader2 className="animate-spin" size={32} />
+                    <span>Se încarcă...</span>
+                  </div>
+                ) : (
+                  <div className="table-container">
+                    <table className="dbfinal-table">
+                      <thead>
+                        <tr>
+                          <th>CUI</th>
+                          <th>Denumire</th>
+                          <th>Județ</th>
+                          <th>Stare</th>
+                          <th>Cifră Afaceri</th>
+                          <th>Profit</th>
+                          <th>Angajați</th>
+                          <th>An Bilanț</th>
+                          <th>TVA</th>
+                          <th>Sync</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dbFinalList.map((firma) => (
+                          <tr key={firma.id} className="clickable-row" onClick={() => openFirmaProfile(firma.id)}>
+                            <td><Badge variant="outline">{firma.cui}</Badge></td>
+                            <td className="col-denumire" title={firma.denumire}>{firma.denumire}</td>
+                            <td>{firma.judet || '-'}</td>
+                            <td>
+                              {firma.stare && (
+                                <Badge variant={firma.stare.includes('ACTIV') && !firma.stare.includes('INACTIV') ? 'success' : 'secondary'}>
+                                  {firma.stare.substring(0, 20)}
+                                </Badge>
+                              )}
+                            </td>
+                            <td className="col-number">{firma.cifra_afaceri ? `${(firma.cifra_afaceri / 1000).toFixed(0)}k` : '-'}</td>
+                            <td className="col-number">{firma.profit ? `${(firma.profit / 1000).toFixed(0)}k` : '-'}</td>
+                            <td className="col-number">{firma.angajati || '-'}</td>
+                            <td>{firma.an_bilant || '-'}</td>
+                            <td>{firma.platitor_tva ? <CheckCircle2 size={16} className="text-success" /> : <XCircle size={16} className="text-muted" />}</td>
+                            <td>
+                              {firma.anaf_sync && <Badge variant="outline" className="sync-badge">ANAF</Badge>}
+                              {firma.mf_sync && <Badge variant="outline" className="sync-badge">MF</Badge>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Pagination */}
+                <div className="firme-pagination">
+                  <Button 
+                    variant="outline" 
+                    disabled={dbFinalPage === 0 || dbFinalLoading}
+                    onClick={() => setDbFinalPage(p => Math.max(0, p - 1))}
+                  >
+                    ← Anterior
+                  </Button>
+                  <span className="pagination-info">
+                    Pagina {dbFinalPage + 1} din {Math.ceil(dbFinalTotal / 50) || 1}
+                  </span>
+                  <Button 
+                    variant="outline" 
+                    disabled={(dbFinalPage + 1) * 50 >= dbFinalTotal || dbFinalLoading}
+                    onClick={() => setDbFinalPage(p => p + 1)}
+                  >
+                    Următor →
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         ) : activeTab === 'diagnostics' ? (
           /* Diagnostics Tab */
           <div className="diagnostics-section" data-testid="diagnostics-section">
@@ -2200,6 +2506,183 @@ function App() {
       <footer className="app-footer">
         <p>Portal JUST Downloader • Descărcare automată dosare firme • 246 instituții</p>
       </footer>
+
+      {/* Firma Profile Modal */}
+      {profileModalOpen && (
+        <div className="modal-overlay" onClick={closeFirmaProfile}>
+          <div className="profile-modal" onClick={e => e.stopPropagation()}>
+            <div className="profile-modal-header">
+              <h3>
+                <Building2 size={20} />
+                {firmaProfile?.basic_info?.denumire || 'Profil Firmă'}
+              </h3>
+              <button className="close-btn" onClick={closeFirmaProfile}>
+                <XCircle size={20} />
+              </button>
+            </div>
+            
+            <div className="profile-modal-body">
+              {profileLoading ? (
+                <div className="profile-loading">
+                  <Loader2 className="animate-spin" size={32} />
+                  <p>Se încarcă profilul...</p>
+                </div>
+              ) : firmaProfile ? (
+                <div className="profile-content">
+                  {/* Basic Info */}
+                  <div className="profile-section">
+                    <h4>Informații de Bază</h4>
+                    <div className="profile-grid">
+                      <div className="profile-field">
+                        <label>CUI:</label>
+                        <span className="value highlight">{firmaProfile.basic_info?.cui || '-'}</span>
+                      </div>
+                      <div className="profile-field">
+                        <label>Denumire:</label>
+                        <span className="value">{firmaProfile.basic_info?.denumire || '-'}</span>
+                      </div>
+                      <div className="profile-field">
+                        <label>Forma Juridică:</label>
+                        <span className="value">{firmaProfile.basic_info?.forma_juridica || '-'}</span>
+                      </div>
+                      <div className="profile-field">
+                        <label>Data Înregistrare:</label>
+                        <span className="value">{firmaProfile.basic_info?.data_inregistrare || '-'}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ONRC Data */}
+                  <div className="profile-section">
+                    <h4>Date ONRC</h4>
+                    <div className="profile-grid">
+                      <div className="profile-field">
+                        <label>Județ:</label>
+                        <span className="value">{firmaProfile.onrc_data?.judet || '-'}</span>
+                      </div>
+                      <div className="profile-field">
+                        <label>Localitate:</label>
+                        <span className="value">{firmaProfile.onrc_data?.localitate || '-'}</span>
+                      </div>
+                      <div className="profile-field">
+                        <label>Adresă:</label>
+                        <span className="value">{firmaProfile.onrc_data?.strada || '-'} {firmaProfile.onrc_data?.numar || ''}</span>
+                      </div>
+                      <div className="profile-field">
+                        <label>CAEN:</label>
+                        <span className="value">{firmaProfile.onrc_data?.cod_caen_principal || '-'}</span>
+                      </div>
+                      <div className="profile-field">
+                        <label>Stare:</label>
+                        <span className="value">{firmaProfile.onrc_data?.stare_firma || '-'}</span>
+                      </div>
+                      <div className="profile-field">
+                        <label>Capital Social:</label>
+                        <span className="value">{firmaProfile.onrc_data?.capital_social || '-'}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ANAF Data */}
+                  <div className="profile-section">
+                    <h4>Date ANAF</h4>
+                    <div className="profile-grid">
+                      <div className="profile-field">
+                        <label>Stare ANAF:</label>
+                        <span className="value">{firmaProfile.anaf_data?.anaf_stare || '-'}</span>
+                      </div>
+                      <div className="profile-field">
+                        <label>Plătitor TVA:</label>
+                        <span className="value">{firmaProfile.anaf_data?.anaf_platitor_tva ? 'DA' : 'NU'}</span>
+                      </div>
+                      <div className="profile-field">
+                        <label>e-Factură:</label>
+                        <span className="value">{firmaProfile.anaf_data?.anaf_e_factura ? 'DA' : 'NU'}</span>
+                      </div>
+                      <div className="profile-field">
+                        <label>Organ Fiscal:</label>
+                        <span className="value">{firmaProfile.anaf_data?.anaf_organ_fiscal || '-'}</span>
+                      </div>
+                      <div className="profile-field">
+                        <label>Sync ANAF:</label>
+                        <span className="value">{firmaProfile.anaf_data?.anaf_last_sync || 'Nesincronizat'}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* MFinante Data */}
+                  <div className="profile-section">
+                    <h4>Date MFinante (Bilanț {firmaProfile.mfinante_data?.mf_an_bilant || '-'})</h4>
+                    <div className="profile-grid">
+                      <div className="profile-field">
+                        <label>Cifra Afaceri:</label>
+                        <span className="value highlight">{firmaProfile.mfinante_data?.mf_cifra_afaceri?.toLocaleString() || '-'} RON</span>
+                      </div>
+                      <div className="profile-field">
+                        <label>Profit Net:</label>
+                        <span className="value">{firmaProfile.mfinante_data?.mf_profit_net?.toLocaleString() || '-'} RON</span>
+                      </div>
+                      <div className="profile-field">
+                        <label>Nr. Angajați:</label>
+                        <span className="value">{firmaProfile.mfinante_data?.mf_numar_angajati || '-'}</span>
+                      </div>
+                      <div className="profile-field">
+                        <label>Active Totale:</label>
+                        <span className="value">{((firmaProfile.mfinante_data?.mf_active_imobilizate || 0) + (firmaProfile.mfinante_data?.mf_active_circulante || 0)).toLocaleString()} RON</span>
+                      </div>
+                      <div className="profile-field">
+                        <label>Datorii:</label>
+                        <span className="value">{firmaProfile.mfinante_data?.mf_datorii?.toLocaleString() || '-'} RON</span>
+                      </div>
+                      <div className="profile-field">
+                        <label>Sync MFinante:</label>
+                        <span className="value">{firmaProfile.mfinante_data?.mf_last_sync || 'Nesincronizat'}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bilanturi History */}
+                  {firmaProfile.bilanturi_history && firmaProfile.bilanturi_history.length > 0 && (
+                    <div className="profile-section">
+                      <h4>Istoric Bilanțuri ({firmaProfile.bilanturi_history.length} ani)</h4>
+                      <div className="bilanturi-table-container">
+                        <table className="bilanturi-table">
+                          <thead>
+                            <tr>
+                              <th>An</th>
+                              <th>Cifra Afaceri</th>
+                              <th>Profit Net</th>
+                              <th>Angajați</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {firmaProfile.bilanturi_history.map((b, i) => (
+                              <tr key={i}>
+                                <td>{b.an}</td>
+                                <td>{b.cifra_afaceri_neta?.toLocaleString() || '-'}</td>
+                                <td>{b.profit_net?.toLocaleString() || b.pierdere_neta ? `-${b.pierdere_neta?.toLocaleString()}` : '-'}</td>
+                                <td>{b.numar_angajati || '-'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p>Nu s-a putut încărca profilul.</p>
+              )}
+            </div>
+            
+            <div className="profile-modal-footer">
+              <Button variant="outline" onClick={closeFirmaProfile}>
+                Închide
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* CAPTCHA Modal */}
       {captchaModalOpen && (
