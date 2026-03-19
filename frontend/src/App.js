@@ -87,6 +87,12 @@ function App() {
   const [firmaProfile, setFirmaProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [editingCui, setEditingCui] = useState(false);
+  const [editCuiValue, setEditCuiValue] = useState("");
+  const [savingCui, setSavingCui] = useState(false);
+  // Inline CUI edit for firma table (not modal)
+  const [inlineEditId, setInlineEditId] = useState(null);
+  const [inlineEditValue, setInlineEditValue] = useState("");
   
   // DB Final state
   const [dbFinalStats, setDbFinalStats] = useState(null);
@@ -477,9 +483,11 @@ function App() {
   const openFirmaProfile = async (firmaId) => {
     setProfileLoading(true);
     setProfileModalOpen(true);
+    setEditingCui(false);
     try {
       const res = await axios.get(`${API}/db/firma/${firmaId}`);
       setFirmaProfile(res.data);
+      setEditCuiValue(res.data.basic_info?.cui || "");
     } catch (error) {
       toast.error("Eroare la încărcarea profilului firmei");
       setProfileModalOpen(false);
@@ -491,6 +499,37 @@ function App() {
   const closeFirmaProfile = () => {
     setProfileModalOpen(false);
     setFirmaProfile(null);
+    setEditingCui(false);
+  };
+
+  const saveCuiInProfile = async () => {
+    if (!firmaProfile) return;
+    setSavingCui(true);
+    try {
+      await axios.put(`${API}/db/firme/${firmaProfile.id}`, { cui: editCuiValue.trim() || null });
+      toast.success("CUI actualizat cu succes!");
+      setFirmaProfile(prev => ({ ...prev, basic_info: { ...prev.basic_info, cui: editCuiValue.trim() || null } }));
+      setEditingCui(false);
+      fetchData();
+    } catch (error) {
+      toast.error("Eroare la salvarea CUI-ului");
+    } finally {
+      setSavingCui(false);
+    }
+  };
+
+  const saveInlineCui = async (firmaId) => {
+    try {
+      await axios.put(`${API}/db/firme/${firmaId}`, { cui: inlineEditValue.trim() || null });
+      toast.success("CUI salvat!");
+      setInlineEditId(null);
+      setInlineEditValue("");
+      fetchData();
+      if (activeTab === 'firme') loadFirme(firmePage, firmeSearch);
+      if (activeTab === 'dbfinal') loadDbFinal(dbFinalPage, dbFinalSearch);
+    } catch (error) {
+      toast.error("Eroare la salvarea CUI-ului");
+    }
   };
 
   // DB Final functions
@@ -1714,11 +1753,31 @@ function App() {
                       <tbody>
                         {firmeList.map((firma) => (
                           <tr key={firma.id} data-testid={`firma-row-${firma.id}`} className="clickable-row" onClick={() => openFirmaProfile(firma.id)}>
-                            <td className="col-cui">
-                              {firma.cui ? (
-                                <Badge variant="outline" className="badge-cui">{firma.cui}</Badge>
+                            <td className="col-cui" onClick={e => e.stopPropagation()}>
+                              {inlineEditId === firma.id ? (
+                                <div className="cui-edit-row" style={{display:'flex',gap:'4px',alignItems:'center'}}>
+                                  <input
+                                    className="cui-edit-input"
+                                    value={inlineEditValue}
+                                    onChange={e => setInlineEditValue(e.target.value)}
+                                    placeholder="CUI"
+                                    autoFocus
+                                    style={{width:'90px',padding:'2px 6px',fontSize:'0.8rem'}}
+                                    onKeyDown={e => { if (e.key === 'Enter') saveInlineCui(firma.id); if (e.key === 'Escape') setInlineEditId(null); }}
+                                  />
+                                  <button onClick={() => saveInlineCui(firma.id)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--primary)',padding:'2px'}} title="Salvează"><CheckCircle2 size={14}/></button>
+                                  <button onClick={() => setInlineEditId(null)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text-muted)',padding:'2px'}} title="Anulează"><XCircle size={14}/></button>
+                                </div>
                               ) : (
-                                <span className="no-cui">-</span>
+                                <div style={{display:'flex',gap:'4px',alignItems:'center'}}>
+                                  {firma.cui ? <Badge variant="outline" className="badge-cui">{firma.cui}</Badge> : <span className="no-cui">-</span>}
+                                  <button
+                                    onClick={e => { e.stopPropagation(); setInlineEditId(firma.id); setInlineEditValue(firma.cui || ""); }}
+                                    style={{background:'none',border:'none',cursor:'pointer',color:'var(--text-muted)',padding:'2px',opacity:0.6}}
+                                    title="Editează CUI"
+                                    data-testid={`edit-cui-inline-${firma.id}`}
+                                  ><Wrench size={11}/></button>
+                                </div>
                               )}
                             </td>
                             <td className="col-denumire" title={firma.denumire}>{firma.denumire}</td>
@@ -1982,16 +2041,57 @@ function App() {
                     placeholder="Introdu CUI (ex: 14918042)"
                     value={anafTestCui}
                     onChange={(e) => setAnafTestCui(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && testAnafCuiFull()}
                     className="test-input"
                   />
-                  <Button onClick={testAnafCui} disabled={anafLoading}>
+                  <Button onClick={testAnafCui} disabled={anafLoading} variant="outline">
                     {anafLoading ? <Loader2 className="animate-spin" size={16} /> : <Search size={16} />}
-                    Verifică
+                    Verifică rapid
+                  </Button>
+                  <Button onClick={testAnafCuiFull} disabled={anafLoading}>
+                    {anafLoading ? <Loader2 className="animate-spin" size={16} /> : <BarChart3 size={16} />}
+                    Date complete
                   </Button>
                 </div>
                 {anafTestResult && (
                   <div className="test-result">
-                    <pre>{JSON.stringify(anafTestResult, null, 2)}</pre>
+                    {anafTestResult.found !== undefined && (
+                      <div style={{marginBottom:'8px',display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}}>
+                        <Badge variant={anafTestResult.found ? 'success' : 'secondary'}>
+                          {anafTestResult.found ? 'Găsit' : 'Negăsit'}
+                        </Badge>
+                        {anafTestResult.sections_analysis && Object.entries(anafTestResult.sections_analysis).map(([section, data]) => (
+                          data.non_empty_fields > 0 && (
+                            <Badge key={section} variant="outline" style={{fontSize:'0.7rem'}}>
+                              {section}: {data.non_empty_fields}/{data.total_fields}
+                            </Badge>
+                          )
+                        ))}
+                      </div>
+                    )}
+                    {anafTestResult.raw_response?.found?.[0]?.date_generale && (
+                      <div className="anaf-quick-summary">
+                        {(() => {
+                          const dg = anafTestResult.raw_response.found[0].date_generale;
+                          return (
+                            <div className="profile-grid" style={{marginBottom:'8px'}}>
+                              <div className="profile-field"><label>Denumire:</label><span className="value">{dg.denumire}</span></div>
+                              <div className="profile-field"><label>Stare:</label><span className="value">{dg.stare_inregistrare}</span></div>
+                              <div className="profile-field"><label>Nr. Reg. Com.:</label><span className="value">{dg.nrRegCom}</span></div>
+                              <div className="profile-field"><label>Cod CAEN:</label><span className="value">{dg.cod_CAEN}</span></div>
+                              <div className="profile-field"><label>Adresă:</label><span className="value">{dg.adresa}</span></div>
+                              <div className="profile-field"><label>Telefon:</label><span className="value">{dg.telefon || '-'}</span></div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
+                    <details>
+                      <summary style={{cursor:'pointer',fontSize:'0.8rem',color:'var(--text-muted)',marginBottom:'4px'}}>JSON Raw complet</summary>
+                      <ScrollArea style={{height:'220px',border:'1px solid var(--border)',borderRadius:'4px',padding:'8px'}}>
+                        <pre style={{fontSize:'0.72rem',lineHeight:'1.4',whiteSpace:'pre-wrap',wordBreak:'break-all'}}>{JSON.stringify(anafTestResult, null, 2)}</pre>
+                      </ScrollArea>
+                    </details>
                   </div>
                 )}
               </CardContent>
@@ -2271,7 +2371,20 @@ function App() {
                       <tbody>
                         {dbFinalList.map((firma) => (
                           <tr key={firma.id} className="clickable-row" onClick={() => openFirmaProfile(firma.id)}>
-                            <td><Badge variant="outline">{firma.cui}</Badge></td>
+                            <td onClick={e => e.stopPropagation()}>
+                              {inlineEditId === firma.id ? (
+                                <div style={{display:'flex',gap:'4px',alignItems:'center'}}>
+                                  <input className="cui-edit-input" value={inlineEditValue} onChange={e => setInlineEditValue(e.target.value)} placeholder="CUI" autoFocus style={{width:'90px',padding:'2px 6px',fontSize:'0.8rem'}} onKeyDown={e => { if (e.key === 'Enter') saveInlineCui(firma.id); if (e.key === 'Escape') setInlineEditId(null); }} />
+                                  <button onClick={() => saveInlineCui(firma.id)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--primary)',padding:'2px'}}><CheckCircle2 size={14}/></button>
+                                  <button onClick={() => setInlineEditId(null)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text-muted)',padding:'2px'}}><XCircle size={14}/></button>
+                                </div>
+                              ) : (
+                                <div style={{display:'flex',gap:'4px',alignItems:'center'}}>
+                                  <Badge variant="outline">{firma.cui}</Badge>
+                                  <button onClick={e => { e.stopPropagation(); setInlineEditId(firma.id); setInlineEditValue(firma.cui || ""); }} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text-muted)',padding:'2px',opacity:0.6}} title="Editează CUI"><Wrench size={11}/></button>
+                                </div>
+                              )}
+                            </td>
                             <td className="col-denumire" title={firma.denumire}>{firma.denumire}</td>
                             <td>{firma.judet || '-'}</td>
                             <td>
@@ -2632,7 +2745,7 @@ function App() {
                 <XCircle size={20} />
               </button>
             </div>
-            
+
             <div className="profile-modal-body">
               {profileLoading ? (
                 <div className="profile-loading">
@@ -2641,120 +2754,93 @@ function App() {
                 </div>
               ) : firmaProfile ? (
                 <div className="profile-content">
-                  {/* Basic Info */}
-                  <div className="profile-section">
-                    <h4>Informații de Bază</h4>
-                    <div className="profile-grid">
-                      <div className="profile-field">
-                        <label>CUI:</label>
-                        <span className="value highlight">{firmaProfile.basic_info?.cui || '-'}</span>
-                      </div>
-                      <div className="profile-field">
-                        <label>Denumire:</label>
-                        <span className="value">{firmaProfile.basic_info?.denumire || '-'}</span>
-                      </div>
-                      <div className="profile-field">
-                        <label>Forma Juridică:</label>
-                        <span className="value">{firmaProfile.basic_info?.forma_juridica || '-'}</span>
-                      </div>
-                      <div className="profile-field">
-                        <label>Data Înregistrare:</label>
-                        <span className="value">{firmaProfile.basic_info?.data_inregistrare || '-'}</span>
-                      </div>
-                    </div>
-                  </div>
 
-                  {/* ONRC Data */}
+                  {/* CUI + Identificare */}
                   <div className="profile-section">
-                    <h4>Date ONRC</h4>
+                    <h4>Identificare</h4>
                     <div className="profile-grid">
-                      <div className="profile-field">
-                        <label>Județ:</label>
-                        <span className="value">{firmaProfile.onrc_data?.judet || '-'}</span>
+                      {/* CUI with inline edit */}
+                      <div className="profile-field cui-field">
+                        <label>CUI:</label>
+                        {editingCui ? (
+                          <div className="cui-edit-row">
+                            <input
+                              className="cui-edit-input"
+                              value={editCuiValue}
+                              onChange={e => setEditCuiValue(e.target.value)}
+                              placeholder="Ex: 14918042"
+                              autoFocus
+                              onKeyDown={e => { if (e.key === 'Enter') saveCuiInProfile(); if (e.key === 'Escape') setEditingCui(false); }}
+                            />
+                            <Button size="sm" onClick={saveCuiInProfile} disabled={savingCui} data-testid="save-cui-profile-btn">
+                              {savingCui ? <Loader2 className="animate-spin" size={14} /> : <CheckCircle2 size={14} />}
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => setEditingCui(false)}>
+                              <XCircle size={14} />
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="cui-display-row">
+                            <span className="value highlight">{firmaProfile.basic_info?.cui || <em style={{opacity:0.5}}>Nedefinit</em>}</span>
+                            <button className="edit-cui-btn" onClick={() => { setEditingCui(true); setEditCuiValue(firmaProfile.basic_info?.cui || ""); }} data-testid="edit-cui-btn" title="Editează CUI">
+                              <Wrench size={13} />
+                            </button>
+                          </div>
+                        )}
                       </div>
-                      <div className="profile-field">
-                        <label>Localitate:</label>
-                        <span className="value">{firmaProfile.onrc_data?.localitate || '-'}</span>
-                      </div>
-                      <div className="profile-field">
-                        <label>Adresă:</label>
-                        <span className="value">{firmaProfile.onrc_data?.strada || '-'} {firmaProfile.onrc_data?.numar || ''}</span>
-                      </div>
-                      <div className="profile-field">
-                        <label>CAEN:</label>
-                        <span className="value">{firmaProfile.onrc_data?.cod_caen_principal || '-'}</span>
-                      </div>
-                      <div className="profile-field">
-                        <label>Stare:</label>
-                        <span className="value">{firmaProfile.onrc_data?.stare_firma || '-'}</span>
-                      </div>
-                      <div className="profile-field">
-                        <label>Capital Social:</label>
-                        <span className="value">{firmaProfile.onrc_data?.capital_social || '-'}</span>
-                      </div>
+                      <div className="profile-field"><label>Denumire:</label><span className="value">{firmaProfile.basic_info?.denumire || '-'}</span></div>
+                      <div className="profile-field"><label>Forma Juridică:</label><span className="value">{firmaProfile.basic_info?.forma_juridica || '-'}</span></div>
+                      <div className="profile-field"><label>Nr. Înregistrare:</label><span className="value">{firmaProfile.basic_info?.cod_inregistrare || firmaProfile.basic_info?.cod_onrc || '-'}</span></div>
+                      <div className="profile-field"><label>Data Înregistrare:</label><span className="value">{firmaProfile.basic_info?.data_inregistrare || '-'}</span></div>
+                      {firmaProfile.adresa?.judet && <div className="profile-field"><label>Județ:</label><span className="value">{firmaProfile.adresa.judet}</span></div>}
+                      {firmaProfile.adresa?.localitate && <div className="profile-field"><label>Localitate:</label><span className="value">{firmaProfile.adresa.localitate}</span></div>}
+                      {firmaProfile.adresa?.strada && (
+                        <div className="profile-field profile-field-wide">
+                          <label>Adresă:</label>
+                          <span className="value">{[firmaProfile.adresa.strada, firmaProfile.adresa.numar, firmaProfile.adresa.bloc && `Bl.${firmaProfile.adresa.bloc}`, firmaProfile.adresa.scara && `Sc.${firmaProfile.adresa.scara}`, firmaProfile.adresa.apartament && `Ap.${firmaProfile.adresa.apartament}`].filter(Boolean).join(', ')}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
 
                   {/* ANAF Data */}
-                  <div className="profile-section">
-                    <h4>Date ANAF</h4>
-                    <div className="profile-grid">
-                      <div className="profile-field">
-                        <label>Stare ANAF:</label>
-                        <span className="value">{firmaProfile.anaf_data?.anaf_stare || '-'}</span>
-                      </div>
-                      <div className="profile-field">
-                        <label>Plătitor TVA:</label>
-                        <span className="value">{firmaProfile.anaf_data?.anaf_platitor_tva ? 'DA' : 'NU'}</span>
-                      </div>
-                      <div className="profile-field">
-                        <label>e-Factură:</label>
-                        <span className="value">{firmaProfile.anaf_data?.anaf_e_factura ? 'DA' : 'NU'}</span>
-                      </div>
-                      <div className="profile-field">
-                        <label>Organ Fiscal:</label>
-                        <span className="value">{firmaProfile.anaf_data?.anaf_organ_fiscal || '-'}</span>
-                      </div>
-                      <div className="profile-field">
-                        <label>Sync ANAF:</label>
-                        <span className="value">{firmaProfile.anaf_data?.anaf_last_sync || 'Nesincronizat'}</span>
+                  {firmaProfile.anaf_data?.anaf_sync_status && (
+                    <div className="profile-section">
+                      <h4>Date ANAF <span className={`profile-badge ${firmaProfile.anaf_data.anaf_sync_status === 'success' ? 'success' : 'warning'}`}>{firmaProfile.anaf_data.anaf_sync_status}</span></h4>
+                      <div className="profile-grid">
+                        <div className="profile-field profile-field-wide"><label>Stare:</label><span className="value">{firmaProfile.anaf_data.anaf_stare || '-'}</span></div>
+                        <div className="profile-field"><label>Nr. Reg. Com.:</label><span className="value">{firmaProfile.anaf_data.anaf_nr_reg_com || '-'}</span></div>
+                        <div className="profile-field"><label>Cod CAEN:</label><span className="value">{firmaProfile.anaf_data.anaf_cod_caen || '-'}</span></div>
+                        <div className="profile-field"><label>Plătitor TVA:</label><span className={`value ${firmaProfile.anaf_data.anaf_platitor_tva ? 'text-success' : ''}`}>{firmaProfile.anaf_data.anaf_platitor_tva ? 'DA' : 'NU'}</span></div>
+                        <div className="profile-field"><label>e-Factură:</label><span className={`value ${firmaProfile.anaf_data.anaf_e_factura ? 'text-success' : ''}`}>{firmaProfile.anaf_data.anaf_e_factura ? 'DA' : 'NU'}</span></div>
+                        <div className="profile-field"><label>Inactiv:</label><span className="value">{firmaProfile.anaf_data.anaf_inactiv ? 'DA' : 'NU'}</span></div>
+                        {firmaProfile.anaf_data.anaf_organ_fiscal && <div className="profile-field profile-field-wide"><label>Organ Fiscal:</label><span className="value">{firmaProfile.anaf_data.anaf_organ_fiscal}</span></div>}
+                        {firmaProfile.anaf_data.anaf_forma_proprietate && <div className="profile-field profile-field-wide"><label>Formă Proprietate:</label><span className="value">{firmaProfile.anaf_data.anaf_forma_proprietate}</span></div>}
+                        <div className="profile-field"><label>Sync ANAF:</label><span className="value muted">{firmaProfile.anaf_data.anaf_last_sync ? new Date(firmaProfile.anaf_data.anaf_last_sync).toLocaleDateString('ro-RO') : 'Nesincronizat'}</span></div>
                       </div>
                     </div>
-                  </div>
+                  )}
 
-                  {/* MFinante Data */}
-                  <div className="profile-section">
-                    <h4>Date MFinante (Bilanț {firmaProfile.mfinante_data?.mf_an_bilant || '-'})</h4>
-                    <div className="profile-grid">
-                      <div className="profile-field">
-                        <label>Cifra Afaceri:</label>
-                        <span className="value highlight">{firmaProfile.mfinante_data?.mf_cifra_afaceri?.toLocaleString() || '-'} RON</span>
-                      </div>
-                      <div className="profile-field">
-                        <label>Profit Net:</label>
-                        <span className="value">{firmaProfile.mfinante_data?.mf_profit_net?.toLocaleString() || '-'} RON</span>
-                      </div>
-                      <div className="profile-field">
-                        <label>Nr. Angajați:</label>
-                        <span className="value">{firmaProfile.mfinante_data?.mf_numar_angajati || '-'}</span>
-                      </div>
-                      <div className="profile-field">
-                        <label>Active Totale:</label>
-                        <span className="value">{((firmaProfile.mfinante_data?.mf_active_imobilizate || 0) + (firmaProfile.mfinante_data?.mf_active_circulante || 0)).toLocaleString()} RON</span>
-                      </div>
-                      <div className="profile-field">
-                        <label>Datorii:</label>
-                        <span className="value">{firmaProfile.mfinante_data?.mf_datorii?.toLocaleString() || '-'} RON</span>
-                      </div>
-                      <div className="profile-field">
-                        <label>Sync MFinante:</label>
-                        <span className="value">{firmaProfile.mfinante_data?.mf_last_sync || 'Nesincronizat'}</span>
+                  {/* MFinante Summary */}
+                  {firmaProfile.mfinante_data?.mf_sync_status === 'success' && (
+                    <div className="profile-section">
+                      <h4>Date MFinante — Bilanț {firmaProfile.mfinante_data.mf_an_bilant || '-'}</h4>
+                      <div className="profile-grid">
+                        <div className="profile-field"><label>Cifra Afaceri:</label><span className="value highlight">{firmaProfile.mfinante_data.mf_cifra_afaceri?.toLocaleString('ro-RO') || '-'} RON</span></div>
+                        <div className="profile-field"><label>Venituri Totale:</label><span className="value">{firmaProfile.mfinante_data.mf_venituri_totale?.toLocaleString('ro-RO') || '-'} RON</span></div>
+                        <div className="profile-field"><label>Profit Net:</label><span className={`value ${firmaProfile.mfinante_data.mf_profit_net > 0 ? 'text-success' : ''}`}>{firmaProfile.mfinante_data.mf_profit_net?.toLocaleString('ro-RO') || (firmaProfile.mfinante_data.mf_pierdere_neta ? `-${firmaProfile.mfinante_data.mf_pierdere_neta?.toLocaleString('ro-RO')}` : '-')} RON</span></div>
+                        <div className="profile-field"><label>Nr. Angajați:</label><span className="value">{firmaProfile.mfinante_data.mf_numar_angajati || '-'}</span></div>
+                        <div className="profile-field"><label>Active Imob.:</label><span className="value">{firmaProfile.mfinante_data.mf_active_imobilizate?.toLocaleString('ro-RO') || '-'} RON</span></div>
+                        <div className="profile-field"><label>Active Circ.:</label><span className="value">{firmaProfile.mfinante_data.mf_active_circulante?.toLocaleString('ro-RO') || '-'} RON</span></div>
+                        <div className="profile-field"><label>Capitaluri Proprii:</label><span className="value">{firmaProfile.mfinante_data.mf_capitaluri_proprii?.toLocaleString('ro-RO') || '-'} RON</span></div>
+                        <div className="profile-field"><label>Datorii Totale:</label><span className="value">{firmaProfile.mfinante_data.mf_datorii?.toLocaleString('ro-RO') || '-'} RON</span></div>
+                        {firmaProfile.mfinante_data.mf_ani_disponibili && <div className="profile-field"><label>Ani disponibili:</label><span className="value muted">{firmaProfile.mfinante_data.mf_ani_disponibili}</span></div>}
                       </div>
                     </div>
-                  </div>
+                  )}
 
-                  {/* Bilanturi History */}
-                  {firmaProfile.bilanturi_history && firmaProfile.bilanturi_history.length > 0 && (
+                  {/* Bilanturi History Table */}
+                  {firmaProfile.bilanturi_history?.length > 0 && (
                     <div className="profile-section">
                       <h4>Istoric Bilanțuri ({firmaProfile.bilanturi_history.length} ani)</h4>
                       <div className="bilanturi-table-container">
@@ -2763,17 +2849,25 @@ function App() {
                             <tr>
                               <th>An</th>
                               <th>Cifra Afaceri</th>
-                              <th>Profit Net</th>
+                              <th>Profit/Pierdere Net</th>
                               <th>Angajați</th>
+                              <th>Active Totale</th>
+                              <th>Capitaluri Proprii</th>
+                              <th>Datorii</th>
                             </tr>
                           </thead>
                           <tbody>
                             {firmaProfile.bilanturi_history.map((b, i) => (
                               <tr key={i}>
-                                <td>{b.an}</td>
-                                <td>{b.cifra_afaceri_neta?.toLocaleString() || '-'}</td>
-                                <td>{b.profit_net?.toLocaleString() || b.pierdere_neta ? `-${b.pierdere_neta?.toLocaleString()}` : '-'}</td>
+                                <td><strong>{b.an}</strong></td>
+                                <td>{b.cifra_afaceri_neta?.toLocaleString('ro-RO') || '-'}</td>
+                                <td className={b.profit_net > 0 ? 'text-success' : b.pierdere_neta > 0 ? 'text-danger' : ''}>
+                                  {b.profit_net ? `+${b.profit_net.toLocaleString('ro-RO')}` : b.pierdere_neta ? `-${b.pierdere_neta.toLocaleString('ro-RO')}` : '-'}
+                                </td>
                                 <td>{b.numar_angajati || '-'}</td>
+                                <td>{b.active_imobilizate || b.active_circulante ? ((b.active_imobilizate||0) + (b.active_circulante||0)).toLocaleString('ro-RO') : '-'}</td>
+                                <td>{b.capitaluri_proprii?.toLocaleString('ro-RO') || '-'}</td>
+                                <td>{b.datorii?.toLocaleString('ro-RO') || '-'}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -2781,16 +2875,35 @@ function App() {
                       </div>
                     </div>
                   )}
+
+                  {/* Dosare */}
+                  {firmaProfile.dosare_summary?.total > 0 && (
+                    <div className="profile-section">
+                      <h4>Dosare ({firmaProfile.dosare_summary.total} total)</h4>
+                      <div className="dosare-list">
+                        {firmaProfile.dosare_summary.recente.map((d, i) => (
+                          <div key={i} className="dosar-item">
+                            <div className="dosar-nr">{d.numar_dosar}</div>
+                            <div className="dosar-details">
+                              <span className="dosar-inst">{d.institutie}</span>
+                              {d.obiect && <span className="dosar-obiect">{d.obiect}</span>}
+                              {d.stadiu && <Badge variant="outline" className="dosar-stadiu">{d.stadiu}</Badge>}
+                            </div>
+                            <div className="dosar-data">{d.data_dosar || '-'}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                 </div>
               ) : (
                 <p>Nu s-a putut încărca profilul.</p>
               )}
             </div>
-            
+
             <div className="profile-modal-footer">
-              <Button variant="outline" onClick={closeFirmaProfile}>
-                Închide
-              </Button>
+              <Button variant="outline" onClick={closeFirmaProfile}>Închide</Button>
             </div>
           </div>
         </div>

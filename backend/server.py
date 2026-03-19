@@ -2653,6 +2653,9 @@ async def get_firma_profile(firma_id: int):
         
         # Get all bilanturi for this company
         bilanturi = db.query(Bilant).filter(Bilant.firma_id == firma_id).order_by(Bilant.an.desc()).all()
+        # Get dosare
+        dosare_count = db.query(Dosar).filter(Dosar.firma_id == firma_id).count()
+        dosare_list = db.query(Dosar).filter(Dosar.firma_id == firma_id).order_by(Dosar.data_dosar.desc()).limit(20).all()
         
         # Build complete profile
         profile = {
@@ -2661,15 +2664,11 @@ async def get_firma_profile(firma_id: int):
                 "denumire": firma.denumire,
                 "cui": firma.cui,
                 "cod_inregistrare": firma.cod_inregistrare,
-                "numar_ordine": firma.numar_ordine,
                 "data_inregistrare": firma.data_inregistrare,
+                "cod_onrc": firma.cod_onrc,
                 "forma_juridica": firma.forma_juridica,
             },
-            "onrc_data": {
-                "euid": firma.euid,
-                "cod_inmatriculare": firma.cod_inmatriculare,
-                "firma_radiata": firma.firma_radiata,
-                "stare_firma": firma.stare_firma,
+            "adresa": {
                 "judet": firma.judet,
                 "localitate": firma.localitate,
                 "strada": firma.strada,
@@ -2679,10 +2678,8 @@ async def get_firma_profile(firma_id: int):
                 "etaj": firma.etaj,
                 "apartament": firma.apartament,
                 "cod_postal": firma.cod_postal,
-                "caen_principal": firma.caen_principal,
-                "cod_caen_principal": firma.cod_caen_principal,
-                "obiect_activitate": firma.obiect_activitate,
-                "capital_social": firma.capital_social,
+                "tara": firma.tara,
+                "detalii_adresa": firma.detalii_adresa,
             },
             "anaf_data": {
                 "anaf_denumire": firma.anaf_denumire,
@@ -2700,24 +2697,24 @@ async def get_firma_profile(firma_id: int):
                 "anaf_organ_fiscal": firma.anaf_organ_fiscal,
                 "anaf_platitor_tva": firma.anaf_platitor_tva,
                 "anaf_tva_incasare": firma.anaf_tva_incasare,
+                "anaf_split_tva": firma.anaf_split_tva,
+                "anaf_inactiv": firma.anaf_inactiv,
                 "anaf_e_factura": firma.anaf_e_factura,
+                "anaf_sediu_judet": firma.anaf_sediu_judet,
+                "anaf_sediu_localitate": firma.anaf_sediu_localitate,
+                "anaf_sediu_strada": firma.anaf_sediu_strada,
+                "anaf_sediu_numar": firma.anaf_sediu_numar,
                 "anaf_last_sync": firma.anaf_last_sync.isoformat() if firma.anaf_last_sync else None,
                 "anaf_sync_status": firma.anaf_sync_status,
             },
             "mfinante_data": {
                 "mf_denumire": firma.mf_denumire,
-                "mf_adresa": firma.mf_adresa,
                 "mf_judet": firma.mf_judet,
-                "mf_cod_postal": firma.mf_cod_postal,
-                "mf_telefon": firma.mf_telefon,
                 "mf_nr_reg_com": firma.mf_nr_reg_com,
                 "mf_stare": firma.mf_stare,
                 "mf_platitor_tva": firma.mf_platitor_tva,
-                "mf_tva_data": firma.mf_tva_data,
                 "mf_impozit_profit": firma.mf_impozit_profit,
                 "mf_impozit_micro": firma.mf_impozit_micro,
-                "mf_accize": firma.mf_accize,
-                "mf_cas_data": firma.mf_cas_data,
                 "mf_an_bilant": firma.mf_an_bilant,
                 "mf_cifra_afaceri": firma.mf_cifra_afaceri,
                 "mf_venituri_totale": firma.mf_venituri_totale,
@@ -2753,6 +2750,19 @@ async def get_firma_profile(firma_id: int):
                 }
                 for b in bilanturi
             ],
+            "dosare_summary": {
+                "total": dosare_count,
+                "recente": [
+                    {
+                        "numar_dosar": d.numar_dosar,
+                        "institutie": d.institutie,
+                        "obiect": d.obiect,
+                        "stadiu": d.stadiu,
+                        "data_dosar": d.data_dosar.strftime("%d.%m.%Y") if d.data_dosar else None,
+                    }
+                    for d in dosare_list
+                ]
+            },
             "metadata": {
                 "created_at": firma.created_at.isoformat() if firma.created_at else None,
                 "updated_at": firma.updated_at.isoformat() if firma.updated_at else None,
@@ -2875,7 +2885,7 @@ async def get_dbfinal_firme(
                     "cui": f.cui,
                     "judet": f.judet,
                     "localitate": f.localitate,
-                    "stare": f.anaf_stare or f.stare_firma,
+                    "stare": f.anaf_stare or f.mf_stare,
                     "cifra_afaceri": f.mf_cifra_afaceri,
                     "profit": f.mf_profit_net,
                     "angajati": f.mf_numar_angajati,
