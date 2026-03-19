@@ -89,3 +89,8 @@ bilanturi (NEW)
 - iteration_5.json: Profile Modal, Inline CUI edit, DB Final, ANAF test — 23/23 OK
 - iteration_6.json: Validare completă toate 5 taburi + Export CSV — 31/31 OK
   - Bug fix: AnafPage.jsx destructuring (7 variabile lipsă ctx)
+
+## Localitati DB (2026-03-19)
+- Importate 42 judete + 13,749 localitati cu cod SIRUTA + coordonate GPS din https://github.com/romania/localitati
+- Normalizare automata judet/localitate/siruta pentru toate firmele
+- UI in tab Diagnostics: Import + Normalizare cu progress bar

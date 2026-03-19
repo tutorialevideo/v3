@@ -230,6 +230,13 @@ async def migrate_database_schema():
                 added.append(col_name)
             except Exception:
                 pass
+        # Add siruta column for locality matching
+        try:
+            await database.database.execute("ALTER TABLE firme ADD COLUMN IF NOT EXISTS siruta BIGINT")
+            await database.database.execute("CREATE INDEX IF NOT EXISTS idx_firme_siruta ON firme(siruta)")
+            added.append("siruta")
+        except Exception:
+            pass
         return {"success": True, "columns_added": added, "message": f"Schema migration complete. Added {len(added)} columns."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

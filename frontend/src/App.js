@@ -140,6 +140,10 @@ function App() {
   const [mfBilantYear, setMfBilantYear] = useState(null);
   const [mfBilantResult, setMfBilantResult] = useState(null);
   const [mfBilantLoading, setMfBilantLoading] = useState(false);
+  // Localitati
+  const [localitatiStats, setLocalitatiStats] = useState(null);
+  const [localitatiLoading, setLocalitatiLoading] = useState(false);
+  const [normalizeProgress, setNormalizeProgress] = useState(null);
   
   // CAPTCHA popup state
   const [captchaModalOpen, setCaptchaModalOpen] = useState(false);
@@ -662,9 +666,55 @@ function App() {
     }
   }, []);
 
+  // Localitati functions
+  const loadLocalitatiStats = async () => {
+    try {
+      const res = await axios.get(`${API}/localitati/stats`);
+      setLocalitatiStats(res.data);
+    } catch (e) {}
+  };
+
+  const importLocalitati = async () => {
+    setLocalitatiLoading(true);
+    try {
+      const res = await axios.post(`${API}/localitati/import/force`);
+      toast.success(res.data.message);
+      setTimeout(loadLocalitatiStats, 5000);
+    } catch (e) {
+      toast.error("Eroare la importul localităților");
+    } finally {
+      setLocalitatiLoading(false);
+    }
+  };
+
+  const startNormalizare = async () => {
+    setLocalitatiLoading(true);
+    try {
+      const res = await axios.post(`${API}/localitati/normalize?only_unmatched=true`);
+      toast.success(res.data.message);
+      // Poll progress
+      const pollInterval = setInterval(async () => {
+        try {
+          const prog = await axios.get(`${API}/localitati/normalize/progress`);
+          setNormalizeProgress(prog.data);
+          if (!prog.data.active) {
+            clearInterval(pollInterval);
+            setLocalitatiLoading(false);
+            loadLocalitatiStats();
+            toast.success(`Normalizare completă: ${prog.data.matched_judet?.toLocaleString()} județe, ${prog.data.matched_localitate?.toLocaleString()} localități`);
+          }
+        } catch (e) { clearInterval(pollInterval); setLocalitatiLoading(false); }
+      }, 2000);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Eroare la normalizare");
+      setLocalitatiLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (activeTab === 'diagnostics') {
       loadDiagnostics();
+      loadLocalitatiStats();
     }
   }, [activeTab, loadDiagnostics]);
 
@@ -1155,6 +1205,9 @@ function App() {
     cleanupDuplicateDenumiri, cleanupDuplicateCui, cleanupOrphanedDosare,
     optimizeDatabase, createIndexes, migrateSchema,
     loadDiagnostics, reconnectDatabase, fetchData,
+    // Localitati
+    localitatiStats, localitatiLoading, normalizeProgress,
+    loadLocalitatiStats, importLocalitati, startNormalizare,
     // Helpers
     formatDate: (d) => d ? new Date(d).toLocaleString('ro-RO') : '-',
     formatBytes: (b) => b > 1024*1024 ? `${(b/1024/1024).toFixed(1)} MB` : `${(b/1024).toFixed(0)} KB`,

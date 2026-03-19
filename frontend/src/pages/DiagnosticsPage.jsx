@@ -59,6 +59,8 @@ export default function DiagnosticsPage({ ctx }) {
     cleanupOrphanedDosare, optimizeDatabase, migrateSchema, createIndexes,
     reconnectDatabase,
     formatDate, formatBytes,
+    localitatiStats, localitatiLoading, normalizeProgress,
+    loadLocalitatiStats, importLocalitati, startNormalizare,
   } = ctx;
 
   return (
@@ -350,6 +352,100 @@ export default function DiagnosticsPage({ ctx }) {
                     </tbody>
                   </table>
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* Localitati Card */}
+            <Card data-testid="localitati-card">
+              <CardHeader>
+                <CardTitle className="card-title">
+                  <HardDrive size={20} />
+                  Baza de Date Localități România
+                </CardTitle>
+                <CardDescription>
+                  42 județe + 13.749 localități cu cod SIRUTA și coordonate GPS — normalizează adresele firmelor
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="diag-stats" style={{marginBottom: '14px'}}>
+                  <div className="diag-stat">
+                    <span className="stat-value">{localitatiStats?.judete_count || 0}</span>
+                    <span className="stat-label">Județe</span>
+                  </div>
+                  <div className="diag-stat">
+                    <span className="stat-value">{localitatiStats?.localitati_count?.toLocaleString() || 0}</span>
+                    <span className="stat-label">Localități</span>
+                  </div>
+                  <div className="diag-stat" style={{color: 'var(--primary)'}}>
+                    <span className="stat-value">{localitatiStats?.firme_cu_siruta?.toLocaleString() || 0}</span>
+                    <span className="stat-label">Firme normalizate</span>
+                  </div>
+                  <div className="diag-stat">
+                    <span className="stat-value">{localitatiStats?.firme_fara_siruta?.toLocaleString() || 0}</span>
+                    <span className="stat-label">Firme ne-normalizate</span>
+                  </div>
+                </div>
+
+                {/* Progress during normalization */}
+                {normalizeProgress?.active && (
+                  <div style={{marginBottom:'12px', padding:'10px', background:'var(--bg-secondary)', borderRadius:'8px'}}>
+                    <div style={{fontSize:'0.82rem', marginBottom:'6px', color:'var(--text-muted)'}}>
+                      Normalizare în progres: {normalizeProgress.processed?.toLocaleString()} / {normalizeProgress.total?.toLocaleString()} firme
+                      &nbsp;·&nbsp; {normalizeProgress.matched_judet?.toLocaleString()} județe găsite
+                      &nbsp;·&nbsp; {normalizeProgress.matched_localitate?.toLocaleString()} localități găsite
+                    </div>
+                    <Progress value={normalizeProgress.total > 0 ? (normalizeProgress.processed / normalizeProgress.total * 100) : 0} />
+                  </div>
+                )}
+
+                <div style={{display:'flex', gap:'8px', flexWrap:'wrap'}}>
+                  <Button
+                    variant="outline"
+                    onClick={loadLocalitatiStats}
+                    size="sm"
+                  >
+                    <RefreshCw size={14} />
+                    Reîncarcă stats
+                  </Button>
+
+                  {!localitatiStats?.available ? (
+                    <Button
+                      onClick={importLocalitati}
+                      disabled={localitatiLoading}
+                      data-testid="import-localitati-btn"
+                    >
+                      {localitatiLoading ? <Loader2 className="animate-spin" size={14} /> : <Download size={14} />}
+                      Importă Localități (GitHub)
+                    </Button>
+                  ) : (
+                    <>
+                      <Button
+                        onClick={startNormalizare}
+                        disabled={localitatiLoading || normalizeProgress?.active}
+                        data-testid="normalize-adrese-btn"
+                      >
+                        {localitatiLoading ? <Loader2 className="animate-spin" size={14} /> : <Wrench size={14} />}
+                        Normalizează Adrese ({localitatiStats?.firme_fara_siruta?.toLocaleString()} firme)
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={importLocalitati}
+                        disabled={localitatiLoading}
+                        size="sm"
+                        data-testid="reimport-localitati-btn"
+                      >
+                        <Download size={14} />
+                        Re-importă
+                      </Button>
+                    </>
+                  )}
+                </div>
+
+                {localitatiStats?.available && localitatiStats.firme_cu_siruta > 0 && (
+                  <p style={{fontSize:'0.78rem', color:'var(--text-muted)', marginTop:'8px'}}>
+                    Firmele cu cod SIRUTA au județ și localitate normalizate conform bazei oficiale de localități.
+                  </p>
+                )}
               </CardContent>
             </Card>
           </div>

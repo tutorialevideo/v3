@@ -142,6 +142,8 @@ class Firma(Base):
     mf_ani_disponibili = Column(String(200), nullable=True)
     mf_last_sync = Column(DateTime, nullable=True)
     mf_sync_status = Column(String(50), nullable=True)
+    # Localitati normalized (from judete-orase reference)
+    siruta = Column(BigInteger, nullable=True, index=True)  # SIRUTA code for matched locality
     bilanturi = relationship("Bilant", back_populates="firma")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
