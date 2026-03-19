@@ -81,6 +81,6 @@ bilanturi (NEW)
 - [ ] Export CSV/Excel date firme
 - [ ] Selector instituție multi-select pentru Justice Portal
 
-### P3 - Backlog
-- [ ] Refactorizare server.py (~3762 linii) în module separate
-- [ ] Refactorizare App.js (~2784 linii) în componente separate
+### P3 - Completat 2026-03-19
+- [x] Refactorizare server.py (3879 linii → server.py 82 linii + 5 module routes/ + 5 module shared)
+- [x] Refactorizare App.js (3008 linii → App.js 1180 linii + 5 pages/ + 2 components/modals)

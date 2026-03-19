@@ -1,0 +1,492 @@
+import axios from "axios";
+import { Button } from "../components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
+import { Input } from "../components/ui/input";
+import { Label } from "../components/ui/label";
+import { Badge } from "../components/ui/badge";
+import { Switch } from "../components/ui/switch";
+import { ScrollArea } from "../components/ui/scroll-area";
+import { Separator } from "../components/ui/separator";
+import { Progress } from "../components/ui/progress";
+import { Calendar } from "../components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover";
+import { toast } from "sonner";
+import { format } from "date-fns";
+import { ro } from "date-fns/locale";
+import {
+  Play, Settings, FileJson, Clock, Download, Trash2, Search, RefreshCw,
+  CheckCircle2, XCircle, Loader2, Building2, FolderDown, Activity,
+  CalendarIcon, Timer, Zap, Upload, FileSpreadsheet, AlertCircle,
+  Database, HardDrive, AlertTriangle, Wrench, BarChart3, Shield, ChevronDown
+} from "lucide-react";
+
+const API = "/api";
+
+export default function AnafPage({ ctx }) {
+  const {
+    // Dashboard/global
+    config, stats, dbStats, files, runs, currentRun, loading,
+    searchTerm, setSearchTerm, scheduleHour, setScheduleHour,
+    scheduleMinute, setScheduleMinute, cronEnabled, setCronEnabled,
+    dateStart, setDateStart, dateEnd, setDateEnd,
+    searchPreview, setSearchPreview, searchLoading, showAdvancedConfig, setShowAdvancedConfig,
+    downloadLogs, downloadProgress,
+    importLoading, importResult, importLog, importError,
+    setImportLog, setImportResult, setImportError,
+    // Firme
+    firmeList, firmeTotal, firmePage, setFirmePage, firmeSearch, setFirmeSearch, firmeLoading,
+    inlineEditId, setInlineEditId, inlineEditValue, setInlineEditValue,
+    // DB Final
+    dbFinalStats, dbFinalList, dbFinalTotal, dbFinalPage, setDbFinalPage,
+    dbFinalSearch, setDbFinalSearch, dbFinalLoading, dbFinalFilters,
+    // ANAF
+    anafStats, anafProgress, anafLoading, anafSyncRunning,
+    anafTestResult, anafTestCui, setAnafTestCui, anafLogs,
+    // MFinante
+    mfStats, mfProgress, mfLoading, mfSession, mfTestCui, setMfTestCui, mfTestResult,
+    // Diagnostics
+    diagnosticsData, duplicateDenumiri, duplicateCui, indexes,
+    diagnosticsLoading, cleanupLoading, dbAvailable, reconnecting,
+    // Handlers
+    saveConfig, triggerRun, stopDownloadJob, searchPreviewDosare,
+    downloadFile, deleteFile, handleCsvImport, exportFirme,
+    loadFirme, handleFirmeSearch, openFirmaProfile, saveInlineCui,
+    loadDbFinalStats, loadDbFinal, handleDbFinalSearch, handleDbFinalFilterChange,
+    testAnafCui, testAnafCuiFull, startAnafSync, stopAnafSync,
+    loadAnafProgress, loadAnafStats, loadMfStats, loadMfProgress,
+    openCaptchaModal, testMfCui,
+    loadDiagnostics, cleanupDuplicateDenumiri, cleanupDuplicateCui,
+    cleanupOrphanedDosare, optimizeDatabase, migrateSchema, createIndexes,
+    reconnectDatabase,
+    formatDate, formatBytes,
+  } = ctx;
+
+  return (
+          /* ANAF Sync Tab */
+          <div className="anaf-section" data-testid="anaf-section">
+            {/* ANAF Stats Card */}
+            <Card className="anaf-stats-card" data-testid="anaf-stats">
+              <CardHeader>
+                <div className="card-header-with-action">
+                  <div>
+                    <CardTitle className="card-title">
+                      <Download size={20} />
+                      Sincronizare ANAF
+                    </CardTitle>
+                    <CardDescription>
+                      Descarcă date de la ANAF pentru firmele din baza de date (TVA, stare, e-Factura)
+                    </CardDescription>
+                  </div>
+                  <div className="header-actions">
+                    <Button variant="outline" onClick={() => { loadAnafStats(); loadAnafProgress(); }}>
+                      <RefreshCw size={16} />
+                      Reîncarcă
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {anafStats && (
+                  <div className="anaf-stats-grid">
+                    <div className="anaf-stat-card">
+                      <span className="stat-value">{anafStats.total_firme_cu_cui?.toLocaleString() || 0}</span>
+                      <span className="stat-label">Firme cu CUI</span>
+                    </div>
+                    <div className="anaf-stat-card synced">
+                      <span className="stat-value">{anafStats.synced?.toLocaleString() || 0}</span>
+                      <span className="stat-label">Sincronizate</span>
+                    </div>
+                    <div className="anaf-stat-card not-synced">
+                      <span className="stat-value">{anafStats.not_synced?.toLocaleString() || 0}</span>
+                      <span className="stat-label">Nesincronizate</span>
+                    </div>
+                    <div className="anaf-stat-card found">
+                      <span className="stat-value">{anafStats.found?.toLocaleString() || 0}</span>
+                      <span className="stat-label">Găsite în ANAF</span>
+                    </div>
+                    <div className="anaf-stat-card not-found">
+                      <span className="stat-value">{anafStats.not_found?.toLocaleString() || 0}</span>
+                      <span className="stat-label">Negăsite</span>
+                    </div>
+                    <div className="anaf-stat-card active">
+                      <span className="stat-value">{anafStats.active?.toLocaleString() || 0}</span>
+                      <span className="stat-label">Active</span>
+                    </div>
+                    <div className="anaf-stat-card radiate">
+                      <span className="stat-value">{anafStats.radiate?.toLocaleString() || 0}</span>
+                      <span className="stat-label">Radiate</span>
+                    </div>
+                    <div className="anaf-stat-card tva">
+                      <span className="stat-value">{anafStats.platitori_tva?.toLocaleString() || 0}</span>
+                      <span className="stat-label">Plătitori TVA</span>
+                    </div>
+                    <div className="anaf-stat-card efactura">
+                      <span className="stat-value">{anafStats.e_factura?.toLocaleString() || 0}</span>
+                      <span className="stat-label">e-Factura</span>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Sync Progress Card */}
+            <Card className="anaf-progress-card" data-testid="anaf-progress">
+              <CardHeader>
+                <CardTitle className="card-title">
+                  {anafSyncRunning ? <Loader2 className="animate-spin" size={20} /> : <Zap size={20} />}
+                  Progres Sincronizare
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {anafProgress && anafProgress.active ? (
+                  <div className="progress-info">
+                    <div className="progress-bar-container">
+                      <div 
+                        className="progress-bar" 
+                        style={{ width: `${anafProgress.total_firms > 0 ? (anafProgress.processed / anafProgress.total_firms * 100) : 0}%` }}
+                      />
+                    </div>
+                    <div className="progress-stats">
+                      <span>Procesat: {anafProgress.processed?.toLocaleString()} / {anafProgress.total_firms?.toLocaleString()}</span>
+                      <span>Batch: {anafProgress.current_batch} / {anafProgress.total_batches}</span>
+                      <span>Găsite: {anafProgress.found?.toLocaleString()}</span>
+                      <span>Negăsite: {anafProgress.not_found?.toLocaleString()}</span>
+                      <span>Erori: {anafProgress.errors?.toLocaleString()}</span>
+                      <span>ETA: {formatEta(anafProgress.eta_seconds)}</span>
+                    </div>
+                    <Button variant="destructive" onClick={stopAnafSync} className="stop-btn">
+                      <XCircle size={16} />
+                      Oprește Sincronizarea
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="sync-actions">
+                    <div className="sync-batch-controls">
+                      <h4>Sincronizare în Batch-uri</h4>
+                      <div className="batch-buttons">
+                        <Button 
+                          onClick={() => startAnafSync({ only_unsynced: true, limit: 100 })}
+                          disabled={anafLoading || anafSyncRunning}
+                          variant="outline"
+                          size="sm"
+                        >
+                          100 firme
+                        </Button>
+                        <Button 
+                          onClick={() => startAnafSync({ only_unsynced: true, limit: 500 })}
+                          disabled={anafLoading || anafSyncRunning}
+                          variant="outline"
+                          size="sm"
+                        >
+                          500 firme
+                        </Button>
+                        <Button 
+                          onClick={() => startAnafSync({ only_unsynced: true, limit: 1000 })}
+                          disabled={anafLoading || anafSyncRunning}
+                          variant="outline"
+                          size="sm"
+                        >
+                          1.000 firme
+                        </Button>
+                        <Button 
+                          onClick={() => startAnafSync({ only_unsynced: true, limit: 5000 })}
+                          disabled={anafLoading || anafSyncRunning}
+                          variant="outline"
+                          size="sm"
+                        >
+                          5.000 firme
+                        </Button>
+                      </div>
+                    </div>
+                    <Separator className="my-4" />
+                    <div className="sync-options">
+                      <Button 
+                        onClick={() => startAnafSync({ only_unsynced: true })}
+                        disabled={anafLoading || anafSyncRunning}
+                        className="sync-btn"
+                      >
+                        <Download size={16} />
+                        Sync Toate Nesincronizate ({anafStats?.not_synced?.toLocaleString() || 0})
+                      </Button>
+                      <Button 
+                        variant="secondary"
+                        onClick={() => startAnafSync({ only_unsynced: false })}
+                        disabled={anafLoading || anafSyncRunning}
+                      >
+                        Re-sync toate firmele
+                      </Button>
+                    </div>
+                    <p className="sync-note">
+                      ⚠️ ANAF permite max 100 CUI/request și 1 request/secundă. 
+                      Pentru 1 milion de firme va dura ~3 ore.
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Logs Card */}
+            <Card className="anaf-logs-card" data-testid="anaf-logs">
+              <CardHeader>
+                <div className="card-header-with-action">
+                  <CardTitle className="card-title">
+                    <Activity size={20} />
+                    Loguri Sincronizare
+                  </CardTitle>
+                  <Button variant="ghost" size="sm" onClick={clearAnafLogs}>
+                    <Trash2 size={14} />
+                    Șterge
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="logs-container">
+                  {anafLogs.length === 0 ? (
+                    <p className="no-logs">Niciun log încă. Pornește o sincronizare pentru a vedea logurile.</p>
+                  ) : (
+                    <pre className="logs-content">
+                      {anafLogs.map((log, i) => (
+                        <div key={i} className={`log-line ${log.includes('✗') ? 'error' : log.includes('✓') ? 'success' : ''}`}>
+                          {log}
+                        </div>
+                      ))}
+                    </pre>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Test ANAF API Card */}
+            <Card className="anaf-test-card" data-testid="anaf-test">
+              <CardHeader>
+                <CardTitle className="card-title">
+                  <Search size={20} />
+                  Test API ANAF
+                </CardTitle>
+                <CardDescription>
+                  Testează API-ul ANAF cu un singur CUI
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="test-form">
+                  <input
+                    type="text"
+                    placeholder="Introdu CUI (ex: 14918042)"
+                    value={anafTestCui}
+                    onChange={(e) => setAnafTestCui(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && testAnafCuiFull()}
+                    className="test-input"
+                    data-testid="anaf-test-cui-input"
+                  />
+                  <Button onClick={testAnafCui} disabled={anafLoading} variant="outline" data-testid="anaf-verifica-rapid-btn">
+                    {anafLoading ? <Loader2 className="animate-spin" size={16} /> : <Search size={16} />}
+                    Verifică rapid
+                  </Button>
+                  <Button onClick={testAnafCuiFull} disabled={anafLoading} data-testid="anaf-date-complete-btn">
+                    {anafLoading ? <Loader2 className="animate-spin" size={16} /> : <BarChart3 size={16} />}
+                    Date complete
+                  </Button>
+                </div>
+                {anafTestResult && (
+                  <div className="test-result">
+                    {anafTestResult.found !== undefined && (
+                      <div style={{marginBottom:'8px',display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}}>
+                        <Badge variant={anafTestResult.found ? 'success' : 'secondary'}>
+                          {anafTestResult.found ? 'Găsit' : 'Negăsit'}
+                        </Badge>
+                        {anafTestResult.sections_analysis && Object.entries(anafTestResult.sections_analysis).map(([section, data]) => (
+                          data.non_empty_fields > 0 && (
+                            <Badge key={section} variant="outline" style={{fontSize:'0.7rem'}}>
+                              {section}: {data.non_empty_fields}/{data.total_fields}
+                            </Badge>
+                          )
+                        ))}
+                      </div>
+                    )}
+                    {anafTestResult.raw_response?.found?.[0]?.date_generale && (
+                      <div className="anaf-quick-summary">
+                        {(() => {
+                          const dg = anafTestResult.raw_response.found[0].date_generale;
+                          return (
+                            <div className="profile-grid" style={{marginBottom:'8px'}}>
+                              <div className="profile-field"><label>Denumire:</label><span className="value">{dg.denumire}</span></div>
+                              <div className="profile-field"><label>Stare:</label><span className="value">{dg.stare_inregistrare}</span></div>
+                              <div className="profile-field"><label>Nr. Reg. Com.:</label><span className="value">{dg.nrRegCom}</span></div>
+                              <div className="profile-field"><label>Cod CAEN:</label><span className="value">{dg.cod_CAEN}</span></div>
+                              <div className="profile-field"><label>Adresă:</label><span className="value">{dg.adresa}</span></div>
+                              <div className="profile-field"><label>Telefon:</label><span className="value">{dg.telefon || '-'}</span></div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
+                    <details>
+                      <summary style={{cursor:'pointer',fontSize:'0.8rem',color:'var(--text-muted)',marginBottom:'4px'}}>JSON Raw complet</summary>
+                      <ScrollArea style={{height:'220px',border:'1px solid var(--border)',borderRadius:'4px',padding:'8px'}}>
+                        <pre style={{fontSize:'0.72rem',lineHeight:'1.4',whiteSpace:'pre-wrap',wordBreak:'break-all'}}>{JSON.stringify(anafTestResult, null, 2)}</pre>
+                      </ScrollArea>
+                    </details>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* MFinante Section */}
+            <Card className="mfinante-card" data-testid="mfinante-section">
+              <CardHeader>
+                <div className="card-header-with-action">
+                  <div>
+                    <CardTitle className="card-title">
+                      <FileSpreadsheet size={20} />
+                      MFinante - Bilanțuri
+                    </CardTitle>
+                    <CardDescription>
+                      Date financiare de pe mfinante.gov.ro (cifră afaceri, profit, nr. angajați)
+                    </CardDescription>
+                  </div>
+                  <Button variant="outline" onClick={() => { loadMfStats(); loadMfProgress(); }}>
+                    <RefreshCw size={16} />
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {/* Session Setup */}
+                <div className="mf-session-section">
+                  <h4>1. Rezolvă CAPTCHA și setează sesiunea</h4>
+                  
+                  {/* New CAPTCHA Button */}
+                  <div className="captcha-button-section">
+                    <Button 
+                      onClick={openCaptchaModal} 
+                      className="captcha-main-btn"
+                      disabled={captchaLoading}
+                    >
+                      {captchaLoading ? (
+                        <Loader2 className="animate-spin" size={16} />
+                      ) : (
+                        <Shield size={16} />
+                      )}
+                      Rezolvă CAPTCHA aici
+                    </Button>
+                    <span className="captcha-hint">
+                      sau folosește metoda manuală de mai jos
+                    </span>
+                  </div>
+
+                  {/* Manual method (collapsed by default) */}
+                  <details className="manual-session-method">
+                    <summary>Metodă alternativă (manuală)</summary>
+                    <ol className="mf-instructions">
+                      <li>Deschide <a href="https://mfinante.gov.ro/apps/infocodfiscal.html" target="_blank" rel="noopener noreferrer">mfinante.gov.ro/apps/infocodfiscal.html</a></li>
+                      <li>Rezolvă CAPTCHA și trimite cu orice CUI (ex: 14918042)</li>
+                      <li>Apasă F12 → Network → Găsește request-ul → Copiază <code>jsessionid</code> din URL</li>
+                      <li>Lipește mai jos și apasă "Setează Sesiune"</li>
+                    </ol>
+                    <div className="mf-session-form">
+                      <input
+                        type="text"
+                        placeholder="jsessionid (ex: Gtjp5kQJsBZ7Kd4ZU07zCai6IAzJ...)"
+                        value={mfSession}
+                        onChange={(e) => setMfSession(e.target.value)}
+                        className="test-input"
+                      />
+                      <Button onClick={setMfSessionId} disabled={mfLoading}>
+                        {mfLoading ? <Loader2 className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}
+                        Setează Sesiune
+                      </Button>
+                    </div>
+                  </details>
+
+                  {mfProgress && (
+                    <div className={`session-status ${mfProgress.session_valid ? 'valid' : 'invalid'}`}>
+                      {mfProgress.session_valid ? (
+                        <><CheckCircle2 size={16} /> Sesiune validă</>
+                      ) : (
+                        <><XCircle size={16} /> Sesiune invalidă sau expirată</>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Test CUI */}
+                <div className="mf-test-section">
+                  <h4>2. Testează cu un CUI</h4>
+                  <div className="test-form">
+                    <input
+                      type="text"
+                      placeholder="CUI (ex: 14918042)"
+                      value={mfTestCui}
+                      onChange={(e) => setMfTestCui(e.target.value)}
+                      className="test-input"
+                    />
+                    <Button onClick={testMfCui} disabled={mfLoading || !mfProgress?.session_valid}>
+                      {mfLoading ? <Loader2 className="animate-spin" size={16} /> : <Search size={16} />}
+                      Test
+                    </Button>
+                  </div>
+                  {mfTestResult && (
+                    <div className="test-result">
+                      <pre>{JSON.stringify(mfTestResult, null, 2)}</pre>
+                    </div>
+                  )}
+                </div>
+
+                {/* Sync Actions */}
+                <div className="mf-sync-section">
+                  <h4>3. Sincronizează firme</h4>
+                  {mfStats && (
+                    <div className="mf-stats-mini">
+                      <span>Total: {mfStats.total_firme?.toLocaleString()}</span>
+                      <span>Sincronizate: {mfStats.synced_mfinante?.toLocaleString()}</span>
+                      <span>Cu cifră afaceri: {mfStats.with_cifra_afaceri?.toLocaleString()}</span>
+                    </div>
+                  )}
+                  <div className="sync-options">
+                    <Button 
+                      onClick={() => startMfSync(50)}
+                      disabled={mfLoading || !mfProgress?.session_valid}
+                    >
+                      Test 50 firme
+                    </Button>
+                    <Button 
+                      variant="outline"
+                      onClick={() => startMfSync(500)}
+                      disabled={mfLoading || !mfProgress?.session_valid}
+                    >
+                      Sync 500 firme
+                    </Button>
+                    <Button 
+                      variant="destructive"
+                      onClick={stopMfSync}
+                      disabled={!mfProgress?.progress?.active}
+                    >
+                      <XCircle size={16} />
+                      Stop
+                    </Button>
+                  </div>
+                  {mfProgress?.progress?.active && (
+                    <div className="mf-progress">
+                      <div className="progress-bar-container">
+                        <div 
+                          className="progress-bar" 
+                          style={{ width: `${mfProgress.progress.total_firms > 0 ? (mfProgress.progress.processed / mfProgress.progress.total_firms * 100) : 0}%` }}
+                        />
+                      </div>
+                      <div className="progress-stats">
+                        <span>Procesat: {mfProgress.progress.processed} / {mfProgress.progress.total_firms}</span>
+                        <span>Găsite: {mfProgress.progress.found}</span>
+                        <span>Erori: {mfProgress.progress.errors}</span>
+                        <span>Ultimul CUI: {mfProgress.progress.last_cui}</span>
+                      </div>
+                    </div>
+                  )}
+                  <p className="sync-note">
+                    ⚠️ MFinante este lent (~2 sec/firmă). Pentru 1000 de firme = ~30 minute.
+                    Sesiunea expiră după ~15-30 min inactivitate.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+  );
+}

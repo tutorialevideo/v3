@@ -1,0 +1,244 @@
+import axios from "axios";
+import { Button } from "../components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
+import { Input } from "../components/ui/input";
+import { Label } from "../components/ui/label";
+import { Badge } from "../components/ui/badge";
+import { Switch } from "../components/ui/switch";
+import { ScrollArea } from "../components/ui/scroll-area";
+import { Separator } from "../components/ui/separator";
+import { Progress } from "../components/ui/progress";
+import { Calendar } from "../components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover";
+import { toast } from "sonner";
+import { format } from "date-fns";
+import { ro } from "date-fns/locale";
+import {
+  Play, Settings, FileJson, Clock, Download, Trash2, Search, RefreshCw,
+  CheckCircle2, XCircle, Loader2, Building2, FolderDown, Activity,
+  CalendarIcon, Timer, Zap, Upload, FileSpreadsheet, AlertCircle,
+  Database, HardDrive, AlertTriangle, Wrench, BarChart3, Shield, ChevronDown
+} from "lucide-react";
+
+const API = "/api";
+
+export default function DbFinalPage({ ctx }) {
+  const {
+    // Dashboard/global
+    config, stats, dbStats, files, runs, currentRun, loading,
+    searchTerm, setSearchTerm, scheduleHour, setScheduleHour,
+    scheduleMinute, setScheduleMinute, cronEnabled, setCronEnabled,
+    dateStart, setDateStart, dateEnd, setDateEnd,
+    searchPreview, setSearchPreview, searchLoading, showAdvancedConfig, setShowAdvancedConfig,
+    downloadLogs, downloadProgress,
+    importLoading, importResult, importLog, importError,
+    setImportLog, setImportResult, setImportError,
+    // Firme
+    firmeList, firmeTotal, firmePage, setFirmePage, firmeSearch, setFirmeSearch, firmeLoading,
+    inlineEditId, setInlineEditId, inlineEditValue, setInlineEditValue,
+    // DB Final
+    dbFinalStats, dbFinalList, dbFinalTotal, dbFinalPage, setDbFinalPage,
+    dbFinalSearch, setDbFinalSearch, dbFinalLoading, dbFinalFilters,
+    // ANAF
+    anafStats, anafProgress, anafLoading, anafSyncRunning,
+    anafTestResult, anafTestCui, setAnafTestCui, anafLogs,
+    // MFinante
+    mfStats, mfProgress, mfLoading, mfSession, mfTestCui, setMfTestCui, mfTestResult,
+    // Diagnostics
+    diagnosticsData, duplicateDenumiri, duplicateCui, indexes,
+    diagnosticsLoading, cleanupLoading, dbAvailable, reconnecting,
+    // Handlers
+    saveConfig, triggerRun, stopDownloadJob, searchPreviewDosare,
+    downloadFile, deleteFile, handleCsvImport, exportFirme,
+    loadFirme, handleFirmeSearch, openFirmaProfile, saveInlineCui,
+    loadDbFinalStats, loadDbFinal, handleDbFinalSearch, handleDbFinalFilterChange,
+    testAnafCui, testAnafCuiFull, startAnafSync, stopAnafSync,
+    loadAnafProgress, loadAnafStats, loadMfStats, loadMfProgress,
+    openCaptchaModal, testMfCui,
+    loadDiagnostics, cleanupDuplicateDenumiri, cleanupDuplicateCui,
+    cleanupOrphanedDosare, optimizeDatabase, migrateSchema, createIndexes,
+    reconnectDatabase,
+    formatDate, formatBytes,
+  } = ctx;
+
+  return (
+          /* DB Final Tab - Companies with CUI */
+          <div className="dbfinal-section" data-testid="dbfinal-section">
+            <Card className="dbfinal-stats-card">
+              <CardHeader>
+                <div className="card-header-with-action">
+                  <div>
+                    <CardTitle className="card-title">
+                      <CheckCircle2 size={20} />
+                      DB Final - Firme cu CUI
+                    </CardTitle>
+                    <CardDescription>
+                      Firme validate cu CUI, pregătite pentru procesare avansată
+                    </CardDescription>
+                  </div>
+                  <Button variant="outline" onClick={() => { loadDbFinalStats(); loadDbFinal(dbFinalPage, dbFinalSearch); }}>
+                    <RefreshCw size={16} />
+                    Reîncarcă
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {dbFinalStats && (
+                  <div className="stats-grid-4">
+                    <div className="stat-card primary">
+                      <span className="stat-value">{dbFinalStats.total_cu_cui?.toLocaleString() || 0}</span>
+                      <span className="stat-label">Total cu CUI</span>
+                    </div>
+                    <div className="stat-card success">
+                      <span className="stat-value">{dbFinalStats.sincronizate_anaf?.toLocaleString() || 0}</span>
+                      <span className="stat-label">Sincronizate ANAF</span>
+                    </div>
+                    <div className="stat-card info">
+                      <span className="stat-value">{dbFinalStats.cu_date_bilant?.toLocaleString() || 0}</span>
+                      <span className="stat-label">Cu Bilanț</span>
+                    </div>
+                    <div className="stat-card warning">
+                      <span className="stat-value">{dbFinalStats.active?.toLocaleString() || 0}</span>
+                      <span className="stat-label">Active</span>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Filters and Search */}
+            <Card className="dbfinal-filters-card">
+              <CardContent>
+                <div className="dbfinal-controls">
+                  <div className="search-box">
+                    <input
+                      type="text"
+                      placeholder="Caută după denumire sau CUI..."
+                      value={dbFinalSearch}
+                      onChange={(e) => setDbFinalSearch(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && handleDbFinalSearch()}
+                    />
+                    <Button onClick={handleDbFinalSearch}>
+                      <Search size={16} />
+                      Caută
+                    </Button>
+                  </div>
+                  <div className="filter-toggles">
+                    <label className="filter-toggle">
+                      <input
+                        type="checkbox"
+                        checked={dbFinalFilters.doarActive}
+                        onChange={(e) => handleDbFinalFilterChange({ doarActive: e.target.checked })}
+                      />
+                      <span>Doar Active</span>
+                    </label>
+                    <label className="filter-toggle">
+                      <input
+                        type="checkbox"
+                        checked={dbFinalFilters.doarCuBilant}
+                        onChange={(e) => handleDbFinalFilterChange({ doarCuBilant: e.target.checked })}
+                      />
+                      <span>Doar cu Bilanț</span>
+                    </label>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Companies List */}
+            <Card className="dbfinal-list-card">
+              <CardHeader>
+                <CardTitle className="card-title">
+                  Firme ({dbFinalTotal.toLocaleString()})
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {dbFinalLoading ? (
+                  <div className="loading-spinner">
+                    <Loader2 className="animate-spin" size={32} />
+                    <span>Se încarcă...</span>
+                  </div>
+                ) : (
+                  <div className="table-container">
+                    <table className="dbfinal-table">
+                      <thead>
+                        <tr>
+                          <th>CUI</th>
+                          <th>Denumire</th>
+                          <th>Județ</th>
+                          <th>Stare</th>
+                          <th>Cifră Afaceri</th>
+                          <th>Profit</th>
+                          <th>Angajați</th>
+                          <th>An Bilanț</th>
+                          <th>TVA</th>
+                          <th>Sync</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dbFinalList.map((firma) => (
+                          <tr key={firma.id} className="clickable-row" onClick={() => openFirmaProfile(firma.id)}>
+                            <td onClick={e => e.stopPropagation()}>
+                              {inlineEditId === firma.id ? (
+                                <div style={{display:'flex',gap:'4px',alignItems:'center'}}>
+                                  <input className="cui-edit-input" value={inlineEditValue} onChange={e => setInlineEditValue(e.target.value)} placeholder="CUI" autoFocus style={{width:'90px',padding:'2px 6px',fontSize:'0.8rem'}} onKeyDown={e => { if (e.key === 'Enter') saveInlineCui(firma.id); if (e.key === 'Escape') setInlineEditId(null); }} />
+                                  <button onClick={() => saveInlineCui(firma.id)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--primary)',padding:'2px'}}><CheckCircle2 size={14}/></button>
+                                  <button onClick={() => setInlineEditId(null)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text-muted)',padding:'2px'}}><XCircle size={14}/></button>
+                                </div>
+                              ) : (
+                                <div style={{display:'flex',gap:'4px',alignItems:'center'}}>
+                                  <Badge variant="outline">{firma.cui}</Badge>
+                                  <button onClick={e => { e.stopPropagation(); setInlineEditId(firma.id); setInlineEditValue(firma.cui || ""); }} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text-muted)',padding:'2px',opacity:0.6}} title="Editează CUI"><Wrench size={11}/></button>
+                                </div>
+                              )}
+                            </td>
+                            <td className="col-denumire" title={firma.denumire}>{firma.denumire}</td>
+                            <td>{firma.judet || '-'}</td>
+                            <td>
+                              {firma.stare && (
+                                <Badge variant={firma.stare.includes('ACTIV') && !firma.stare.includes('INACTIV') ? 'success' : 'secondary'}>
+                                  {firma.stare.substring(0, 20)}
+                                </Badge>
+                              )}
+                            </td>
+                            <td className="col-number">{firma.cifra_afaceri ? `${(firma.cifra_afaceri / 1000).toFixed(0)}k` : '-'}</td>
+                            <td className="col-number">{firma.profit ? `${(firma.profit / 1000).toFixed(0)}k` : '-'}</td>
+                            <td className="col-number">{firma.angajati || '-'}</td>
+                            <td>{firma.an_bilant || '-'}</td>
+                            <td>{firma.platitor_tva ? <CheckCircle2 size={16} className="text-success" /> : <XCircle size={16} className="text-muted" />}</td>
+                            <td>
+                              {firma.anaf_sync && <Badge variant="outline" className="sync-badge">ANAF</Badge>}
+                              {firma.mf_sync && <Badge variant="outline" className="sync-badge">MF</Badge>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Pagination */}
+                <div className="firme-pagination">
+                  <Button 
+                    variant="outline" 
+                    disabled={dbFinalPage === 0 || dbFinalLoading}
+                    onClick={() => setDbFinalPage(p => Math.max(0, p - 1))}
+                  >
+                    ← Anterior
+                  </Button>
+                  <span className="pagination-info">
+                    Pagina {dbFinalPage + 1} din {Math.ceil(dbFinalTotal / 50) || 1}
+                  </span>
+                  <Button 
+                    variant="outline" 
+                    disabled={(dbFinalPage + 1) * 50 >= dbFinalTotal || dbFinalLoading}
+                    onClick={() => setDbFinalPage(p => p + 1)}
+                  >
+                    Următor →
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+  );
+}
