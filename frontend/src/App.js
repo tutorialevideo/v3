@@ -41,7 +41,8 @@ import {
   AlertTriangle,
   Wrench,
   BarChart3,
-  Shield
+  Shield,
+  ChevronDown
 } from "lucide-react";
 
 // Use relative URL - nginx will proxy to backend
@@ -129,6 +130,7 @@ function App() {
   const [captchaImageUrl, setCaptchaImageUrl] = useState(null);
   const [captchaCode, setCaptchaCode] = useState("");
   const [captchaError, setCaptchaError] = useState(null);
+  const [showAdvancedConfig, setShowAdvancedConfig] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -230,7 +232,20 @@ function App() {
   };
 
   const triggerRun = async () => {
+    if (!dateStart && !dateEnd && !searchTerm.trim()) {
+      toast.error("Selectați cel puțin o perioadă sau un nume de firmă");
+      return;
+    }
     try {
+      // Auto-save config then run
+      await axios.put(`${API}/config`, {
+        search_term: searchTerm,
+        schedule_hour: scheduleHour,
+        schedule_minute: scheduleMinute,
+        cron_enabled: cronEnabled,
+        date_start: dateStart ? format(dateStart, 'yyyy-MM-dd') : null,
+        date_end: dateEnd ? format(dateEnd, 'yyyy-MM-dd') : null
+      });
       await axios.post(`${API}/run`);
       toast.success("Job-ul de descărcare a fost pornit!");
       fetchData();
@@ -1229,31 +1244,11 @@ function App() {
                 <Settings size={20} />
                 Configurare
               </CardTitle>
-              <CardDescription>Setează parametrii pentru descărcarea automată</CardDescription>
+              <CardDescription>Selectează perioada și pornește descărcarea</CardDescription>
             </CardHeader>
             <CardContent className="config-content">
-              <div className="form-group">
-                <Label htmlFor="searchTerm">Nume Firmă <span style={{fontWeight: 'normal', opacity: 0.6, fontSize: '0.85em'}}>(opțional)</span></Label>
-                <div className="search-input-group">
-                  <Input
-                    id="searchTerm"
-                    data-testid="search-term-input"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="Ex: SC EXEMPLU SRL — lasă gol pentru toate firmele"
-                  />
-                  <Button 
-                    variant="outline" 
-                    onClick={searchPreviewDosare}
-                    disabled={searchLoading}
-                    data-testid="preview-search-btn"
-                  >
-                    {searchLoading ? <Loader2 className="animate-spin" size={16} /> : <Search size={16} />}
-                  </Button>
-                </div>
-              </div>
 
-              {/* Date Range Selection */}
+              {/* PRIMARY ACTION: Date range + Start button */}
               <div className="form-group">
                 <Label>Perioada dosarelor</Label>
                 <div className="date-range-group">
@@ -1273,12 +1268,7 @@ function App() {
                         initialFocus
                       />
                       {dateStart && (
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          className="clear-date-btn"
-                          onClick={() => setDateStart(null)}
-                        >
+                        <Button variant="ghost" size="sm" className="clear-date-btn" onClick={() => setDateStart(null)}>
                           Șterge data
                         </Button>
                       )}
@@ -1303,12 +1293,7 @@ function App() {
                         initialFocus
                       />
                       {dateEnd && (
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          className="clear-date-btn"
-                          onClick={() => setDateEnd(null)}
-                        >
+                        <Button variant="ghost" size="sm" className="clear-date-btn" onClick={() => setDateEnd(null)}>
                           Șterge data
                         </Button>
                       )}
@@ -1317,78 +1302,120 @@ function App() {
                 </div>
               </div>
 
-              <Separator className="my-4" />
+              {/* Start button - primary CTA */}
+              <Button
+                className="w-full run-primary-btn"
+                onClick={triggerRun}
+                disabled={!!currentRun}
+                data-testid="run-now-btn"
+                style={{marginTop: '8px', marginBottom: '4px'}}
+              >
+                {currentRun
+                  ? <><Loader2 className="animate-spin" size={16} style={{marginRight: 8}} />Descărcare în curs...</>
+                  : <><Play size={16} style={{marginRight: 8}} />Start Descărcare</>
+                }
+              </Button>
 
-              {/* Cron Configuration */}
-              <div className="cron-section">
-                <div className="form-group switch-group cron-toggle">
-                  <div className="cron-label">
-                    <Zap size={18} />
-                    <div>
-                      <Label>Cron Zilnic Activ</Label>
-                      <p className="cron-description">Rulează automat în fiecare zi</p>
+              {/* Advanced settings toggle */}
+              <button
+                className="advanced-toggle"
+                onClick={() => setShowAdvancedConfig(v => !v)}
+                data-testid="advanced-config-toggle"
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  color: 'var(--text-muted)', fontSize: '0.82rem',
+                  display: 'flex', alignItems: 'center', gap: '4px',
+                  marginTop: '8px', padding: '2px 0'
+                }}
+              >
+                <ChevronDown size={14} style={{transform: showAdvancedConfig ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s'}} />
+                {showAdvancedConfig ? 'Ascunde setări avansate' : 'Setări avansate (firmă, cron)'}
+              </button>
+
+              {showAdvancedConfig && (
+                <div style={{marginTop: '12px'}}>
+                  <div className="form-group">
+                    <Label htmlFor="searchTerm">Nume Firmă <span style={{fontWeight: 'normal', opacity: 0.6, fontSize: '0.85em'}}>(opțional)</span></Label>
+                    <div className="search-input-group">
+                      <Input
+                        id="searchTerm"
+                        data-testid="search-term-input"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        placeholder="Ex: SC EXEMPLU SRL — lasă gol pentru toate firmele"
+                      />
+                      <Button
+                        variant="outline"
+                        onClick={searchPreviewDosare}
+                        disabled={searchLoading}
+                        data-testid="preview-search-btn"
+                      >
+                        {searchLoading ? <Loader2 className="animate-spin" size={16} /> : <Search size={16} />}
+                      </Button>
                     </div>
                   </div>
-                  <Switch
-                    id="cronEnabled"
-                    data-testid="cron-enabled-switch"
-                    checked={cronEnabled}
-                    onCheckedChange={setCronEnabled}
-                  />
-                </div>
 
-                <div className={`cron-time-config ${!cronEnabled ? 'disabled' : ''}`}>
-                  <div className="form-row">
-                    <div className="form-group">
-                      <Label htmlFor="hour">Ora</Label>
-                      <Input
-                        id="hour"
-                        data-testid="schedule-hour-input"
-                        type="number"
-                        min="0"
-                        max="23"
-                        value={scheduleHour}
-                        onChange={(e) => setScheduleHour(parseInt(e.target.value) || 0)}
-                        disabled={!cronEnabled}
+                  <Separator className="my-4" />
+
+                  {/* Cron Configuration */}
+                  <div className="cron-section">
+                    <div className="form-group switch-group cron-toggle">
+                      <div className="cron-label">
+                        <Zap size={18} />
+                        <div>
+                          <Label>Cron Zilnic Activ</Label>
+                          <p className="cron-description">Rulează automat în fiecare zi</p>
+                        </div>
+                      </div>
+                      <Switch
+                        id="cronEnabled"
+                        data-testid="cron-enabled-switch"
+                        checked={cronEnabled}
+                        onCheckedChange={setCronEnabled}
                       />
                     </div>
-                    <div className="form-group">
-                      <Label htmlFor="minute">Minut</Label>
-                      <Input
-                        id="minute"
-                        data-testid="schedule-minute-input"
-                        type="number"
-                        min="0"
-                        max="59"
-                        value={scheduleMinute}
-                        onChange={(e) => setScheduleMinute(parseInt(e.target.value) || 0)}
-                        disabled={!cronEnabled}
-                      />
+
+                    <div className={`cron-time-config ${!cronEnabled ? 'disabled' : ''}`}>
+                      <div className="form-row">
+                        <div className="form-group">
+                          <Label htmlFor="hour">Ora</Label>
+                          <Input
+                            id="hour"
+                            data-testid="schedule-hour-input"
+                            type="number" min="0" max="23"
+                            value={scheduleHour}
+                            onChange={(e) => setScheduleHour(parseInt(e.target.value) || 0)}
+                            disabled={!cronEnabled}
+                          />
+                        </div>
+                        <div className="form-group">
+                          <Label htmlFor="minute">Minut</Label>
+                          <Input
+                            id="minute"
+                            data-testid="schedule-minute-input"
+                            type="number" min="0" max="59"
+                            value={scheduleMinute}
+                            onChange={(e) => setScheduleMinute(parseInt(e.target.value) || 0)}
+                            disabled={!cronEnabled}
+                          />
+                        </div>
+                      </div>
+                      {cronEnabled && stats?.next_scheduled_run && (
+                        <p className="next-run-info">
+                          <Clock size={14} />
+                          Următoarea rulare: {formatDate(stats.next_scheduled_run)}
+                        </p>
+                      )}
                     </div>
                   </div>
-                  {cronEnabled && stats?.next_scheduled_run && (
-                    <p className="next-run-info">
-                      <Clock size={14} />
-                      Următoarea rulare: {formatDate(stats.next_scheduled_run)}
-                    </p>
-                  )}
-                </div>
-              </div>
 
-              <div className="button-group">
-                <Button onClick={saveConfig} data-testid="save-config-btn">
-                  Salvează Configurația
-                </Button>
-                <Button 
-                  variant="secondary" 
-                  onClick={triggerRun}
-                  disabled={!!currentRun}
-                  data-testid="run-now-btn"
-                >
-                  <Play size={16} />
-                  Rulează Acum
-                </Button>
-              </div>
+                  <div className="button-group" style={{marginTop: '12px'}}>
+                    <Button onClick={saveConfig} data-testid="save-config-btn" variant="outline" size="sm">
+                      Salvează Configurația
+                    </Button>
+                  </div>
+                </div>
+              )}
 
               {searchPreview && (
                 <div className="preview-section" data-testid="search-preview">
