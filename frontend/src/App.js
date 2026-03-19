@@ -96,6 +96,8 @@ function App() {
   const [anafSyncRunning, setAnafSyncRunning] = useState(false);
   const [anafTestResult, setAnafTestResult] = useState(null);
   const [anafTestCui, setAnafTestCui] = useState("");
+  const [anafLogs, setAnafLogs] = useState([]);
+  const [anafBatchSize, setAnafBatchSize] = useState(100);
 
   // MFinante sync state
   const [mfStats, setMfStats] = useState(null);
@@ -495,6 +497,11 @@ function App() {
       const res = await axios.get(`${API}/anaf/sync-progress`);
       setAnafProgress(res.data);
       setAnafSyncRunning(res.data.active);
+      
+      // Update logs from backend if available
+      if (res.data.logs && res.data.logs.length > 0) {
+        setAnafLogs(res.data.logs);
+      }
     } catch (error) {
       console.error("Error loading ANAF progress:", error);
     }
@@ -521,6 +528,10 @@ function App() {
 
   const startAnafSync = async (options = {}) => {
     setAnafLoading(true);
+    // Add log entry
+    const timestamp = new Date().toLocaleTimeString('ro-RO');
+    setAnafLogs(prev => [...prev, `[${timestamp}] Pornire sincronizare ANAF...`].slice(-50));
+    
     try {
       const params = new URLSearchParams();
       if (options.limit) params.append('limit', options.limit);
@@ -530,22 +541,31 @@ function App() {
       await axios.post(`${API}/anaf/sync?${params.toString()}`);
       toast.success("Sincronizare ANAF pornită!");
       setAnafSyncRunning(true);
+      setAnafLogs(prev => [...prev, `[${timestamp}] ✓ Sincronizare pornită cu succes`].slice(-50));
       loadAnafProgress();
     } catch (error) {
-      toast.error(error.response?.data?.detail || "Eroare la pornirea sincronizării");
+      const errMsg = error.response?.data?.detail || "Eroare la pornirea sincronizării";
+      toast.error(errMsg);
+      setAnafLogs(prev => [...prev, `[${timestamp}] ✗ Eroare: ${errMsg}`].slice(-50));
     } finally {
       setAnafLoading(false);
     }
   };
 
   const stopAnafSync = async () => {
+    const timestamp = new Date().toLocaleTimeString('ro-RO');
     try {
       await axios.post(`${API}/anaf/sync-stop`);
       toast.info("Sincronizare oprită");
       setAnafSyncRunning(false);
+      setAnafLogs(prev => [...prev, `[${timestamp}] ⏹ Sincronizare oprită de utilizator`].slice(-50));
     } catch (error) {
       toast.error("Eroare la oprirea sincronizării");
     }
+  };
+
+  const clearAnafLogs = () => {
+    setAnafLogs([]);
   };
 
   const testAnafCui = async () => {
@@ -554,13 +574,19 @@ function App() {
       return;
     }
     setAnafLoading(true);
+    const timestamp = new Date().toLocaleTimeString('ro-RO');
+    setAnafLogs(prev => [...prev, `[${timestamp}] Test CUI: ${anafTestCui}...`].slice(-50));
+    
     try {
       const res = await axios.get(`${API}/anaf/test/${anafTestCui}`);
       setAnafTestResult(res.data);
+      const found = res.data.found?.length > 0;
       toast.success("Test ANAF reușit!");
+      setAnafLogs(prev => [...prev, `[${timestamp}] ✓ CUI ${anafTestCui}: ${found ? 'Găsit' : 'Negăsit'}`].slice(-50));
     } catch (error) {
       toast.error("Eroare la testarea ANAF API");
       setAnafTestResult({ error: error.message });
+      setAnafLogs(prev => [...prev, `[${timestamp}] ✗ Eroare test CUI: ${error.message}`].slice(-50));
     } finally {
       setAnafLoading(false);
     }
@@ -1522,6 +1548,7 @@ function App() {
                     </div>
                     <div className="progress-stats">
                       <span>Procesat: {anafProgress.processed?.toLocaleString()} / {anafProgress.total_firms?.toLocaleString()}</span>
+                      <span>Batch: {anafProgress.current_batch} / {anafProgress.total_batches}</span>
                       <span>Găsite: {anafProgress.found?.toLocaleString()}</span>
                       <span>Negăsite: {anafProgress.not_found?.toLocaleString()}</span>
                       <span>Erori: {anafProgress.errors?.toLocaleString()}</span>
@@ -1529,11 +1556,49 @@ function App() {
                     </div>
                     <Button variant="destructive" onClick={stopAnafSync} className="stop-btn">
                       <XCircle size={16} />
-                      Oprește
+                      Oprește Sincronizarea
                     </Button>
                   </div>
                 ) : (
                   <div className="sync-actions">
+                    <div className="sync-batch-controls">
+                      <h4>Sincronizare în Batch-uri</h4>
+                      <div className="batch-buttons">
+                        <Button 
+                          onClick={() => startAnafSync({ only_unsynced: true, limit: 100 })}
+                          disabled={anafLoading || anafSyncRunning}
+                          variant="outline"
+                          size="sm"
+                        >
+                          100 firme
+                        </Button>
+                        <Button 
+                          onClick={() => startAnafSync({ only_unsynced: true, limit: 500 })}
+                          disabled={anafLoading || anafSyncRunning}
+                          variant="outline"
+                          size="sm"
+                        >
+                          500 firme
+                        </Button>
+                        <Button 
+                          onClick={() => startAnafSync({ only_unsynced: true, limit: 1000 })}
+                          disabled={anafLoading || anafSyncRunning}
+                          variant="outline"
+                          size="sm"
+                        >
+                          1.000 firme
+                        </Button>
+                        <Button 
+                          onClick={() => startAnafSync({ only_unsynced: true, limit: 5000 })}
+                          disabled={anafLoading || anafSyncRunning}
+                          variant="outline"
+                          size="sm"
+                        >
+                          5.000 firme
+                        </Button>
+                      </div>
+                    </div>
+                    <Separator className="my-4" />
                     <div className="sync-options">
                       <Button 
                         onClick={() => startAnafSync({ only_unsynced: true })}
@@ -1541,21 +1606,14 @@ function App() {
                         className="sync-btn"
                       >
                         <Download size={16} />
-                        Sync Nesincronizate ({anafStats?.not_synced?.toLocaleString() || 0})
+                        Sync Toate Nesincronizate ({anafStats?.not_synced?.toLocaleString() || 0})
                       </Button>
                       <Button 
-                        variant="outline"
-                        onClick={() => startAnafSync({ only_unsynced: true, limit: 1000 })}
-                        disabled={anafLoading || anafSyncRunning}
-                      >
-                        Test 1,000 firme
-                      </Button>
-                      <Button 
-                        variant="outline"
+                        variant="secondary"
                         onClick={() => startAnafSync({ only_unsynced: false })}
                         disabled={anafLoading || anafSyncRunning}
                       >
-                        Re-sync toate
+                        Re-sync toate firmele
                       </Button>
                     </div>
                     <p className="sync-note">
@@ -1564,6 +1622,37 @@ function App() {
                     </p>
                   </div>
                 )}
+              </CardContent>
+            </Card>
+
+            {/* Logs Card */}
+            <Card className="anaf-logs-card" data-testid="anaf-logs">
+              <CardHeader>
+                <div className="card-header-with-action">
+                  <CardTitle className="card-title">
+                    <Activity size={20} />
+                    Loguri Sincronizare
+                  </CardTitle>
+                  <Button variant="ghost" size="sm" onClick={clearAnafLogs}>
+                    <Trash2 size={14} />
+                    Șterge
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="logs-container">
+                  {anafLogs.length === 0 ? (
+                    <p className="no-logs">Niciun log încă. Pornește o sincronizare pentru a vedea logurile.</p>
+                  ) : (
+                    <pre className="logs-content">
+                      {anafLogs.map((log, i) => (
+                        <div key={i} className={`log-line ${log.includes('✗') ? 'error' : log.includes('✓') ? 'success' : ''}`}>
+                          {log}
+                        </div>
+                      ))}
+                    </pre>
+                  )}
+                </div>
               </CardContent>
             </Card>
 

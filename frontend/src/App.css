@@ -1912,3 +1912,93 @@ button[data-testid="run-now-btn"] {
   align-items: center;
   gap: 0.5rem;
 }
+
+/* ANAF Logs Card */
+.anaf-logs-card {
+  margin-top: 1rem;
+}
+
+.logs-container {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem;
+  max-height: 300px;
+  overflow-y: auto;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.8rem;
+}
+
+.no-logs {
+  color: var(--text-muted);
+  text-align: center;
+  margin: 0;
+  font-style: italic;
+}
+
+.logs-content {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.log-line {
+  padding: 0.25rem 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+
+.log-line:last-child {
+  border-bottom: none;
+}
+
+.log-line.success {
+  color: var(--success);
+}
+
+.log-line.error {
+  color: var(--error);
+}
+
+/* Batch Controls */
+.sync-batch-controls {
+  margin-bottom: 1rem;
+}
+
+.sync-batch-controls h4 {
+  margin: 0 0 0.75rem 0;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.batch-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.batch-buttons button {
+  font-size: 0.85rem;
+}
+
+/* Improve stop button visibility */
+.stop-btn {
+  margin-top: 1rem;
+  width: 100%;
+}
+
+/* Progress batch info */
+.progress-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0.5rem;
+  margin-top: 1rem;
+  font-size: 0.85rem;
+}
+
+.progress-stats span {
+  background: var(--bg-elevated);
+  padding: 0.4rem 0.6rem;
+  border-radius: 4px;
+  text-align: center;
+}
