@@ -88,6 +88,8 @@ function App() {
   const [indexes, setIndexes] = useState([]);
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
   const [cleanupLoading, setCleanupLoading] = useState(false);
+  const [dbAvailable, setDbAvailable] = useState(true);
+  const [reconnecting, setReconnecting] = useState(false);
 
   // ANAF sync state
   const [anafStats, setAnafStats] = useState(null);
@@ -163,6 +165,38 @@ function App() {
     const interval = setInterval(fetchData, 10000);
     return () => clearInterval(interval);
   }, [fetchData]);
+
+  const reconnectDatabase = async () => {
+    setReconnecting(true);
+    try {
+      await axios.post(`${API}/db/reconnect`);
+      toast.success("Conexiune la baza de date restabilită!");
+      setDbAvailable(true);
+      window._dataErrorShown = false; // Reset error flag
+      fetchData();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Nu s-a putut conecta la baza de date");
+      setDbAvailable(false);
+    } finally {
+      setReconnecting(false);
+    }
+  };
+
+  const checkDbStatus = async () => {
+    try {
+      const res = await axios.get(`${API}/db/status`);
+      setDbAvailable(res.data.postgres_available);
+      return res.data.postgres_available;
+    } catch (error) {
+      setDbAvailable(false);
+      return false;
+    }
+  };
+
+  // Check DB status on mount
+  useEffect(() => {
+    checkDbStatus();
+  }, []);
 
   const saveConfig = async () => {
     try {
@@ -847,6 +881,22 @@ function App() {
           </button>
         </div>
       </header>
+
+      {/* Database Connection Warning Banner */}
+      {!dbAvailable && (
+        <div className="db-warning-banner" data-testid="db-warning">
+          <AlertTriangle size={20} />
+          <span>Baza de date PostgreSQL nu este disponibilă. Unele funcții nu vor funcționa.</span>
+          <Button 
+            size="sm" 
+            onClick={reconnectDatabase}
+            disabled={reconnecting}
+          >
+            {reconnecting ? <Loader2 className="animate-spin" size={16} /> : <RefreshCw size={16} />}
+            {reconnecting ? "Se conectează..." : "Reconectare"}
+          </Button>
+        </div>
+      )}
 
       <main className="main-content">
         {activeTab === 'dashboard' ? (

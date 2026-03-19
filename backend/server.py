@@ -33,27 +33,57 @@ mongo_client = AsyncIOMotorClient(mongo_url)
 mongo_db = mongo_client[os.environ['DB_NAME']]
 
 # PostgreSQL connection
-# PostgreSQL connection - with graceful fallback
+# PostgreSQL connection - with retry logic for Docker startup
 POSTGRES_URL = os.environ.get('POSTGRES_URL', 'postgresql://justapp:justapp123@localhost:5432/justportal')
 DATABASE_URL = POSTGRES_URL.replace('postgresql://', 'postgresql+asyncpg://')
 
-# Try to create database connection, but don't fail if PostgreSQL is unavailable
+# Try to create database connection with retries
 database = Database(DATABASE_URL)
 postgres_available = False
+engine = None
+SessionLocal = None
 
-try:
-    engine = create_engine(POSTGRES_URL)
-    # Test connection
-    with engine.connect() as conn:
-        conn.execute("SELECT 1")
-    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    postgres_available = True
-    print("[DB] PostgreSQL connection successful")
-except Exception as e:
-    print(f"[DB] PostgreSQL not available: {e}")
-    print("[DB] Running in limited mode - MFinante CAPTCHA and some features still work")
+def init_postgres_connection(max_retries=5, retry_delay=3):
+    """Initialize PostgreSQL connection with retries"""
+    global engine, SessionLocal, postgres_available
+    
+    from sqlalchemy import text
+    import time
+    
+    for attempt in range(max_retries):
+        try:
+            engine = create_engine(POSTGRES_URL)
+            # Test connection
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+            postgres_available = True
+            print(f"[DB] PostgreSQL connection successful (attempt {attempt + 1})")
+            return True
+        except Exception as e:
+            print(f"[DB] PostgreSQL connection attempt {attempt + 1}/{max_retries} failed: {e}")
+            if attempt < max_retries - 1:
+                print(f"[DB] Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+    
+    print("[DB] PostgreSQL not available after all retries")
+    print("[DB] Running in limited mode - some features may not work")
     engine = None
     SessionLocal = None
+    return False
+
+# Initialize connection at startup
+init_postgres_connection()
+
+def get_db_session():
+    """Get database session, attempting reconnection if needed"""
+    global SessionLocal
+    if SessionLocal is None:
+        # Try to reconnect
+        init_postgres_connection(max_retries=2, retry_delay=1)
+    if SessionLocal is None:
+        return None
+    return SessionLocal()
 
 Base = declarative_base()
 
@@ -942,10 +972,10 @@ async def export_firme_csv():
 @api_router.get("/db/firme")
 async def get_firme(skip: int = 0, limit: int = 100, search: str = None, judet: str = None):
     """Get all companies from PostgreSQL"""
-    if SessionLocal is None:
+    db = get_db_session()
+    if db is None:
         return {"firme": [], "total": 0, "db_available": False}
     
-    db = SessionLocal()
     try:
         query = db.query(Firma)
         if search:
@@ -1095,10 +1125,10 @@ async def get_dosar(dosar_id: int):
 @api_router.get("/db/stats")
 async def get_db_stats():
     """Get PostgreSQL database statistics"""
-    if SessionLocal is None:
-        raise HTTPException(status_code=503, detail="Database not available")
+    db = get_db_session()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available. Try /api/db/reconnect")
     
-    db = SessionLocal()
     try:
         firme_count = db.query(Firma).count()
         firme_with_cui = db.query(Firma).filter(Firma.cui.isnot(None), Firma.cui != '').count()
@@ -1114,6 +1144,37 @@ async def get_db_stats():
         }
     finally:
         db.close()
+
+
+@api_router.post("/db/reconnect")
+async def reconnect_database():
+    """Attempt to reconnect to PostgreSQL database"""
+    global SessionLocal, engine, postgres_available
+    
+    success = init_postgres_connection(max_retries=3, retry_delay=2)
+    
+    if success:
+        return {
+            "success": True,
+            "message": "Database connection established successfully",
+            "postgres_available": True
+        }
+    else:
+        raise HTTPException(
+            status_code=503, 
+            detail="Could not connect to PostgreSQL. Check if the database container is running."
+        )
+
+
+@api_router.get("/db/status")
+async def get_db_status():
+    """Get database connection status"""
+    return {
+        "postgres_available": postgres_available,
+        "session_local_exists": SessionLocal is not None,
+        "engine_exists": engine is not None,
+        "postgres_url": POSTGRES_URL.replace(POSTGRES_URL.split(':')[2].split('@')[0], '****')  # Hide password
+    }
 
 
 @api_router.get("/db/import-progress")
@@ -2097,7 +2158,8 @@ async def get_anaf_sync_progress():
 @api_router.get("/anaf/stats")
 async def get_anaf_stats():
     """Get ANAF sync statistics"""
-    if SessionLocal is None:
+    db = get_db_session()
+    if db is None:
         return {
             "total_firme_cu_cui": 0,
             "synced": 0,
@@ -2112,7 +2174,6 @@ async def get_anaf_stats():
             "db_available": False
         }
     
-    db = SessionLocal()
     try:
         total_firme = db.query(Firma).filter(Firma.cui.isnot(None), Firma.cui != '').count()
         synced = db.query(Firma).filter(Firma.anaf_last_sync.isnot(None)).count()
@@ -3174,7 +3235,8 @@ async def stop_mfinante_sync():
 @api_router.get("/mfinante/stats")
 async def get_mfinante_stats():
     """Get MFinante sync statistics"""
-    if SessionLocal is None:
+    db = get_db_session()
+    if db is None:
         return {
             "total_firme": 0,
             "synced_mfinante": 0,
@@ -3188,7 +3250,6 @@ async def get_mfinante_stats():
             "db_available": False
         }
     
-    db = SessionLocal()
     try:
         total = db.query(Firma).filter(Firma.cui.isnot(None)).count()
         synced = db.query(Firma).filter(Firma.mf_last_sync.isnot(None)).count()
