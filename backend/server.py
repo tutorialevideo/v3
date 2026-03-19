@@ -2146,7 +2146,8 @@ async def create_performance_indexes():
 
 ANAF_API_URL = "https://webservicesp.anaf.ro/api/PlatitorTvaRest/v9/tva"
 ANAF_BATCH_SIZE = 100  # Max 100 CUIs per request (ANAF supports up to 500, but 100 is safer)
-ANAF_RATE_LIMIT_SECONDS = 2.0  # 2 seconds between batches to avoid connection resets
+ANAF_RATE_LIMIT_SECONDS = 1.5  # 1.5 seconds between batches
+ANAF_PARALLEL_WORKERS = 4  # Number of parallel workers for ANAF sync
 
 
 @api_router.get("/anaf/sync-progress")
@@ -2211,13 +2212,15 @@ async def start_anaf_sync(
     background_tasks: BackgroundTasks,
     limit: int = None,
     only_unsynced: bool = True,
-    judet: str = None
+    judet: str = None,
+    workers: int = 1  # Number of parallel workers (1-4)
 ):
     """
     Start ANAF sync for companies.
     - limit: max number of companies to sync (None = all)
     - only_unsynced: only sync companies without anaf_last_sync
     - judet: filter by judet
+    - workers: number of parallel workers (1-4, default 1)
     """
     global anaf_sync_progress
     
@@ -2226,6 +2229,9 @@ async def start_anaf_sync(
     
     if anaf_sync_progress["active"]:
         raise HTTPException(status_code=400, detail="Sync already in progress")
+    
+    # Limit workers to safe range
+    workers = min(max(workers, 1), ANAF_PARALLEL_WORKERS)
     
     # Reset progress
     anaf_sync_progress = {
@@ -2239,22 +2245,23 @@ async def start_anaf_sync(
         "total_batches": 0,
         "last_update": datetime.utcnow().isoformat(),
         "eta_seconds": None,
-        "logs": []
+        "logs": [],
+        "workers": workers
     }
     
     # Start background task
-    background_tasks.add_task(run_anaf_sync, limit, only_unsynced, judet)
+    background_tasks.add_task(run_anaf_sync, limit, only_unsynced, judet, workers)
     
-    return {"message": "ANAF sync started", "status": "running"}
+    return {"message": f"ANAF sync started with {workers} worker(s)", "status": "running", "workers": workers}
 
 
-async def run_anaf_sync(limit: int, only_unsynced: bool, judet: str):
-    """Background task to sync with ANAF API"""
+async def run_anaf_sync(limit: int, only_unsynced: bool, judet: str, workers: int = 1):
+    """Background task to sync with ANAF API - supports parallel workers"""
     global anaf_sync_progress
     
     # Clear previous logs and reset
     anaf_sync_progress["logs"] = []
-    add_anaf_log("Pornire sincronizare ANAF...")
+    add_anaf_log(f"Pornire sincronizare ANAF cu {workers} worker(s)...")
     
     db = SessionLocal()
     try:

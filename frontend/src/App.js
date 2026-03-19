@@ -115,6 +115,7 @@ function App() {
   const [anafTestCui, setAnafTestCui] = useState("");
   const [anafLogs, setAnafLogs] = useState([]);
   const [anafBatchSize, setAnafBatchSize] = useState(100);
+  const [anafWorkers, setAnafWorkers] = useState(1); // Number of parallel workers
 
   // MFinante sync state
   const [mfStats, setMfStats] = useState(null);
@@ -702,18 +703,20 @@ function App() {
     setAnafLoading(true);
     // Add log entry
     const timestamp = new Date().toLocaleTimeString('ro-RO');
-    setAnafLogs(prev => [...prev, `[${timestamp}] Pornire sincronizare ANAF...`].slice(-50));
+    const workersToUse = options.workers || anafWorkers;
+    setAnafLogs(prev => [...prev, `[${timestamp}] Pornire sincronizare ANAF cu ${workersToUse} worker(s)...`].slice(-50));
     
     try {
       const params = new URLSearchParams();
       if (options.limit) params.append('limit', options.limit);
       if (options.only_unsynced !== undefined) params.append('only_unsynced', options.only_unsynced);
       if (options.judet) params.append('judet', options.judet);
+      params.append('workers', workersToUse);
       
-      await axios.post(`${API}/anaf/sync?${params.toString()}`);
-      toast.success("Sincronizare ANAF pornită!");
+      const res = await axios.post(`${API}/anaf/sync?${params.toString()}`);
+      toast.success(`Sincronizare ANAF pornită cu ${workersToUse} worker(s)!`);
       setAnafSyncRunning(true);
-      setAnafLogs(prev => [...prev, `[${timestamp}] ✓ Sincronizare pornită cu succes`].slice(-50));
+      setAnafLogs(prev => [...prev, `[${timestamp}] ✓ Sincronizare pornită cu succes (${workersToUse} workers)`].slice(-50));
       loadAnafProgress();
     } catch (error) {
       const errMsg = error.response?.data?.detail || "Eroare la pornirea sincronizării";
@@ -852,10 +855,9 @@ function App() {
     setCaptchaCode("");
     
     try {
-      const initRes = await axios.get(`${API}/mfinante/captcha/init`);
-      if (initRes.data.success) {
-        setCaptchaImageUrl(`${initRes.data.captcha_url}&r=${Date.now()}`);
-      }
+      // Just reload the image with the SAME session - don't reinitialize!
+      // The backend will serve a new captcha image for the existing session
+      setCaptchaImageUrl(`${API}/mfinante/captcha/image?r=${Date.now()}`);
     } catch (error) {
       setCaptchaError("Eroare la reîncărcarea CAPTCHA");
     } finally {
@@ -881,13 +883,19 @@ function App() {
         loadMfProgress();
       } else {
         setCaptchaError(res.data.error || "CAPTCHA incorect");
-        if (res.data.need_new_captcha) {
-          // Refresh CAPTCHA image
-          refreshCaptcha();
-        }
+        // DON'T refresh - let user see their error and try again with same image
+        // Only clear the input
+        setCaptchaCode("");
       }
     } catch (error) {
-      setCaptchaError(error.response?.data?.detail || "Eroare la verificarea CAPTCHA");
+      const errorMsg = error.response?.data?.detail || "Eroare la verificarea CAPTCHA";
+      setCaptchaError(errorMsg);
+      
+      // If session expired, we need to reinitialize
+      if (errorMsg.includes("session") || errorMsg.includes("Session") || errorMsg.includes("expired")) {
+        toast.error("Sesiunea a expirat. Se reinițializează...");
+        openCaptchaModal();
+      }
     } finally {
       setCaptchaLoading(false);
     }
@@ -1757,6 +1765,30 @@ function App() {
                   </div>
                 ) : (
                   <div className="sync-actions">
+                    {/* Workers Control */}
+                    <div className="workers-control">
+                      <label>Procesare Paralelă (Workers):</label>
+                      <div className="workers-buttons">
+                        {[1, 2, 3, 4].map(w => (
+                          <button
+                            key={w}
+                            className={`worker-btn ${anafWorkers === w ? 'active' : ''}`}
+                            onClick={() => setAnafWorkers(w)}
+                          >
+                            {w}x
+                          </button>
+                        ))}
+                      </div>
+                      <span className="workers-hint">
+                        {anafWorkers === 1 && "1 worker = sigur, mai lent"}
+                        {anafWorkers === 2 && "2 workers = echilibrat"}
+                        {anafWorkers === 3 && "3 workers = rapid"}
+                        {anafWorkers === 4 && "4 workers = maxim (risc rate limit)"}
+                      </span>
+                    </div>
+                    
+                    <Separator className="my-3" />
+                    
                     <div className="sync-batch-controls">
                       <h4>Sincronizare în Batch-uri</h4>
                       <div className="batch-buttons">
@@ -2715,25 +2747,29 @@ function App() {
                     />
                     <button 
                       className="refresh-captcha-btn" 
-                      onClick={refreshCaptcha}
-                      title="Reîncarcă CAPTCHA"
+                      onClick={() => {
+                        // Reinitialize to get a completely new session and image
+                        openCaptchaModal();
+                      }}
+                      title="Generează un nou CAPTCHA"
                     >
                       <RefreshCw size={16} />
                     </button>
                   </div>
                   
                   <div className="captcha-input-section">
-                    <label htmlFor="captcha-input">Introdu codul din imagine:</label>
+                    <label htmlFor="captcha-input">Introdu codul EXACT din imagine (atenție la majuscule/minuscule):</label>
                     <input
                       id="captcha-input"
                       type="text"
                       value={captchaCode}
-                      onChange={(e) => setCaptchaCode(e.target.value.toUpperCase())}
-                      placeholder="Ex: AB12CD"
+                      onChange={(e) => setCaptchaCode(e.target.value)}
+                      placeholder="Ex: aB12cD"
                       className="captcha-input"
                       autoFocus
                       onKeyPress={(e) => e.key === 'Enter' && submitCaptcha()}
                     />
+                    <span className="captcha-hint-text">Codul este case-sensitive (diferență între litere mari/mici)</span>
                   </div>
                   
                   {captchaError && (

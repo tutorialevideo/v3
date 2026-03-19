@@ -1,0 +1,43 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir gunicorn
+
+# Copy application code
+COPY . .
+
+# Create downloads directory
+RUN mkdir -p /app/downloads
+
+# Environment variables
+ENV WORKERS=8
+ENV THREADS_PER_WORKER=2
+ENV HOST=0.0.0.0
+ENV PORT=8001
+
+# Expose port
+EXPOSE 8001
+
+# Run with Gunicorn for production with multiple workers
+# Use uvicorn workers for async support
+CMD gunicorn server:app \
+    --workers ${WORKERS} \
+    --worker-class uvicorn.workers.UvicornWorker \
+    --bind ${HOST}:${PORT} \
+    --timeout 120 \
+    --keep-alive 5 \
+    --max-requests 1000 \
+    --max-requests-jitter 100 \
+    --graceful-timeout 30 \
+    --access-logfile - \
+    --error-logfile -
