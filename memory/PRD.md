@@ -1,96 +1,85 @@
 # Portal JUST Downloader - PRD
 
 ## Problem Statement
-Aplicație pentru descărcarea automată a dosarelor de firme din portalquery.just.ro, cu stocare în PostgreSQL pentru procesare ulterioară. Suportă filtrare pe perioadă de timp și/sau firmă, plus îmbogățire date din ANAF și MFinante.
+Aplicatie full-stack (React, FastAPI, MongoDB) pentru descarcarea automata si gestionarea datelor despre firmele romanesti din surse guvernamentale (Portal Justitie, ONRC, ANAF, MFinante).
 
 ## User Persona
-- Utilizator care monitorizează dosarele juridice ale firmelor din România
-- Necesită date structurate pentru asignare CUI și analiză
+- Utilizator care monitorizeaza dosarele juridice ale firmelor din Romania
+- Necesita date structurate pentru asignare CUI si analiza
 
 ## Core Requirements
-1. ✅ Descărcare automată dosare pentru firme (opțional: fără firmă, pe perioadă)
-2. ✅ Extragere doar companii (SC, SRL, SA, etc.) - nu persoane fizice
-3. ✅ Stocare în PostgreSQL cu relații: firme → dosare → timeline
-4. ✅ Fiecare firmă poate avea CUI pentru identificare
-5. ✅ Cron job zilnic configurabil
-6. ✅ Filtrare pe perioadă (date_start / date_end)
-7. ✅ Căutare FĂRĂ firmă specificată (doar pe perioadă de timp)
-8. ✅ Sync ANAF pentru îmbogățire date
-9. ✅ Scraper MFinante cu CAPTCHA interactiv
-10. ✅ Bilanțuri istorice (tabel separat)
-
-## Database Schema (PostgreSQL)
-
-```
-firme
-├── id (PK, BIGINT)
-├── cui (VARCHAR, UNIQUE, NULL)
-├── denumire, denumire_normalized
-├── date juridice (cod_inregistrare, forma_juridica, etc.)
-├── date ANAF (anaf_denumire, anaf_adresa, anaf_stare, etc.)
-├── date MFinante (mf_cifra_afaceri, mf_profit_net, etc.)
-├── created_at, updated_at
-
-dosare
-├── id, firma_id (FK), numar_dosar
-├── institutie, obiect, stadiu, categorie, materie, data_dosar
-├── raw_data (JSON)
-
-timeline
-├── id, dosar_id (FK), tip, data, descriere, detalii (JSON)
-
-bilanturi (NEW)
-├── id, firma_id (FK), an_bilant
-├── cifra_afaceri_neta, profit_brut, pierdere_bruta
-├── numar_mediu_salariati, active_imobilizate, etc.
-```
-
-## API Endpoints
-- `GET/PUT /api/config` - Configurare job
-- `POST /api/run` - Rulare manuală (search_term opțional, date_range obligatoriu dacă nu e search_term)
-- `POST /api/search` - Preview dosare (company_name opțional)
-- `GET /api/db/stats` - Statistici DB
-- `GET /api/db/firme` - Lista firme (cu paginare)
-- `GET /api/firma/{id}` - Profil firmă complet
-- `PUT /api/db/firme/{id}` - Actualizare CUI
-- `GET /api/db/firme-cu-cui` - Firme cu CUI (tab DB Final)
-- `GET /api/anaf/sync` - Sync ANAF
-- `POST /api/anaf/test-cui-details` - Test CUI cu detalii raw
-- `GET /api/mfinante/captcha/init|image|solve` - CAPTCHA MFinante
-- `GET /api/bilanturi/{firma_id}` - Bilanțuri istorice
-- `POST /api/db/reconnect` - Reconectare PostgreSQL
+1. Descarcare automata dosare pentru firme (optional: fara firma, pe perioada)
+2. Extragere doar companii (SC, SRL, SA, etc.) - nu persoane fizice
+3. Stocare in MongoDB cu relatii: firme -> dosare -> timeline
+4. Fiecare firma poate avea CUI pentru identificare
+5. Cron job zilnic configurabil
+6. Filtrare pe perioada (date_start / date_end)
+7. Cautare FARA firma specificata (doar pe perioada de timp)
+8. Sync ANAF pentru imbogatire date
+9. Scraper MFinante cu CAPTCHA automatic (Tesseract OCR + Gemini fallback)
+10. Bilanturi istorice (tabel separat)
+11. BPI PDF Parser cu LiteParse, export CUI-uri la CSV si import in DB
+12. Cloud Sync (MongoDB local -> Atlas)
+13. Crawler MFirme.ro
 
 ## Tech Stack
-- Backend: FastAPI + SQLAlchemy + asyncpg + APScheduler + aiohttp
-- Database: PostgreSQL (firme, dosare, timeline, bilanturi) + MongoDB (config, logs)
+- Backend: FastAPI + MongoDB (motor async driver)
 - Frontend: React + Shadcn UI + Tailwind CSS
-- Deployment: Docker Compose + Nginx
+- Database: MongoDB (local Docker + Atlas cloud sync)
+- Local Processing: Tesseract OCR, LiteParse, aiohttp
 
-## Current Stats (2026-03-19)
-- Aplicație funcțională în mediul preview
-- Backend + Frontend + MongoDB running
+## Code Architecture
+```
+/app
+├── backend/
+│   ├── server.py           # FastAPI entry point
+│   ├── mongo_db.py         # MongoDB collections and connection
+│   ├── routes/             # Modular endpoints
+│   │   ├── anaf.py, bpi.py, crawler.py, diagnostics.py
+│   │   ├── firme.py, jobs.py, localitati.py, mfinante.py
+│   │   └── atlas_sync.py
+│   └── downloads/bpi/      # BPI CSV exports
+└── frontend/
+    ├── src/
+    │   ├── App.js          # Main component
+    │   ├── pages/          # Tab pages (AnafPage, BpiPage, etc.)
+    │   └── components/     # Reusable UI + modals
+    └── .env
+```
 
-## Backlog (Prioritizat)
-### P1 - Completat 2026-03-19
-- [x] Completare UI modal "Company Profile" cu toate datele (ANAF, bilanțuri, dosare + editare CUI)
-- [x] Completare tab "DB Final" cu tabel + paginare + filtre
-- [x] Log detaliat "Verifică CUI" — rezumat vizual + JSON Raw complet expandabil
-- [x] Editare manuală CUI inline în tabel și în modalul de profil
+## Key DB Schema (MongoDB)
+- **firme**: Main collection, company data with nested anaf_data/mf_data
+- **dosare**: Court case details
+- **bilanturi**: Historical financial statements
+- **job_config/job_runs**: Scraper configuration and history
+- **bpi_records**: Parsed BPI PDF records
+- **judete/localitati**: Romanian locations data
 
-### P2 - Important
-- [ ] Export CSV/Excel date firme
-- [ ] Selector instituție multi-select pentru Justice Portal
+## Completed Features
+- [x] Full PostgreSQL to MongoDB migration
+- [x] Justice Portal scraper with date-range and case-category filters
+- [x] ANAF scraper (handles 2.5M+ records)
+- [x] MFinante scraper with auto-CAPTCHA (Tesseract OCR + Gemini fallback)
+- [x] MFirme.ro crawler
+- [x] BPI PDF Parser (LiteParse) with single/multi/folder uploads
+- [x] BPI CUI Export to CSV + Import to firme DB (VERIFIED 2026-03-20)
+- [x] MongoDB Atlas cloud sync
+- [x] Backend refactoring (routes modulare)
+- [x] Frontend refactoring (pages separate)
+- [x] Localitati DB import + normalization
 
-### P3 - Completat 2026-03-19
-- [x] Refactorizare server.py (3879 linii → server.py 82 linii + 5 module routes/ + 5 module shared)
-- [x] Refactorizare App.js (3008 linii → App.js 1180 linii + 5 pages/ + 2 components/modals)
+## Backlog (Prioritized)
+### P1
+- [ ] Multi-select filter for institutions (courts) in Justice Portal scraper
+### P2
+- [ ] Native Excel (.xlsx) export
+- [ ] Link BPI records to dosare from Justice Portal
+- [ ] Filter firme by judet/region
+### P3
+- [ ] Financial evolution chart in Company Profile modal
+- [ ] Fix nr_reg_com formatting (J19 56 2017 -> J19/56/2017)
 
 ## Test Reports
-- iteration_5.json: Profile Modal, Inline CUI edit, DB Final, ANAF test — 23/23 OK
-- iteration_6.json: Validare completă toate 5 taburi + Export CSV — 31/31 OK
-  - Bug fix: AnafPage.jsx destructuring (7 variabile lipsă ctx)
-
-## Localitati DB (2026-03-19)
-- Importate 42 judete + 13,749 localitati cu cod SIRUTA + coordonate GPS din https://github.com/romania/localitati
-- Normalizare automata judet/localitate/siruta pentru toate firmele
-- UI in tab Diagnostics: Import + Normalizare cu progress bar
+- iteration_5.json: Profile Modal, Inline CUI edit, DB Final, ANAF test - 23/23 OK
+- iteration_6.json: All 5 tabs + Export CSV - 31/31 OK
+- iteration_7.json: BPI CUI Exports (list, download, import, dedup) - 14/14 OK (2026-03-20)
