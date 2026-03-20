@@ -907,13 +907,20 @@ function App() {
   useEffect(() => {
     let interval;
     if (anafSyncRunning) {
-      interval = setInterval(() => {
-        loadAnafProgress();
-        loadAnafStats();
+      interval = setInterval(async () => {
+        await loadAnafProgress();
+        await loadAnafStats();
+        // When sync finishes, do one final refresh
+        if (!anafSyncRunning) {
+          setTimeout(() => loadAnafStats(), 2000);
+        }
       }, 3000);
+    } else if (activeTab === 'anaf') {
+      // Not running but on ANAF tab — do a one-time refresh
+      loadAnafStats();
     }
     return () => clearInterval(interval);
-  }, [anafSyncRunning, loadAnafProgress, loadAnafStats]);
+  }, [anafSyncRunning, loadAnafProgress, loadAnafStats, activeTab]);
 
   const startAnafSync = async (options = {}) => {
     setAnafLoading(true);
@@ -947,6 +954,8 @@ function App() {
       toast.info("Sincronizare oprită");
       setAnafSyncRunning(false);
       setAnafLogs(prev => [...prev, `[${timestamp}] ⏹ Sincronizare oprită de utilizator`].slice(-50));
+      // Refresh stats immediately after stop
+      setTimeout(() => { loadAnafStats(); loadAnafProgress(); }, 1000);
     } catch (error) {
       toast.error("Eroare la oprirea sincronizării");
     }

@@ -79,6 +79,9 @@ async def reset_invalid_cui():
         return {"reset": count, "message": f"Reset {count:,} firme cu CUI invalid → NULL"}
     finally:
         db.close()
+
+
+@router.get("/anaf/stats")
 async def get_anaf_stats():
     if database.SessionLocal is None:
         return {

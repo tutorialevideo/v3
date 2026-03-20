@@ -298,9 +298,10 @@ export default function AnafPage({ ctx }) {
                         onClick={() => startAnafSync({ only_unsynced: true })}
                         disabled={anafLoading || anafSyncRunning}
                         className="sync-btn"
+                        data-testid="sync-all-btn"
                       >
                         <Download size={16} />
-                        Sync Toate Nesincronizate ({anafStats?.not_synced?.toLocaleString() || 0})
+                        Sync Toate Nesincronizate ({anafStats ? anafStats.not_synced?.toLocaleString() : '...'})
                       </Button>
                       <Button 
                         variant="secondary"
