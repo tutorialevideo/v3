@@ -8,6 +8,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
+from sqlalchemy import func
 
 import database
 import state
@@ -28,12 +29,16 @@ async def export_firme_csv():
     Dosar = database.Dosar
     try:
         firme = db.query(Firma).order_by(Firma.denumire).all()
+        # Single aggregated query instead of N+1
+        dosare_counts = dict(
+            db.query(Dosar.firma_id, func.count(Dosar.id))
+            .group_by(Dosar.firma_id).all()
+        )
         output = io.StringIO()
         writer = csv.writer(output)
         writer.writerow(['id', 'cui', 'denumire', 'dosare_count'])
         for firma in firme:
-            dosare_count = db.query(Dosar).filter(Dosar.firma_id == firma.id).count()
-            writer.writerow([firma.id, firma.cui or '', firma.denumire, dosare_count])
+            writer.writerow([firma.id, firma.cui or '', firma.denumire, dosare_counts.get(firma.id, 0)])
         output.seek(0)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"firme_export_{timestamp}.csv"
@@ -67,6 +72,15 @@ async def get_firme(skip: int = 0, limit: int = 100, search: str = None, judet: 
             query = query.filter(Firma.judet.ilike(f"%{judet}%"))
         total = query.count()
         firme = query.order_by(Firma.id.desc()).offset(skip).limit(limit).all()
+        # Single query for all dosare counts (no N+1)
+        firma_ids = [f.id for f in firme]
+        dosare_counts = {}
+        if firma_ids:
+            dosare_counts = dict(
+                db.query(Dosar.firma_id, func.count(Dosar.id))
+                .filter(Dosar.firma_id.in_(firma_ids))
+                .group_by(Dosar.firma_id).all()
+            )
         result = []
         for f in firme:
             result.append({
@@ -74,7 +88,7 @@ async def get_firme(skip: int = 0, limit: int = 100, search: str = None, judet: 
                 "cod_inregistrare": f.cod_inregistrare, "data_inregistrare": f.data_inregistrare,
                 "forma_juridica": f.forma_juridica, "judet": f.judet, "localitate": f.localitate,
                 "strada": f.strada, "numar": f.numar,
-                "dosare_count": db.query(Dosar).filter(Dosar.firma_id == f.id).count(),
+                "dosare_count": dosare_counts.get(f.id, 0),
                 "created_at": f.created_at.isoformat() if f.created_at else None
             })
         return {"total": total, "firme": result}

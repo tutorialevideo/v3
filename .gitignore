@@ -35,188 +35,142 @@ test_reports/
 # Docker volumes (when running locally)
 postgres_data/
 mongodb_data/
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
 frontend/node_modules/.cache/default-development/0.pack
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
--e 
 # Environment files
 *.env
 *.env.*
