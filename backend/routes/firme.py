@@ -210,6 +210,28 @@ async def reconnect_database():
     raise HTTPException(status_code=503, detail="Could not connect to PostgreSQL.")
 
 
+@router.get("/db/debug-connection")
+async def debug_connection():
+    """Debug endpoint — shows exact connection error."""
+    import sqlalchemy
+    url = database.POSTGRES_URL
+    # Mask password
+    masked = url.split('@')[0].rsplit(':', 1)[0] + ':***@' + url.split('@')[-1] if '@' in url else url
+    result = {"url_used": masked, "error": None, "connected": False}
+    try:
+        connect_args = {}
+        if 'supabase.co' in url or 'pooler.supabase.com' in url:
+            connect_args = {"sslmode": "require", "gssencmode": "disable", "connect_timeout": 10}
+        eng = sqlalchemy.create_engine(url, connect_args=connect_args)
+        with eng.connect() as conn:
+            conn.execute(sqlalchemy.text("SELECT version()"))
+        result["connected"] = True
+        eng.dispose()
+    except Exception as e:
+        result["error"] = str(e)
+    return result
+
+
 @router.get("/db/status")
 async def get_db_status():
     return {
