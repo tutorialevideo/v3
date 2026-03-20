@@ -2,6 +2,7 @@
 PostgreSQL database setup: SQLAlchemy models, connection management, session helper.
 """
 import os
+import re
 import time
 import logging
 from pathlib import Path
@@ -21,13 +22,27 @@ load_dotenv(ROOT_DIR / '.env')
 
 logger = logging.getLogger(__name__)
 
-POSTGRES_URL = os.environ.get('POSTGRES_URL', 'postgresql://justapp:justapp123@localhost:5432/justportal')
-# Supabase requires SSL — add sslmode=require if not already present
+POSTGRES_URL = os.environ.get('POSTGRES_URL', '').strip()
+
+# Fallback to local if not set
+if not POSTGRES_URL:
+    POSTGRES_URL = 'postgresql://justapp:justapp123@localhost:5432/justportal'
+    logger.warning("[DB] POSTGRES_URL not set, using local fallback")
+
+# Supabase requires SSL
 if 'supabase.co' in POSTGRES_URL and 'sslmode' not in POSTGRES_URL:
     POSTGRES_URL = POSTGRES_URL + '?sslmode=require'
-DATABASE_URL = POSTGRES_URL.replace('postgresql://', 'postgresql+asyncpg://')
 
-database = Database(DATABASE_URL)
+# asyncpg doesn't support sslmode in URL — remove it and use connect_args
+ASYNCPG_URL = POSTGRES_URL.replace('postgresql://', 'postgresql+asyncpg://')
+# asyncpg needs ssl differently — strip sslmode from asyncpg URL
+ASYNCPG_URL_CLEAN = re.sub(r'\?sslmode=\w+', '', ASYNCPG_URL).rstrip('?')
+
+try:
+    database = Database(ASYNCPG_URL_CLEAN)
+except Exception as e:
+    logger.warning(f"[DB] Could not initialize async database object: {e}")
+    database = None
 Base = declarative_base()
 
 postgres_available = False

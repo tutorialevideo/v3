@@ -59,11 +59,12 @@ app.include_router(supabase_router, prefix=PREFIX)
 
 @app.on_event("startup")
 async def startup_event():
-    try:
-        await database.database.connect()
-        logger.info("[DB] Async PostgreSQL connection established")
-    except Exception as e:
-        logger.warning(f"[DB] Async PostgreSQL connection failed: {e}")
+    if database.database is not None:
+        try:
+            await database.database.connect()
+            logger.info("[DB] Async PostgreSQL connection established")
+        except Exception as e:
+            logger.warning(f"[DB] Async PostgreSQL connection failed: {e}")
 
     state.scheduler.start()
 
@@ -86,10 +87,11 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    try:
-        await database.database.disconnect()
-    except Exception:
-        pass
+    if database.database is not None:
+        try:
+            await database.database.disconnect()
+        except Exception:
+            pass
     state.scheduler.shutdown()
     try:
         state.mongo_client.close()
