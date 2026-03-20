@@ -49,24 +49,43 @@ def add_sync_log(message: str):
         supabase_sync_progress["logs"] = supabase_sync_progress["logs"][-200:]
 
 
+def _resolve_ipv4(hostname: str) -> str:
+    """Force IPv4 resolution — avoids Docker IPv6 issues."""
+    import socket
+    try:
+        results = socket.getaddrinfo(hostname, None, socket.AF_INET)
+        if results:
+            return results[0][4][0]
+    except Exception:
+        pass
+    return hostname
+
+
 def get_supabase_engine():
-    """Create engine for Supabase — forces IPv4 via port 6543 (PgBouncer pooler)."""
+    """Create SQLAlchemy engine for Supabase with forced IPv4."""
     if not SUPABASE_URL:
         raise ValueError("SUPABASE_URL nu este configurat în .env")
 
-    # Strip existing query params — pass SSL via connect_args
+    # Parse hostname from URL
+    # Format: postgresql://user:pass@host:port/db
+    import re
     url_clean = re.sub(r'\?.*$', '', SUPABASE_URL.strip())
-
-    # Use port 6543 (Supabase connection pooler, IPv4 stable)
-    # Port 5432 = direct connection (can resolve to IPv6, unstable in Docker)
-    url_clean = re.sub(r':5432/', ':6543/', url_clean)
+    match = re.search(r'@([^:/]+)', url_clean)
+    hostname = match.group(1) if match else None
 
     connect_args = {
         "connect_timeout": 15,
         "sslmode": "require",
-        "gssencmode": "disable",      # prevents IPv6/GSSAPI issues
-        "options": "-c statement_timeout=30000",
+        "gssencmode": "disable",
     }
+
+    # Force IPv4: resolve hostname and pass as hostaddr
+    # psycopg2 uses 'host' for SSL cert validation, 'hostaddr' for actual TCP connection
+    if hostname:
+        ipv4 = _resolve_ipv4(hostname)
+        if ipv4 != hostname:  # resolved successfully
+            connect_args["hostaddr"] = ipv4
+            logger.info(f"[SUPABASE] Forced IPv4: {hostname} → {ipv4}")
 
     return create_engine(
         url_clean,
