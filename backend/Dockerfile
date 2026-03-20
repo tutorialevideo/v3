@@ -6,7 +6,6 @@ WORKDIR /app
 # Install system dependencies + Node.js (for LiteParse)
 RUN apt-get update && apt-get install -y \
     gcc \
-    libpq-dev \
     curl \
     libjpeg-dev \
     zlib1g-dev \
