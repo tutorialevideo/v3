@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 ATLAS_URL = os.environ.get(
     "ATLAS_MONGO_URL",
-    "mongodb+srv://anunturionlinecc_db_user:z8liEm9pbh5o5slO@cluster0.ck0gbc.mongodb.net/justportal"
+    "mongodb+srv://aaaaaaaaaaaaaaaaaaaaaaaa:4GURTj9ZKNfZNDqy@cluster0.ck0gbc.mongodb.net/justportal"
 )
 ATLAS_DB_NAME = "justportal"
 
