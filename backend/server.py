@@ -9,7 +9,6 @@ from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
 
 import state
-import database
 from routes.jobs import router as jobs_router, update_scheduler
 from routes.firme import router as firme_router
 from routes.anaf import router as anaf_router
@@ -67,14 +66,6 @@ async def startup_event():
     except Exception as e:
         logger.warning(f"[MongoDB] Index creation failed: {e}")
 
-    # Async PostgreSQL (Supabase) — optional, used only for Supabase sync
-    if database.database is not None:
-        try:
-            await database.database.connect()
-            logger.info("[DB] Async connection established")
-        except Exception as e:
-            logger.warning(f"[DB] Async connection failed (non-fatal): {e}")
-
     state.scheduler.start()
 
     try:
@@ -96,11 +87,6 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    if database.database is not None:
-        try:
-            await database.database.disconnect()
-        except Exception:
-            pass
     state.scheduler.shutdown()
     try:
         state.mongo_client.close()

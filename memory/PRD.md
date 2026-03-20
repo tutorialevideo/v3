@@ -83,3 +83,9 @@ Aplicatie full-stack (React, FastAPI, MongoDB) pentru descarcarea automata si ge
 - iteration_5.json: Profile Modal, Inline CUI edit, DB Final, ANAF test - 23/23 OK
 - iteration_6.json: All 5 tabs + Export CSV - 31/31 OK
 - iteration_7.json: BPI CUI Exports (list, download, import, dedup) - 14/14 OK (2026-03-20)
+
+## Cleanup Done (2026-03-20)
+- Deleted: database.py (PostgreSQL/SQLAlchemy), routes/supabase_sync.py (replaced by atlas_sync.py)
+- Rewrote: routes/diagnostics.py (PostgreSQL SQL -> MongoDB aggregations)
+- Cleaned: server.py, routes/mfinante.py, routes/jobs.py (removed dead PostgreSQL imports)
+- Removed packages: databases, psycopg2-binary

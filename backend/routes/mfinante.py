@@ -17,10 +17,8 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from fastapi.responses import Response
-from sqlalchemy import func
 
 import state
-import database
 from constants import MFINANTE_URL
 
 load_dotenv()
