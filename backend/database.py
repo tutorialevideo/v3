@@ -37,13 +37,13 @@ if not POSTGRES_URL:
         POSTGRES_URL = _SUPABASE_FALLBACK
         logger.info("[DB] Using Supabase fallback connection")
 
-# Supabase requires SSL
-if 'supabase.co' in POSTGRES_URL and 'sslmode' not in POSTGRES_URL:
+# Supabase/pooler requires SSL
+_is_supabase = 'supabase.co' in POSTGRES_URL or 'pooler.supabase.com' in POSTGRES_URL
+if _is_supabase and 'sslmode' not in POSTGRES_URL:
     POSTGRES_URL = POSTGRES_URL + '?sslmode=require'
 
 # asyncpg doesn't support sslmode in URL — remove it and use connect_args
 ASYNCPG_URL = POSTGRES_URL.replace('postgresql://', 'postgresql+asyncpg://')
-# asyncpg needs ssl differently — strip sslmode from asyncpg URL
 ASYNCPG_URL_CLEAN = re.sub(r'\?sslmode=\w+', '', ASYNCPG_URL).rstrip('?')
 
 try:
@@ -63,10 +63,14 @@ def init_postgres_connection(max_retries=5, retry_delay=3):
     from sqlalchemy import text
     for attempt in range(max_retries):
         try:
-            # Supabase needs SSL
+            # Supabase/pooler needs SSL + disable GSSAPI
             connect_args = {}
-            if 'supabase.co' in POSTGRES_URL:
-                connect_args = {"sslmode": "require"}
+            if 'supabase.co' in POSTGRES_URL or 'pooler.supabase.com' in POSTGRES_URL:
+                connect_args = {
+                    "sslmode": "require",
+                    "gssencmode": "disable",
+                    "connect_timeout": 15,
+                }
             engine = create_engine(
                 POSTGRES_URL,
                 pool_size=20,
