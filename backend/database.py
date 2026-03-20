@@ -321,6 +321,9 @@ def _migrate_schema():
     logger.info("[DB] Schema migrations applied")
 
 
-# Initialize on import
-init_postgres_connection()
-create_tables()
+# Initialize on import — non-blocking, app starts even if DB unavailable
+try:
+    init_postgres_connection(max_retries=2, retry_delay=2)
+    create_tables()
+except Exception as e:
+    logger.warning(f"[DB] Startup init failed (non-fatal): {e}")
