@@ -1,0 +1,4 @@
+CUI;Denumire Firma;Tribunal;Dosar;Tip Procedura;Data Publicare;Administrator Judiciar;In DB
+12345678;SC TEST FIRMA SRL;Tribunalul Bucuresti;1234/3/2025;Insolventa;15.01.2025;Admin Test SPRL;NU
+87654321;SC EXEMPLU SA;Tribunalul Cluj;5678/1/2025;Faliment;20.02.2025;Lichidator Test IPURL;NU
+99887766;SC DEMO CONSTRUCT SRL;Tribunalul Iasi;9012/2/2025;Reorganizare judiciara;01.03.2025;;NU

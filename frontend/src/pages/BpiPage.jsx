@@ -59,11 +59,6 @@ export default function BpiPage({ ctx }) {
       setImporting(false);
     }
   };
-    fetch(`${API}/bpi/liteparse-version`)
-      .then(r => r.json())
-      .then(d => setLiteparseVersion(d))
-      .catch(() => {});
-  }, []);
 
   const handleFile = (files) => {
     const fileList = files instanceof FileList ? Array.from(files) : [files];
