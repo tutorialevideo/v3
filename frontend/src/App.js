@@ -976,6 +976,16 @@ function App() {
     } catch (e) {}
   };
 
+  const initSupabaseSchema = async () => {
+    try {
+      const res = await axios.post(`${API}/supabase/init-schema`);
+      toast.success(res.data.message);
+      loadSupabaseStatus();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Eroare la creare schema');
+    }
+  };
+
   const cleanupDuplicateDenumiri = async () => {
     if (!window.confirm("Sigur vrei să ștergi duplicatele după denumire? Această acțiune este ireversibilă!")) {
       return;
@@ -1526,7 +1536,7 @@ function App() {
     startMfirmeCrawl, stopMfirmeCrawl, clearMfirmeCheckpoint,
     // Supabase sync
     supabaseStatus, supabaseSyncing, supabaseLogs,
-    loadSupabaseStatus, startSupabaseSync, stopSupabaseSync,
+    loadSupabaseStatus, startSupabaseSync, stopSupabaseSync, initSupabaseSchema,
     syncDosareProgress, syncDosareLogs, syncDosareLoading,
     syncDosareLimit, setSyncDosareLimit,
     syncDosareCategorie, setSyncDosareCategorie,

@@ -79,6 +79,48 @@ def get_supabase_engine():
 
 # ─── Routes ───────────────────────────────────────────────────────────────────
 
+@router.post("/supabase/init-schema")
+async def init_supabase_schema():
+    """Create all tables in Supabase (run once before first sync)."""
+    try:
+        eng = get_supabase_engine()
+        # Create all tables
+        database.Base.metadata.create_all(bind=eng)
+
+        # Apply additional migrations (new columns added later)
+        migrations = [
+            "ALTER TABLE firme ADD COLUMN IF NOT EXISTS siruta BIGINT",
+            "ALTER TABLE firme ADD COLUMN IF NOT EXISTS anaf_iban VARCHAR(50)",
+            "ALTER TABLE firme ADD COLUMN IF NOT EXISTS anaf_data_efactura VARCHAR(20)",
+            "ALTER TABLE firme ADD COLUMN IF NOT EXISTS anaf_data_inactivare VARCHAR(20)",
+            "ALTER TABLE firme ADD COLUMN IF NOT EXISTS anaf_data_reactivare VARCHAR(20)",
+            "ALTER TABLE firme ADD COLUMN IF NOT EXISTS anaf_data_radiere VARCHAR(20)",
+            "ALTER TABLE firme ADD COLUMN IF NOT EXISTS anaf_data_inceput_tva_inc VARCHAR(20)",
+            "ALTER TABLE firme ADD COLUMN IF NOT EXISTS anaf_data_sfarsit_tva_inc VARCHAR(20)",
+            "ALTER TABLE firme ADD COLUMN IF NOT EXISTS anaf_data_inceput_split_tva VARCHAR(20)",
+            "ALTER TABLE firme ADD COLUMN IF NOT EXISTS anaf_df_judet VARCHAR(100)",
+            "ALTER TABLE firme ADD COLUMN IF NOT EXISTS anaf_df_localitate VARCHAR(200)",
+            "ALTER TABLE firme ADD COLUMN IF NOT EXISTS anaf_df_strada VARCHAR(300)",
+            "ALTER TABLE firme ADD COLUMN IF NOT EXISTS anaf_df_numar VARCHAR(50)",
+            "ALTER TABLE firme ADD COLUMN IF NOT EXISTS anaf_df_cod_postal VARCHAR(20)",
+            "ALTER TABLE firme ADD COLUMN IF NOT EXISTS anaf_split_tva BOOLEAN",
+            "ALTER TABLE firme ADD COLUMN IF NOT EXISTS anaf_inactiv BOOLEAN",
+            "ALTER TABLE firme ADD COLUMN IF NOT EXISTS anaf_e_factura BOOLEAN",
+        ]
+        from sqlalchemy import text
+        with eng.begin() as conn:
+            for sql in migrations:
+                try:
+                    conn.execute(text(sql))
+                except Exception:
+                    pass
+
+        eng.dispose()
+        return {"success": True, "message": "Schema creată cu succes în Supabase! Acum poți face Sync."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Eroare creare schema: {str(e)[:200]}")
+
+
 @router.get("/supabase/status")
 async def get_supabase_status():
     """Check Supabase connection and sync status."""
@@ -96,7 +138,11 @@ async def get_supabase_status():
             supabase_ok = True
         eng.dispose()
     except Exception as e:
-        error = str(e)[:100]
+        error = str(e)[:200]
+        # Detect if tables just don't exist yet
+        if "does not exist" in str(e) or "UndefinedTable" in str(e):
+            error = "Tabelele nu există în Supabase — apasă 'Inițializează Schema' mai jos"
+            supabase_ok = True  # connected but no schema yet
 
     local_counts = {}
     if database.SessionLocal:

@@ -66,7 +66,7 @@ export default function DiagnosticsPage({ ctx }) {
     startMfirmeCrawl, stopMfirmeCrawl, clearMfirmeCheckpoint,
     // Supabase sync
     supabaseStatus, supabaseSyncing, supabaseLogs,
-    loadSupabaseStatus, startSupabaseSync, stopSupabaseSync,
+    loadSupabaseStatus, startSupabaseSync, stopSupabaseSync, initSupabaseSchema,
   } = ctx;
 
   return (
@@ -620,6 +620,16 @@ export default function DiagnosticsPage({ ctx }) {
 
                 {supabaseStatus?.supabase_connected && (
                   <>
+                    {/* Init schema button — shown when tables missing */}
+                    {supabaseStatus?.supabase_error?.includes('Inițializează') && (
+                      <div style={{padding:'10px 14px', background:'rgba(234,179,8,0.08)', border:'1px solid rgba(234,179,8,0.3)', borderRadius:'8px', marginBottom:'10px', fontSize:'0.82rem'}}>
+                        <p style={{marginBottom:'8px'}}>⚠️ {supabaseStatus.supabase_error}</p>
+                        <Button onClick={initSupabaseSchema} disabled={supabaseSyncing} style={{background:'#eab308',color:'white'}}>
+                          <Database size={14} style={{marginRight:6}}/>Inițializează Schema Supabase
+                        </Button>
+                      </div>
+                    )}
+
                     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:'8px'}}>
                       <Button onClick={()=>startSupabaseSync({onlyActive:true,cleanFirst:false})} disabled={supabaseSyncing}
                         style={{background:'#3ecf8e',color:'white',fontWeight:600}} data-testid="supabase-sync-btn">
