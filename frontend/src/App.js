@@ -166,6 +166,10 @@ function App() {
   const [syncDosareCategorie, setSyncDosareCategorie] = useState("Litigiicuprofesionistii");
   const [syncDosareDateStart, setSyncDosareDateStart] = useState("");
   const [syncDosareDateEnd, setSyncDosareDateEnd] = useState("");
+  // Supabase sync
+  const [supabaseStatus, setSupabaseStatus] = useState(null);
+  const [supabaseSyncing, setSupabaseSyncing] = useState(false);
+  const [supabaseLogs, setSupabaseLogs] = useState([]);
   // MFirme crawler
   const [mfirmeCrawlStatus, setMfirmeCrawlStatus] = useState(null);
   const [mfirmeCrawlLogs, setMfirmeCrawlLogs] = useState([]);
@@ -752,6 +756,7 @@ function App() {
     if (activeTab === 'diagnostics') {
       loadDiagnostics();
       loadLocalitatiStats();
+      loadSupabaseStatus();
     }
   }, [activeTab, loadDiagnostics]);
 
@@ -927,6 +932,47 @@ function App() {
       await axios.delete(`${API}/crawler/mfirme/checkpoint`);
       toast.success('Checkpoint șters — next crawl starts from page 1');
       loadMfirmeCrawlStatus();
+    } catch (e) {}
+  };
+
+  // Supabase sync functions
+  const loadSupabaseStatus = async () => {
+    try {
+      const res = await axios.get(`${API}/supabase/status`);
+      setSupabaseStatus(res.data);
+      setSupabaseLogs(res.data.logs || []);
+    } catch (e) {}
+  };
+
+  const startSupabaseSync = async ({ onlyActive = true, cleanFirst = false, syncDosare = false } = {}) => {
+    setSupabaseSyncing(true);
+    setSupabaseLogs([]);
+    try {
+      await axios.post(`${API}/supabase/sync?only_active=${onlyActive}&clean_first=${cleanFirst}&sync_dosare=${syncDosare}&sync_firme=true&sync_bilanturi=true`);
+      toast.success('Sync Supabase pornit!');
+      const pollInterval = setInterval(async () => {
+        try {
+          const res = await axios.get(`${API}/supabase/sync-progress`);
+          setSupabaseStatus(prev => ({ ...prev, progress: res.data, sync_active: res.data.active }));
+          setSupabaseLogs(res.data.logs || []);
+          if (!res.data.active) {
+            clearInterval(pollInterval);
+            setSupabaseSyncing(false);
+            loadSupabaseStatus();
+            toast.success(`Sync finalizat: ${res.data.inserted?.toLocaleString()} inserate`);
+          }
+        } catch (e) { clearInterval(pollInterval); setSupabaseSyncing(false); }
+      }, 3000);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Eroare sync Supabase');
+      setSupabaseSyncing(false);
+    }
+  };
+
+  const stopSupabaseSync = async () => {
+    try {
+      await axios.post(`${API}/supabase/sync-stop`);
+      toast.info('Stop sync Supabase');
     } catch (e) {}
   };
 
@@ -1478,6 +1524,9 @@ function App() {
     // MFirme crawler
     mfirmeCrawlStatus, mfirmeCrawlLogs, mfirmeCrawling,
     startMfirmeCrawl, stopMfirmeCrawl, clearMfirmeCheckpoint,
+    // Supabase sync
+    supabaseStatus, supabaseSyncing, supabaseLogs,
+    loadSupabaseStatus, startSupabaseSync, stopSupabaseSync,
     syncDosareProgress, syncDosareLogs, syncDosareLoading,
     syncDosareLimit, setSyncDosareLimit,
     syncDosareCategorie, setSyncDosareCategorie,
