@@ -863,117 +863,100 @@ async def get_mfinante_sync_logs():
 
 
 async def _run_mfinante_sync(limit: int, only_without_bilant: bool, only_anaf_active: bool = True):
-    db = database.SessionLocal()
-    Firma = database.Firma
-    Bilant = database.Bilant
+    """MFinante sync — MongoDB backend."""
+    import mongo_db as mdb
+    from pymongo import UpdateOne
+
+    # Build MongoDB query
+    query = {"cui": {"$ne": None, "$exists": True, "$not": {"$in": [None, ""]}}}
+    if only_anaf_active:
+        query["anaf_sync_status"] = "found"
+        query["anaf_stare"] = {"$regex": "ACTIV", "$options": "i"}
+        query["$nor"] = [{"anaf_stare": {"$regex": "INACTIV", "$options": "i"}},
+                         {"anaf_stare": {"$regex": "RADIERE", "$options": "i"}}]
+        state.add_mfinante_log("Filtru: doar firme ACTIVE conform ANAF")
+    else:
+        state.add_mfinante_log("Filtru: toate firmele cu CUI")
+
+    if only_without_bilant:
+        query["$and"] = query.get("$and", []) + [
+            {"$or": [{"mf_cifra_afaceri": None}, {"mf_last_sync": None}]}
+        ]
+        state.add_mfinante_log("Filtru suplimentar: fara bilant salvat")
+
+    firms = await mdb.firme_col.find(query, {"_id": 0}).limit(limit or 10000).to_list(limit or 10000)
+    state.mfinante_sync_progress["total_firms"] = len(firms)
+    state.add_mfinante_log(f"Total firme de procesat: {len(firms)}")
+
     try:
-        query = db.query(Firma).filter(Firma.cui.isnot(None), Firma.cui != '')
-
-        if only_anaf_active:
-            query = query.filter(
-                Firma.anaf_sync_status == 'found',
-                Firma.anaf_stare.isnot(None),
-                Firma.anaf_stare.ilike('%ACTIV%'),
-                ~Firma.anaf_stare.ilike('%INACTIV%'),
-                ~Firma.anaf_stare.ilike('%RADIERE%')
-            )
-            state.add_mfinante_log("Filtru: doar firme ACTIVE conform ANAF")
-        else:
-            state.add_mfinante_log("Filtru: toate firmele cu CUI")
-
-        if only_without_bilant:
-            query = query.filter(
-                (Firma.mf_cifra_afaceri.is_(None)) | (Firma.mf_last_sync.is_(None))
-            )
-            state.add_mfinante_log("Filtru suplimentar: fara bilant salvat")
-
-        firms = query.limit(limit).all()
-        state.mfinante_sync_progress["total_firms"] = len(firms)
-        state.add_mfinante_log(f"Total firme de procesat: {len(firms)}")
-        logger.info(f"[MFINANTE] Starting sync for {len(firms)} firms (active={only_anaf_active})")
-
         for firma in firms:
             if not state.mfinante_sync_progress["active"]:
                 state.add_mfinante_log("Oprire solicitata de utilizator.")
                 break
 
-            state.mfinante_sync_progress["last_cui"] = firma.cui
-            denumire_short = (firma.denumire or firma.anaf_denumire or firma.cui or "")[:45]
+            firma_id = firma["id"]
+            cui = firma.get("cui", "")
+            state.mfinante_sync_progress["last_cui"] = cui
+            denumire_short = (firma.get("denumire") or firma.get("anaf_denumire") or cui)[:45]
             idx = state.mfinante_sync_progress["processed"] + 1
 
             try:
-                data = await _fetch_mfinante_data(firma.cui)
+                data = await _fetch_mfinante_data(cui)
 
                 if data.get("found"):
                     di = data.get("date_identificare", {})
-                    df = data.get("date_fiscale", {})
-                    firma.mf_denumire = di.get("denumire")
-                    firma.mf_adresa = di.get("adresa")
-                    firma.mf_judet = di.get("judet")
-                    firma.mf_cod_postal = di.get("cod_postal")
-                    firma.mf_telefon = di.get("telefon")
-                    firma.mf_nr_reg_com = di.get("nr_reg_com")
-                    firma.mf_stare = di.get("stare")
-                    firma.mf_platitor_tva = df.get("platitor_tva")
-                    firma.mf_tva_data = df.get("tva_data")
-                    firma.mf_impozit_profit = df.get("impozit_profit")
-                    firma.mf_impozit_micro = df.get("micro_data")
-                    firma.mf_accize = df.get("accize")
-                    firma.mf_cas_data = df.get("cas_data")
+                    df_tax = data.get("date_fiscale", {})
                     ani = [b["an"] for b in data.get("bilanturi_disponibili", [])]
-                    firma.mf_ani_disponibili = ",".join(ani) if ani else None
 
-                    ani_str = ", ".join(ani) if ani else "niciun an disponibil"
-                    state.add_mfinante_log(f"[{idx}/{len(firms)}] {firma.cui} | {denumire_short} | ani: {ani_str}")
+                    firm_update = {
+                        "mf_denumire": di.get("denumire"),
+                        "mf_adresa": di.get("adresa"),
+                        "mf_judet": di.get("judet"),
+                        "mf_nr_reg_com": di.get("nr_reg_com"),
+                        "mf_stare": di.get("stare"),
+                        "mf_platitor_tva": df_tax.get("platitor_tva"),
+                        "mf_tva_data": df_tax.get("tva_data"),
+                        "mf_impozit_profit": df_tax.get("impozit_profit"),
+                        "mf_impozit_micro": df_tax.get("micro_data"),
+                        "mf_accize": df_tax.get("accize"),
+                        "mf_cas_data": df_tax.get("cas_data"),
+                        "mf_ani_disponibili": ",".join(ani) if ani else None,
+                        "mf_sync_status": "found",
+                    }
+
+                    ani_str = ", ".join(ani) if ani else "niciun an"
+                    state.add_mfinante_log(f"[{idx}/{len(firms)}] {cui} | {denumire_short} | ani: {ani_str}")
 
                     latest_bilant = None
                     bilanturi_salvate = 0
                     for bilant_info in data.get("bilanturi_disponibili", []):
                         try:
                             await asyncio.sleep(0.5)
-                            bilant_data = await _fetch_mfinante_bilant(firma.cui, bilant_info["value"])
+                            bilant_data = await _fetch_mfinante_bilant(cui, bilant_info["value"])
                             indicatori = bilant_data.get("indicatori", {})
                             an = bilant_data.get("an", bilant_info["an"])
                             if indicatori:
-                                existing = db.query(Bilant).filter(
-                                    Bilant.firma_id == firma.id, Bilant.an == an
-                                ).first()
-                                fields = {
-                                    "cifra_afaceri_neta": indicatori.get("cifra_afaceri_neta"),
-                                    "venituri_totale": indicatori.get("venituri_totale"),
-                                    "cheltuieli_totale": indicatori.get("cheltuieli_totale"),
-                                    "profit_brut": indicatori.get("profit_brut"),
-                                    "pierdere_bruta": indicatori.get("pierdere_bruta"),
-                                    "profit_net": indicatori.get("profit_net"),
-                                    "pierdere_neta": indicatori.get("pierdere_neta"),
-                                    "numar_angajati": indicatori.get("numar_angajati"),
-                                    "active_imobilizate": indicatori.get("active_imobilizate"),
-                                    "active_circulante": indicatori.get("active_circulante"),
-                                    "stocuri": indicatori.get("stocuri"),
-                                    "creante": indicatori.get("creante"),
-                                    "casa_conturi_banci": indicatori.get("casa_conturi_banci"),
-                                    "cheltuieli_avans": indicatori.get("cheltuieli_avans"),
-                                    "capitaluri_proprii": indicatori.get("capitaluri_proprii"),
-                                    "capital_subscris": indicatori.get("capital_subscris"),
-                                    "patrimoniul_regiei": indicatori.get("patrimoniul_regiei"),
-                                    "provizioane": indicatori.get("provizioane"),
-                                    "datorii": indicatori.get("datorii"),
-                                    "venituri_avans": indicatori.get("venituri_avans"),
-                                    "repartizare_profit": indicatori.get("repartizare_profit"),
-                                    "raw_data": indicatori
+                                bilant_doc = {
+                                    "firma_id": firma_id, "an": an,
+                                    **{k: v for k, v in indicatori.items()},
+                                    "updated_at": datetime.utcnow()
                                 }
+                                existing = await mdb.get_bilant(firma_id, an)
                                 if existing:
-                                    for k, v in fields.items():
-                                        setattr(existing, k, v)
-                                    existing.updated_at = datetime.utcnow()
+                                    await mdb.bilanturi_col.update_one(
+                                        {"firma_id": firma_id, "an": an},
+                                        {"$set": bilant_doc}
+                                    )
                                 else:
-                                    db.add(Bilant(firma_id=firma.id, an=an, **fields))
+                                    bilant_id = await mdb.next_id("bilanturi")
+                                    bilant_doc["id"] = bilant_id
+                                    bilant_doc["created_at"] = datetime.utcnow()
+                                    await mdb.bilanturi_col.insert_one(bilant_doc)
                                 bilanturi_salvate += 1
                                 if latest_bilant is None or an > latest_bilant["an"]:
                                     latest_bilant = {"an": an, "indicatori": indicatori}
                         except Exception as e:
                             state.add_mfinante_log(f"  !! Bilant {bilant_info['an']}: {str(e)[:50]}")
-                            logger.warning(f"[MFINANTE] Bilant error {bilant_info['an']} for {firma.cui}: {e}")
 
                     if bilanturi_salvate > 0:
                         ca = latest_bilant["indicatori"].get("cifra_afaceri_neta") if latest_bilant else None
@@ -982,29 +965,27 @@ async def _run_mfinante_sync(limit: int, only_without_bilant: bool, only_anaf_ac
 
                     if latest_bilant:
                         ind = latest_bilant["indicatori"]
-                        firma.mf_an_bilant = latest_bilant["an"]
-                        firma.mf_cifra_afaceri = ind.get("cifra_afaceri_neta")
-                        firma.mf_venituri_totale = ind.get("venituri_totale")
-                        firma.mf_cheltuieli_totale = ind.get("cheltuieli_totale")
-                        firma.mf_profit_brut = ind.get("profit_brut")
-                        firma.mf_pierdere_bruta = ind.get("pierdere_bruta")
-                        firma.mf_profit_net = ind.get("profit_net")
-                        firma.mf_pierdere_neta = ind.get("pierdere_neta")
-                        firma.mf_numar_angajati = ind.get("numar_angajati")
-                        firma.mf_active_imobilizate = ind.get("active_imobilizate")
-                        firma.mf_active_circulante = ind.get("active_circulante")
-                        firma.mf_capitaluri_proprii = ind.get("capitaluri_proprii")
-                        firma.mf_datorii = ind.get("datorii")
+                        firm_update.update({
+                            "mf_an_bilant": latest_bilant["an"],
+                            "mf_cifra_afaceri": ind.get("cifra_afaceri_neta"),
+                            "mf_venituri_totale": ind.get("venituri_totale"),
+                            "mf_cheltuieli_totale": ind.get("cheltuieli_totale"),
+                            "mf_profit_brut": ind.get("profit_brut"),
+                            "mf_profit_net": ind.get("profit_net"),
+                            "mf_numar_angajati": ind.get("numar_angajati"),
+                            "mf_active_imobilizate": ind.get("active_imobilizate"),
+                            "mf_active_circulante": ind.get("active_circulante"),
+                            "mf_capitaluri_proprii": ind.get("capitaluri_proprii"),
+                            "mf_datorii": ind.get("datorii"),
+                        })
 
-                    firma.mf_last_sync = datetime.utcnow()
-                    firma.mf_sync_status = "found"
+                    firm_update["mf_last_sync"] = datetime.utcnow()
+                    await mdb.firme_col.update_one({"id": firma_id}, {"$set": firm_update})
                     state.mfinante_sync_progress["found"] += 1
                 else:
-                    firma.mf_sync_status = "not_found"
+                    await mdb.firme_col.update_one({"id": firma_id}, {"$set": {"mf_sync_status": "not_found"}})
                     state.mfinante_sync_progress["not_found"] = state.mfinante_sync_progress.get("not_found", 0) + 1
-                    state.add_mfinante_log(f"[{idx}/{len(firms)}] {firma.cui} | {denumire_short} | negasit in MFinante")
-
-                db.commit()
+                    state.add_mfinante_log(f"[{idx}/{len(firms)}] {cui} | {denumire_short} | negasit")
 
             except Exception as e:
                 error_msg = str(e)
@@ -1012,10 +993,9 @@ async def _run_mfinante_sync(limit: int, only_without_bilant: bool, only_anaf_ac
                     state.mfinante_sync_progress["session_valid"] = False
                     state.add_mfinante_log("!! Sesiune expirata! Rezolvati CAPTCHA din nou.")
                     break
-                firma.mf_sync_status = "error"
-                db.commit()
+                await mdb.firme_col.update_one({"id": firma_id}, {"$set": {"mf_sync_status": "error"}})
                 state.mfinante_sync_progress["errors"] += 1
-                state.add_mfinante_log(f"[{idx}/{len(firms)}] {firma.cui} | Eroare: {error_msg[:50]}")
+                state.add_mfinante_log(f"[{idx}/{len(firms)}] {cui} | Eroare: {error_msg[:50]}")
 
             state.mfinante_sync_progress["processed"] += 1
             state.mfinante_sync_progress["last_update"] = datetime.utcnow().isoformat()
@@ -1026,13 +1006,11 @@ async def _run_mfinante_sync(limit: int, only_without_bilant: bool, only_anaf_ac
             f"{state.mfinante_sync_progress.get('not_found', 0)} negasite, "
             f"{state.mfinante_sync_progress['errors']} erori"
         )
-        logger.info(f"[MFINANTE] Sync complete: {state.mfinante_sync_progress['processed']} processed")
 
     except Exception as e:
         state.add_mfinante_log(f"Eroare generala: {str(e)[:60]}")
         logger.error(f"[MFINANTE] Sync error: {e}")
     finally:
-        db.close()
         state.mfinante_sync_progress["active"] = False
 
 
@@ -1044,127 +1022,73 @@ async def stop_mfinante_sync():
 
 @router.get("/mfinante/stats")
 async def get_mfinante_stats():
-    db = database.get_db_session()
-    if db is None:
-        return {
-            "total_firme": 0, "synced_mfinante": 0, "not_synced": 0,
-            "active_anaf_eligible": 0, "active_fara_bilant": 0,
-            "with_cifra_afaceri": 0, "total_bilanturi_istorice": 0,
-            "session_status": {
-                "has_session": state.mfinante_session.get("jsessionid") is not None,
-                "session_valid": state.mfinante_sync_progress.get("session_valid", False)
-            },
-            "db_available": False
-        }
-    try:
-        Firma = database.Firma
-        Bilant = database.Bilant
-        total = db.query(Firma).filter(Firma.cui.isnot(None)).count()
-        synced = db.query(Firma).filter(Firma.mf_last_sync.isnot(None)).count()
-        with_ca = db.query(Firma).filter(Firma.mf_cifra_afaceri.isnot(None)).count()
-        bilanturi = db.query(Bilant).count()
-
-        # Firme ACTIVE ANAF — eligibile pentru sync MFinante
-        active_anaf = db.query(Firma).filter(
-            Firma.anaf_sync_status == 'found',
-            Firma.anaf_stare.isnot(None),
-            Firma.anaf_stare.ilike('%ACTIV%'),
-            ~Firma.anaf_stare.ilike('%INACTIV%'),
-            ~Firma.anaf_stare.ilike('%RADIERE%')
-        ).count()
-
-        # Active ANAF fără bilanț salvat încă
-        active_fara_bilant = db.query(Firma).filter(
-            Firma.anaf_sync_status == 'found',
-            Firma.anaf_stare.isnot(None),
-            Firma.anaf_stare.ilike('%ACTIV%'),
-            ~Firma.anaf_stare.ilike('%INACTIV%'),
-            ~Firma.anaf_stare.ilike('%RADIERE%'),
-            Firma.mf_last_sync.is_(None)
-        ).count()
-
-        return {
-            "total_firme": total,
-            "synced_mfinante": synced,
-            "not_synced": total - synced,
-            "active_anaf_eligible": active_anaf,
-            "active_fara_bilant": active_fara_bilant,
-            "with_cifra_afaceri": with_ca,
-            "total_bilanturi_istorice": bilanturi,
-            "session_status": {
-                "has_session": state.mfinante_session.get("jsessionid") is not None,
-                "session_valid": state.mfinante_sync_progress.get("session_valid", False)
-            },
-            "db_available": True
-        }
-    finally:
-        db.close()
+    import mongo_db as mdb
+    base = {"cui": {"$ne": None, "$exists": True, "$not": {"$in": [None, ""]}}}
+    active_q = {**base, "anaf_sync_status": "found",
+                "anaf_stare": {"$regex": "ACTIV", "$options": "i"},
+                "$nor": [{"anaf_stare": {"$regex": "INACTIV", "$options": "i"}},
+                         {"anaf_stare": {"$regex": "RADIERE", "$options": "i"}}]}
+    total = await mdb.firme_col.count_documents(base)
+    synced = await mdb.firme_col.count_documents({**base, "mf_last_sync": {"$ne": None}})
+    with_ca = await mdb.firme_col.count_documents({**base, "mf_cifra_afaceri": {"$ne": None}})
+    bilanturi = await mdb.bilanturi_col.count_documents({})
+    active_anaf = await mdb.firme_col.count_documents(active_q)
+    active_fara_bilant = await mdb.firme_col.count_documents({**active_q, "mf_last_sync": None})
+    return {
+        "total_firme": total,
+        "synced_mfinante": synced,
+        "not_synced": total - synced,
+        "active_anaf_eligible": active_anaf,
+        "active_fara_bilant": active_fara_bilant,
+        "with_cifra_afaceri": with_ca,
+        "total_bilanturi_istorice": bilanturi,
+        "session_status": {
+            "has_session": state.mfinante_session.get("jsessionid") is not None,
+            "session_valid": state.mfinante_sync_progress.get("session_valid", False)
+        },
+        "db_available": True
+    }
 
 
-# ─── Bilanturi ────────────────────────────────────────────────────────────────
+# ─── Bilanturi — MongoDB ──────────────────────────────────────────────────────
 
 @router.get("/bilanturi/firma/{firma_id}")
 async def get_bilanturi_firma(firma_id: int):
-    db = database.SessionLocal()
-    Bilant = database.Bilant
-    try:
-        bilanturi = db.query(Bilant).filter(Bilant.firma_id == firma_id).order_by(Bilant.an.desc()).all()
-        return [
-            {
-                "id": b.id, "an": b.an,
-                "cifra_afaceri_neta": b.cifra_afaceri_neta, "venituri_totale": b.venituri_totale,
-                "cheltuieli_totale": b.cheltuieli_totale, "profit_brut": b.profit_brut,
-                "pierdere_bruta": b.pierdere_bruta, "profit_net": b.profit_net,
-                "pierdere_neta": b.pierdere_neta, "numar_angajati": b.numar_angajati,
-                "active_imobilizate": b.active_imobilizate, "active_circulante": b.active_circulante,
-                "stocuri": b.stocuri, "creante": b.creante, "casa_conturi_banci": b.casa_conturi_banci,
-                "capitaluri_proprii": b.capitaluri_proprii, "capital_subscris": b.capital_subscris,
-                "datorii": b.datorii, "created_at": b.created_at.isoformat() if b.created_at else None
-            }
-            for b in bilanturi
-        ]
-    finally:
-        db.close()
+    import mongo_db as mdb
+    bilanturi = await mdb.bilanturi_col.find(
+        {"firma_id": firma_id}, {"_id": 0}
+    ).sort("an", -1).to_list(None)
+    return bilanturi
 
 
 @router.get("/bilanturi/cui/{cui}")
 async def get_bilanturi_by_cui(cui: str):
-    db = database.SessionLocal()
-    Firma = database.Firma
-    Bilant = database.Bilant
-    try:
-        firma = db.query(Firma).filter(Firma.cui == cui).first()
-        if not firma:
-            raise HTTPException(status_code=404, detail=f"Firma cu CUI {cui} nu a fost găsită")
-        bilanturi = db.query(Bilant).filter(Bilant.firma_id == firma.id).order_by(Bilant.an.desc()).all()
-        return {
-            "firma": {"id": firma.id, "cui": firma.cui, "denumire": firma.denumire,
-                      "mf_denumire": firma.mf_denumire, "mf_stare": firma.mf_stare,
-                      "mf_ani_disponibili": firma.mf_ani_disponibili},
-            "bilanturi": [
-                {"id": b.id, "an": b.an, "cifra_afaceri_neta": b.cifra_afaceri_neta,
-                 "venituri_totale": b.venituri_totale, "profit_net": b.profit_net,
-                 "pierdere_neta": b.pierdere_neta, "numar_angajati": b.numar_angajati,
-                 "capitaluri_proprii": b.capitaluri_proprii, "datorii": b.datorii}
-                for b in bilanturi
-            ]
-        }
-    finally:
-        db.close()
+    import mongo_db as mdb
+    firma = await mdb.get_firma_by_cui(cui)
+    if not firma:
+        raise HTTPException(status_code=404, detail=f"Firma cu CUI {cui} nu a fost găsită")
+    bilanturi = await mdb.bilanturi_col.find(
+        {"firma_id": firma["id"]}, {"_id": 0}
+    ).sort("an", -1).to_list(None)
+    return {
+        "firma": {"id": firma["id"], "cui": firma.get("cui"),
+                  "denumire": firma.get("denumire"),
+                  "mf_denumire": firma.get("mf_denumire"),
+                  "mf_stare": firma.get("mf_stare"),
+                  "mf_ani_disponibili": firma.get("mf_ani_disponibili")},
+        "bilanturi": bilanturi
+    }
 
 
 @router.get("/bilanturi/stats")
 async def get_bilanturi_stats():
-    db = database.SessionLocal()
-    Bilant = database.Bilant
-    try:
-        total = db.query(Bilant).count()
-        firme_cu_bilanturi = db.query(Bilant.firma_id).distinct().count()
-        by_year = db.query(Bilant.an, func.count(Bilant.id).label('count')).group_by(Bilant.an).order_by(Bilant.an.desc()).all()
-        return {
-            "total_bilanturi": total,
-            "firme_cu_bilanturi": firme_cu_bilanturi,
-            "by_year": [{"an": r.an, "count": r.count} for r in by_year]
-        }
-    finally:
-        db.close()
+    import mongo_db as mdb
+    from pymongo import DESCENDING
+    total = await mdb.bilanturi_col.count_documents({})
+    firme_cu = len(await mdb.bilanturi_col.distinct("firma_id"))
+    pipeline = [{"$group": {"_id": "$an", "count": {"$sum": 1}}},
+                {"$sort": {"_id": -1}}]
+    by_year = []
+    async for doc in mdb.bilanturi_col.aggregate(pipeline):
+        by_year.append({"an": doc["_id"], "count": doc["count"]})
+    return {"total_bilanturi": total, "firme_cu_bilanturi": firme_cu, "by_year": by_year}
