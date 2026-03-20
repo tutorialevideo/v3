@@ -435,7 +435,7 @@ async def get_liteparse_version():
 
 @router.post("/bpi/parse-batch")
 async def parse_bpi_batch(files: List[UploadFile] = File(...)):
-    """Parse multiple BPI PDFs at once."""
+    """Parse multiple BPI PDFs at once (up to 20 files)."""
     if len(files) > 20:
         raise HTTPException(status_code=400, detail="Maxim 20 fișiere simultan")
 
@@ -443,10 +443,33 @@ async def parse_bpi_batch(files: List[UploadFile] = File(...)):
     for file in files:
         try:
             pdf_bytes = await file.read()
-            text = extract_text_from_pdf(pdf_bytes)
-            records = extract_bpi_data(text, file.filename)
+            parsed = extract_text_with_liteparse(pdf_bytes)
+            text = parsed["text"]
+            pages = parsed["pages"]
+            records = extract_bpi_data(text, file.filename) if text.strip() else []
+
+            # Match to DB
+            if database.SessionLocal and records:
+                db = database.SessionLocal()
+                try:
+                    for record in records:
+                        record["firma_match"] = None
+                        Firma = database.Firma
+                        if record.get("cui"):
+                            firma = db.query(Firma).filter(Firma.cui == record["cui"]).first()
+                            if firma:
+                                record["firma_match"] = {"id": firma.id, "denumire": firma.denumire, "cui": firma.cui, "match_type": "cui_exact"}
+                        if not record["firma_match"] and record.get("denumire_firma"):
+                            from helpers import normalize_company_name
+                            firma = db.query(Firma).filter(Firma.denumire_normalized == normalize_company_name(record["denumire_firma"])).first()
+                            if firma:
+                                record["firma_match"] = {"id": firma.id, "denumire": firma.denumire, "cui": firma.cui, "match_type": "denumire_exact"}
+                finally:
+                    db.close()
+
             all_results.append({
                 "filename": file.filename,
+                "pages": pages,
                 "records_count": len(records),
                 "records": records,
                 "success": True
@@ -456,7 +479,8 @@ async def parse_bpi_batch(files: List[UploadFile] = File(...)):
                 "filename": file.filename,
                 "success": False,
                 "error": str(e),
-                "records": []
+                "records": [],
+                "records_count": 0
             })
 
     total_records = sum(r["records_count"] for r in all_results if r["success"])

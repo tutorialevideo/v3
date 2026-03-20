@@ -34,9 +34,14 @@ export default function BpiPage({ ctx }) {
       .catch(() => {});
   }, []);
 
-  const handleFile = (file) => {
-    if (file && file.name.toLowerCase().endsWith('.pdf')) {
-      parseBpiPdf(file);
+  const handleFile = (files) => {
+    const fileList = files instanceof FileList ? Array.from(files) : [files];
+    const pdfs = fileList.filter(f => f.name.toLowerCase().endsWith('.pdf'));
+    if (pdfs.length === 0) return;
+    if (pdfs.length === 1) {
+      parseBpiPdf(pdfs[0]);
+    } else {
+      handleFolderUpload(fileList);
     }
   };
 
@@ -86,14 +91,12 @@ export default function BpiPage({ ctx }) {
   const handleDrop = (e) => {
     e.preventDefault();
     setDragOver(false);
-    const items = e.dataTransfer.items;
-    // Check if a folder was dropped
-    if (items && items.length > 0 && items[0].webkitGetAsEntry?.()?.isDirectory) {
-      toast.info('Pentru foldere mari folosește butonul "Selectează Folder"');
-      return;
+    const files = e.dataTransfer.files;
+    if (files.length > 1) {
+      handleFolderUpload(files);
+    } else {
+      handleFile(files);
     }
-    const file = e.dataTransfer.files[0];
-    handleFile(file);
   };
 
   const tipBadgeStyle = (tip) => {
@@ -156,16 +159,17 @@ export default function BpiPage({ ctx }) {
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
                     <Upload size={32} style={{ color: 'var(--text-muted)' }} />
-                    <p style={{ fontWeight: 600, fontSize: '0.95rem' }}>Drag and Drop PDF BPI</p>
-                    <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>sau click pentru a selecta fisierul</p>
-                    <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Max 50MB · Doar PDF</p>
+                    <p style={{ fontWeight: 600, fontSize: '0.95rem' }}>Drag & Drop PDF-uri BPI</p>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>unul sau mai multe fișiere simultan</p>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>sau folosește butoanele de mai jos</p>
                   </div>
                 )}
               </div>
 
-              <input ref={fileInputRef} type="file" accept=".pdf" style={{ display: 'none' }}
+              <input ref={fileInputRef} type="file" accept=".pdf" multiple
+                style={{ display: 'none' }}
                 data-testid="bpi-file-input"
-                onChange={(e) => handleFile(e.target.files[0])} />
+                onChange={(e) => handleFile(e.target.files)} />
 
               {/* Hidden folder input */}
               <input ref={folderInputRef} type="file" accept=".pdf"
@@ -179,7 +183,7 @@ export default function BpiPage({ ctx }) {
                   variant="outline" style={{ flex: 1 }} data-testid="bpi-upload-btn">
                   {bpiParsing
                     ? <><Loader2 className="animate-spin" size={16} style={{ marginRight: 6 }} />Procesare...</>
-                    : <><Upload size={16} style={{ marginRight: 6 }} />Un fișier PDF</>
+                    : <><Upload size={16} style={{ marginRight: 6 }} />PDF-uri multiple</>
                   }
                 </Button>
                 <Button onClick={() => folderInputRef.current?.click()}
@@ -217,6 +221,60 @@ export default function BpiPage({ ctx }) {
               )}
             </CardContent>
           </Card>
+
+          {/* Batch results — all records from multi-file upload */}
+          {folderResults.length > 0 && folderUploadProgress?.processed === folderUploadProgress?.total && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="card-title" style={{fontSize:'1rem'}}>
+                  <CheckCircle2 size={18} style={{color:'#22c55e'}} />
+                  Rezultate batch — {folderResults.reduce((s, r) => s + (r.records_count || 0), 0)} înregistrări din {folderResults.length} fișiere
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea style={{height: Math.min(folderResults.reduce((s, r) => s + (r.records_count || 0), 0) * 80 + 100, 500) + 'px'}}>
+                  {folderResults.map((fileResult, fi) => (
+                    <div key={fi} style={{marginBottom:'12px'}}>
+                      <div style={{fontSize:'0.78rem', color:'var(--text-muted)', marginBottom:'4px', fontWeight:600}}>
+                        {fileResult.filename} — {fileResult.records_count || 0} înregistrări
+                      </div>
+                      {(fileResult.records || []).map((rec, ri) => (
+                        rec.cui || rec.dosar ? (
+                          <div key={ri} style={{
+                            padding:'8px 12px', marginBottom:'6px',
+                            border:'1px solid var(--border)', borderRadius:'6px',
+                            background:'var(--bg-secondary)', fontSize:'0.8rem'
+                          }}>
+                            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                              <div>
+                                <strong>{rec.denumire_firma || <em style={{opacity:0.5}}>Firma neidentificata</em>}</strong>
+                                {rec.cui && <span style={{marginLeft:8, color:'var(--primary)', fontSize:'0.75rem'}}>CUI: {rec.cui}</span>}
+                              </div>
+                              <div style={{display:'flex', gap:'4px', alignItems:'center'}}>
+                                {rec.tip_procedura && <Badge variant="outline" style={{fontSize:'0.65rem'}}>{rec.tip_procedura}</Badge>}
+                                {rec.firma_match && <Badge variant="outline" style={{fontSize:'0.65rem', background:'rgba(34,197,94,0.15)', color:'#22c55e'}}>in DB</Badge>}
+                              </div>
+                            </div>
+                            <div style={{color:'var(--text-muted)', marginTop:'2px', display:'flex', gap:'12px', flexWrap:'wrap'}}>
+                              {rec.tribunal && <span>{rec.tribunal}</span>}
+                              {rec.dosar && <span>Dosar: {rec.dosar}</span>}
+                              {rec.termen && <span>Termen: {rec.termen}</span>}
+                              {rec.administrator_judiciar && <span>Admin: {rec.administrator_judiciar}</span>}
+                            </div>
+                            {rec.firma_match && (
+                              <div style={{marginTop:'4px', fontSize:'0.72rem', color:'#22c55e'}}>
+                                Match DB: {rec.firma_match.denumire}
+                              </div>
+                            )}
+                          </div>
+                        ) : null
+                      ))}
+                    </div>
+                  ))}
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Folder Scan Card */}
           <Card>
