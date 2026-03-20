@@ -57,16 +57,15 @@ export default function DiagnosticsPage({ ctx }) {
     openCaptchaModal, testMfCui,
     loadDiagnostics, cleanupDuplicateDenumiri, cleanupDuplicateCui,
     cleanupOrphanedDosare, optimizeDatabase, migrateSchema, createIndexes,
-    reconnectDatabase,
-    formatDate, formatBytes,
+    reconnectDatabase, formatDate, formatBytes,
     localitatiStats, localitatiLoading, normalizeProgress,
     loadLocalitatiStats, importLocalitati, startNormalizare,
-    // MFirme crawler
     mfirmeCrawlStatus, mfirmeCrawlLogs, mfirmeCrawling,
     startMfirmeCrawl, stopMfirmeCrawl, clearMfirmeCheckpoint,
-    // Supabase sync
     supabaseStatus, supabaseSyncing, supabaseLogs,
     loadSupabaseStatus, startSupabaseSync, stopSupabaseSync, initSupabaseSchema,
+    atlasStatus, atlasSyncing, atlasLogs,
+    loadAtlasStatus, startAtlasSync, stopAtlasSync,
   } = ctx;
 
   return (
@@ -671,6 +670,101 @@ export default function DiagnosticsPage({ ctx }) {
                         {supabaseLogs.map((line,i)=>(
                           <div key={i} className="download-log-line"
                             style={{color:line.includes('❌')?'#ef4444':line.includes('✅')?'#3ecf8e':line.includes('⚠️')?'#eab308':undefined}}>
+                            {line}
+                          </div>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* MongoDB Atlas Sync Card */}
+            <Card data-testid="atlas-sync-card">
+              <CardHeader>
+                <CardTitle className="card-title">
+                  <Database size={20} style={{color:'#00ED64'}} />
+                  Sync MongoDB Atlas
+                </CardTitle>
+                <CardDescription>
+                  Trimite datele finale în Atlas Cloud. Local = procesare, Atlas = producție curată.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {/* Connection status */}
+                <div style={{
+                  display:'flex', alignItems:'center', gap:'8px', padding:'10px 14px',
+                  background: atlasStatus?.atlas_connected ? 'rgba(0,237,100,0.08)' : 'rgba(239,68,68,0.08)',
+                  border: `1px solid ${atlasStatus?.atlas_connected ? 'rgba(0,237,100,0.3)' : 'rgba(239,68,68,0.3)'}`,
+                  borderRadius:'8px', marginBottom:'12px', fontSize:'0.82rem'
+                }}>
+                  <div style={{width:8,height:8,borderRadius:'50%',background:atlasStatus?.atlas_connected?'#00ED64':'#ef4444',flexShrink:0}}/>
+                  <strong>{atlasStatus?.atlas_connected ? 'Atlas conectat' : 'Atlas deconectat'}</strong>
+                  {atlasStatus?.atlas_error && <span style={{color:'#ef4444',marginLeft:8,fontSize:'0.75rem'}}>{atlasStatus.atlas_error.slice(0,60)}</span>}
+                  <button onClick={loadAtlasStatus} style={{marginLeft:'auto',background:'none',border:'none',cursor:'pointer',color:'var(--text-muted)',fontSize:'0.75rem'}}>
+                    Reîncarcă
+                  </button>
+                </div>
+
+                {atlasStatus?.atlas_connected && (
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:'12px'}}>
+                    <div style={{background:'var(--bg-secondary)',borderRadius:'8px',padding:'10px',border:'1px solid var(--border)'}}>
+                      <div style={{fontSize:'0.7rem',color:'var(--text-muted)',marginBottom:'4px'}}>LOCAL (sursă)</div>
+                      <div style={{fontSize:'0.82rem'}}>
+                        <div>Firme total: <strong>{atlasStatus.local_counts?.firme_total?.toLocaleString()}</strong></div>
+                        <div style={{color:'#22c55e'}}>Active ANAF: <strong>{atlasStatus.local_counts?.firme_active?.toLocaleString()}</strong></div>
+                        <div>Bilanțuri: <strong>{atlasStatus.local_counts?.bilanturi?.toLocaleString()}</strong></div>
+                      </div>
+                    </div>
+                    <div style={{background:'rgba(0,237,100,0.05)',borderRadius:'8px',padding:'10px',border:'1px solid rgba(0,237,100,0.2)'}}>
+                      <div style={{fontSize:'0.7rem',color:'var(--text-muted)',marginBottom:'4px'}}>ATLAS (destinație)</div>
+                      <div style={{fontSize:'0.82rem'}}>
+                        <div>Firme: <strong>{atlasStatus.atlas_counts?.firme?.toLocaleString()??'-'}</strong></div>
+                        <div>Bilanțuri: <strong>{atlasStatus.atlas_counts?.bilanturi?.toLocaleString()??'-'}</strong></div>
+                        <div>Dosare: <strong>{atlasStatus.atlas_counts?.dosare?.toLocaleString()??'-'}</strong></div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {atlasStatus?.atlas_connected && (
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:'8px'}}>
+                    <Button onClick={()=>startAtlasSync({onlyActive:true,cleanFirst:false})} disabled={atlasSyncing}
+                      style={{background:'#00ED64',color:'#000',fontWeight:700}} data-testid="atlas-sync-btn">
+                      {atlasSyncing?<><Loader2 className="animate-spin" size={14} style={{marginRight:6}}/>Sync în curs...</>:<><RefreshCw size={14} style={{marginRight:6}}/>Sync Incremental</>}
+                    </Button>
+                    <Button onClick={()=>startAtlasSync({onlyActive:true,cleanFirst:true})} disabled={atlasSyncing} variant="outline">
+                      <RefreshCw size={14} style={{marginRight:6}}/>Sync Complet (reset)
+                    </Button>
+                  </div>
+                )}
+                {atlasSyncing && <Button variant="destructive" size="sm" onClick={stopAtlasSync} style={{marginBottom:'8px'}}><XCircle size={14} style={{marginRight:4}}/>Stop</Button>}
+
+                {atlasStatus?.progress?.total > 0 && (
+                  <div style={{marginBottom:'8px'}}>
+                    <div style={{display:'flex',justifyContent:'space-between',fontSize:'0.75rem',color:'var(--text-muted)',marginBottom:'3px'}}>
+                      <span>{atlasStatus.progress.phase} — {atlasStatus.progress.processed?.toLocaleString()}/{atlasStatus.progress.total?.toLocaleString()}</span>
+                      <span style={{color:'#00ED64'}}>{atlasStatus.progress.total>0?`${(atlasStatus.progress.processed/atlasStatus.progress.total*100).toFixed(0)}%`:''}</span>
+                    </div>
+                    <div style={{height:'5px',background:'var(--border)',borderRadius:'3px',overflow:'hidden'}}>
+                      <div style={{height:'100%',background:'#00ED64',transition:'width 0.5s',width:`${atlasStatus.progress.total>0?Math.min(atlasStatus.progress.processed/atlasStatus.progress.total*100,100):0}%`}}/>
+                    </div>
+                    <div style={{fontSize:'0.72rem',color:'var(--text-muted)',marginTop:'3px',display:'flex',gap:'12px'}}>
+                      <span style={{color:'#00ED64'}}>Upserted: {atlasStatus.progress.upserted?.toLocaleString()}</span>
+                      {atlasStatus.progress.errors>0&&<span style={{color:'#ef4444'}}>Erori: {atlasStatus.progress.errors}</span>}
+                    </div>
+                  </div>
+                )}
+
+                {atlasLogs.length > 0 && (
+                  <div className="download-log-panel">
+                    <div className="download-log-header"><Activity size={14}/><span>Log sync Atlas</span></div>
+                    <ScrollArea className="download-log-scroll">
+                      <div className="download-log-content">
+                        {atlasLogs.map((line,i)=>(
+                          <div key={i} className="download-log-line"
+                            style={{color:line.includes('❌')?'#ef4444':line.includes('✅')?'#00ED64':line.includes('⚠️')?'#eab308':undefined}}>
                             {line}
                           </div>
                         ))}

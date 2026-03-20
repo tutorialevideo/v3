@@ -166,8 +166,10 @@ function App() {
   const [syncDosareCategorie, setSyncDosareCategorie] = useState("Litigiicuprofesionistii");
   const [syncDosareDateStart, setSyncDosareDateStart] = useState("");
   const [syncDosareDateEnd, setSyncDosareDateEnd] = useState("");
-  // Supabase sync
-  const [supabaseStatus, setSupabaseStatus] = useState(null);
+  // Atlas sync
+  const [atlasStatus, setAtlasStatus] = useState(null);
+  const [atlasSyncing, setAtlasSyncing] = useState(false);
+  const [atlasLogs, setAtlasLogs] = useState([]);
   const [supabaseSyncing, setSupabaseSyncing] = useState(false);
   const [supabaseLogs, setSupabaseLogs] = useState([]);
   // MFirme crawler
@@ -757,6 +759,7 @@ function App() {
       loadDiagnostics();
       loadLocalitatiStats();
       loadSupabaseStatus();
+      loadAtlasStatus();
     }
   }, [activeTab, loadDiagnostics]);
 
@@ -970,20 +973,52 @@ function App() {
   };
 
   const stopSupabaseSync = async () => {
-    try {
-      await axios.post(`${API}/supabase/sync-stop`);
-      toast.info('Stop sync Supabase');
-    } catch (e) {}
+    try { await axios.post(`${API}/supabase/sync-stop`); toast.info('Stop sync Supabase'); } catch (e) {}
   };
 
   const initSupabaseSchema = async () => {
     try {
       const res = await axios.post(`${API}/supabase/init-schema`);
-      toast.success(res.data.message);
-      loadSupabaseStatus();
+      toast.success(res.data.message); loadSupabaseStatus();
+    } catch (error) { toast.error(error.response?.data?.detail || 'Eroare la creare schema'); }
+  };
+
+  // Atlas sync
+  const loadAtlasStatus = async () => {
+    try {
+      const res = await axios.get(`${API}/atlas/status`);
+      setAtlasStatus(res.data);
+      setAtlasLogs(res.data.logs || []);
+    } catch (e) {}
+  };
+
+  const startAtlasSync = async ({ onlyActive = true, cleanFirst = false, syncDosare = false } = {}) => {
+    setAtlasSyncing(true);
+    setAtlasLogs([]);
+    try {
+      await axios.post(`${API}/atlas/sync?only_active=${onlyActive}&clean_first=${cleanFirst}&sync_dosare=${syncDosare}&sync_bilanturi=true`);
+      toast.success('Sync Atlas pornit!');
+      const pollInterval = setInterval(async () => {
+        try {
+          const res = await axios.get(`${API}/atlas/sync-progress`);
+          setAtlasStatus(prev => ({ ...prev, progress: res.data, sync_active: res.data.active }));
+          setAtlasLogs(res.data.logs || []);
+          if (!res.data.active) {
+            clearInterval(pollInterval);
+            setAtlasSyncing(false);
+            loadAtlasStatus();
+            toast.success(`Sync Atlas finalizat: ${res.data.upserted?.toLocaleString()} documente`);
+          }
+        } catch (e) { clearInterval(pollInterval); setAtlasSyncing(false); }
+      }, 3000);
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Eroare la creare schema');
+      toast.error(error.response?.data?.detail || 'Eroare sync Atlas');
+      setAtlasSyncing(false);
     }
+  };
+
+  const stopAtlasSync = async () => {
+    try { await axios.post(`${API}/atlas/sync-stop`); toast.info('Stop sync Atlas'); } catch (e) {}
   };
 
   const cleanupDuplicateDenumiri = async () => {
@@ -1537,6 +1572,8 @@ function App() {
     // Supabase sync
     supabaseStatus, supabaseSyncing, supabaseLogs,
     loadSupabaseStatus, startSupabaseSync, stopSupabaseSync, initSupabaseSchema,
+    atlasStatus, atlasSyncing, atlasLogs,
+    loadAtlasStatus, startAtlasSync, stopAtlasSync,
     syncDosareProgress, syncDosareLogs, syncDosareLoading,
     syncDosareLimit, setSyncDosareLimit,
     syncDosareCategorie, setSyncDosareCategorie,

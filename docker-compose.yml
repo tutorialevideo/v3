@@ -29,6 +29,7 @@ services:
       - MONGO_URL=mongodb://${MONGO_ROOT_USER}:${MONGO_ROOT_PASSWORD}@mongodb:27017/
       - DB_NAME=justportal
       - SUPABASE_URL=${SUPABASE_URL}
+      - ATLAS_MONGO_URL=${ATLAS_MONGO_URL}
       - CORS_ORIGINS=*
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - EMERGENT_LLM_KEY=${EMERGENT_LLM_KEY}

@@ -19,6 +19,7 @@ from routes.localitati import router as localitati_router
 from routes.bpi import router as bpi_router
 from routes.crawler import router as crawler_router
 from routes.supabase_sync import router as supabase_router
+from routes.atlas_sync import router as atlas_router
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -53,6 +54,7 @@ app.include_router(localitati_router, prefix=PREFIX)
 app.include_router(bpi_router, prefix=PREFIX)
 app.include_router(crawler_router, prefix=PREFIX)
 app.include_router(supabase_router, prefix=PREFIX)
+app.include_router(atlas_router, prefix=PREFIX)
 
 
 # ─── Lifecycle ────────────────────────────────────────────────────────────────
