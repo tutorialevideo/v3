@@ -250,30 +250,42 @@ def _extract_single_record(text: str) -> dict:
             record["dosar"] = m.group(1)
 
     # ── Judecător sindic ──────────────────────────────────────────────────────
-    m = re.search(r'(?:judecător?\s+sindic|judecătorul?\s+sindic)\s*[:·]?\s*([A-ZĂÂÎȘȚ][a-zA-ZăâîșțĂÂÎȘȚ\s\-\.]{5,50}?)(?:\s*[,;\.\n])', text, re.IGNORECASE)
+    m = re.search(
+        r'(?:judec[aă]tor(?:ul?)?\s+sindic|judecatorul?\s+sindic)\s*[:·]?\s*'
+        r'(?:dr\.?\s*)?([A-Za-zĂâÎîȘșȚțÂăîșț][^\n,;]{3,50}?)(?:\s*[,;\.\n])',
+        text, re.IGNORECASE
+    )
     if m:
         record["judecator_sindic"] = _clean(m.group(1))
 
     # ── Administrator judiciar / Lichidator ───────────────────────────────────
-    m = re.search(r'(?:administrator(?:ul)?\s+judiciar|practicianul?\s+în\s+insolvență)\s*[:·]?\s*([A-ZĂÂÎȘȚ][^\n,;]{5,80}?)(?:\s*[,;\.\n])', text, re.IGNORECASE)
+    m = re.search(
+        r'(?:administrator(?:ul?)?\s+judiciar|practician(?:ul?)?\s+[iî]n\s+insolven[tț][aă]?)\s*[:·]?\s*'
+        r'([A-ZĂÂÎȘȚ][^\n,;]{3,80}?)(?:\s*\n)',
+        text, re.IGNORECASE
+    )
     if m:
         record["administrator_judiciar"] = _clean(m.group(1))
 
-    m = re.search(r'lichidatorul?\s+(?:judiciar\s*)?[:·]?\s*([A-ZĂÂÎȘȚ][^\n,;]{5,80}?)(?:\s*[,;\.\n])', text, re.IGNORECASE)
+    m = re.search(
+        r'lichidator(?:ul?)?\s+(?:judiciar\s*)?[:·]?\s*([A-ZĂÂÎȘȚ][^\n,;]{3,80}?)(?:\s*\n)',
+        text, re.IGNORECASE
+    )
     if m:
         record["lichidator"] = _clean(m.group(1))
 
-    # ── Tip procedură ─────────────────────────────────────────────────────────
+    # ── Tip procedură — match și fără diacritice (din PDF scan/LiteParse) ─────
     tip_patterns = [
-        (r'\binsolvența?\b', 'Insolvență'),
-        (r'\bfaliment(?:ul)?\b', 'Faliment'),
-        (r'\breorganizare?\s+judiciar[ăa]\b', 'Reorganizare judiciară'),
+        (r'\binsolven(?:t[aăei]|ța)\b', 'Insolvență'),
+        (r'\bfaliment(?:ul(?:ui)?)?\b', 'Faliment'),
+        (r'\breorganizar[ei]\s+judiciar[aă]\b', 'Reorganizare judiciară'),
         (r'\bconcordat\s+preventiv\b', 'Concordat preventiv'),
-        (r'\blichidare\b', 'Lichidare'),
-        (r'\bdeschiderea?\s+procedurii?\b', 'Deschidere procedură'),
-        (r'\bînchiderea?\s+procedurii?\b', 'Închidere procedură'),
+        (r'\blichid(?:are|arii|ator)\b', 'Lichidare'),
+        (r'\bdeschider(?:ea|ii)\s+procedurii?\b', 'Deschidere procedură'),
+        (r'\bînchider(?:ea|ii)\s+procedurii?\b', 'Închidere procedură'),
         (r'\btabel(?:ul)?\s+(?:creditor|definitiv|preliminar)\b', 'Tabel creditori'),
-        (r'\badunarea?\s+creditor(?:ilor)?\b', 'Adunare creditori'),
+        (r'\badunare[ai]\s+creditor(?:ilor)?\b', 'Adunare creditori'),
+        (r'\bvânzare[ai]\b', 'Vânzare active'),
     ]
     for pat, tip in tip_patterns:
         if re.search(pat, text, re.IGNORECASE):
@@ -281,24 +293,43 @@ def _extract_single_record(text: str) -> dict:
             break
 
     # ── Data publicare ────────────────────────────────────────────────────────
-    m = re.search(r'(?:data\s+publicării?|publicat(?:\s+azi)?\s+la\s+data|publicare)\s*[:·]?\s*(\d{1,2}[./\-]\d{1,2}[./\-]\d{4})', text, re.IGNORECASE)
+    m = re.search(
+        r'(?:data\s+public[aă]rii?|publicat(?:\s+azi)?\s+la\s+data|publicarii?)\s*[:·]?\s*'
+        r'(\d{1,2}[./\-]\d{1,2}[./\-]\d{4})',
+        text, re.IGNORECASE
+    )
     if m:
         record["data_publicare"] = m.group(1)
     else:
-        # Try to find any date
         dates = re.findall(r'\b(\d{1,2}[./\-]\d{1,2}[./\-]20\d{2})\b', text)
         if dates:
             record["data_publicare"] = dates[0]
 
-    # ── Termen ────────────────────────────────────────────────────────────────
-    m = re.search(r'(?:termenul?|termen\s+de\s+judecată|ora\s+fixată)\s*[:·]?\s*(\d{1,2}[./\-]\d{1,2}[./\-]\d{4}(?:\s+ora\s+\d{1,2}[:h]\d{2})?)', text, re.IGNORECASE)
+    # ── Termen — match și fără diacritice ─────────────────────────────────────
+    m = re.search(
+        r'(?:termenul?(?:\s+de\s+judecat[aă])?|termen\s+de\s+judecat[aă]|ora\s+fixat[aă])\s*[:·]?\s*'
+        r'(\d{1,2}[./\-]\d{1,2}[./\-]\d{4}(?:\s+ora\s+\d{1,2}[:h]\d{2})?)',
+        text, re.IGNORECASE
+    )
     if m:
         record["termen"] = m.group(1)
 
     # ── Adresă ────────────────────────────────────────────────────────────────
-    m = re.search(r'(?:cu\s+sediul|adresa\s+sediu(?:lui)?)\s*(?:social)?[^,\n]*,?\s*([A-ZĂÂÎȘȚ][^,\n]{10,100})', text, re.IGNORECASE)
+    m = re.search(
+        r'(?:cu\s+sediul|sediul\s+social|adresa?\s+sediu(?:lui)?)\s*[:·]?\s*([^\n]{10,120})',
+        text, re.IGNORECASE
+    )
     if m:
         record["adresa"] = _clean(m.group(1))
+
+    # ── Tribunal din linia de dosar (ex: "Dosar nr. X - Tribunalul Cluj") ─────
+    if not record["tribunal"]:
+        m = re.search(
+            r'Dosar\s+nr\.?\s*[\d/]+\s*[-–]\s*(Tribunal(?:ul)?\s+[A-Za-zĂâÎîȘșȚțÂăîșț\s]+?)(?:\n|$)',
+            text, re.IGNORECASE
+        )
+        if m:
+            record["tribunal"] = _clean(m.group(1))
 
     return record
 
