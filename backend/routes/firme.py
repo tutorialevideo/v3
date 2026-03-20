@@ -8,7 +8,7 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 import mongo_db as mdb
@@ -150,8 +150,38 @@ async def get_import_progress():
 # ─── CSV import ───────────────────────────────────────────────────────────────
 
 @router.post("/db/import-cui")
-async def import_cui_csv(file: UploadFile = File(...), has_header: bool = False, only_companies: bool = True):
+async def import_cui_csv(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    has_header: bool = False,
+    only_companies: bool = True
+):
+    """Upload CSV and process in background — no timeout issues for large files."""
+    if state.import_progress.get("active"):
+        raise HTTPException(status_code=400, detail="Import deja în curs")
+
     content = await file.read()
+    filename = file.filename
+
+    # Start background processing immediately — return to client
+    state.import_progress.update({
+        "active": True, "filename": filename,
+        "total_rows": 0, "processed": 0,
+        "created_new": 0, "updated": 0,
+        "skipped_not_company": 0, "skipped_no_cui": 0,
+        "last_update": datetime.utcnow().isoformat()
+    })
+
+    background_tasks.add_task(_process_import_csv, content, filename, has_header, only_companies)
+
+    return {
+        "message": f"Import pornit pentru {filename} ({len(content):,} bytes). Urmărește progresul.",
+        "status": "running",
+        "poll_url": "/api/db/import-progress"
+    }
+
+
+async def _process_import_csv(content: bytes, filename: str, has_header: bool, only_companies: bool):
     try:
         decoded = content.decode('utf-8')
     except UnicodeDecodeError:
@@ -162,7 +192,8 @@ async def import_cui_csv(file: UploadFile = File(...), has_header: bool = False,
 
     lines = [line for line in decoded.strip().split('\n') if line.strip()]
     if not lines:
-        raise HTTPException(status_code=400, detail="File is empty")
+        state.import_progress["active"] = False
+        return {"error": "File is empty"}
 
     first_line = lines[0]
     delimiter = '^'
@@ -175,7 +206,7 @@ async def import_cui_csv(file: UploadFile = File(...), has_header: bool = False,
 
     start_row = 1 if has_header else 0
     state.import_progress.update({
-        "active": True, "filename": file.filename,
+        "active": True, "filename": filename,
         "total_rows": len(lines) - start_row, "processed": 0,
         "created_new": 0, "updated": 0, "skipped_not_company": 0,
         "skipped_no_cui": 0, "last_update": datetime.utcnow().isoformat()

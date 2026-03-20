@@ -454,26 +454,63 @@ function App() {
         
         const res = await axios.post(`${API}/db/import-cui`, formData, {
           headers: { 'Content-Type': 'multipart/form-data' },
-          timeout: 1800000 // 30 minute timeout pentru fișiere foarte mari
+          timeout: 60000 // 60s — only for upload, processing is background
         });
-        
-        clearInterval(progressInterval);
-        
-        // Accumulate totals
-        grandTotal.total_rows += res.data.total_rows || 0;
-        grandTotal.processed += res.data.processed || 0;
-        grandTotal.created_new += res.data.created_new || 0;
-        grandTotal.updated += res.data.updated || 0;
-        grandTotal.skipped_not_company += res.data.skipped_not_company || 0;
-        grandTotal.skipped_no_cui += res.data.skipped_no_cui || 0;
-        
-        setImportLog(prev => [
-          ...prev.filter(line => !line.includes('⏳ Procesat:')),
-          `[${new Date().toLocaleTimeString()}]    ✅ ${file.name} - GATA!`,
-          `[${new Date().toLocaleTimeString()}]       Rânduri: ${res.data.total_rows?.toLocaleString()}`,
-          `[${new Date().toLocaleTimeString()}]       Create: ${res.data.created_new?.toLocaleString()} | Actualizate: ${res.data.updated?.toLocaleString()}`,
-          `[${new Date().toLocaleTimeString()}]       Sărite (PFA/II): ${res.data.skipped_not_company?.toLocaleString()}`
-        ]);
+
+        // If background processing started, poll until complete
+        if (res.data.status === 'running') {
+          setImportLog(prev => [...prev,
+            `[${new Date().toLocaleTimeString()}]    ⬆️ Fișier uploadat! Se procesează în background...`
+          ]);
+
+          await new Promise(resolve => {
+            const pollInterval = setInterval(async () => {
+              try {
+                const prog = await axios.get(`${API}/db/import-progress`);
+                const d = prog.data;
+                if (d && d.processed > 0) {
+                  setImportLog(prev => {
+                    const line = `[${new Date().toLocaleTimeString()}]    ⏳ Procesat: ${d.processed.toLocaleString()} / ${d.total_rows.toLocaleString()} | Create: ${d.created_new.toLocaleString()}`;
+                    if (prev[prev.length-1]?.includes('⏳')) return [...prev.slice(0,-1), line];
+                    return [...prev, line];
+                  });
+                }
+                if (!d.active) {
+                  clearInterval(pollInterval);
+                  grandTotal.total_rows += d.total_rows || 0;
+                  grandTotal.processed += d.processed || 0;
+                  grandTotal.created_new += d.created_new || 0;
+                  grandTotal.updated += d.updated || 0;
+                  grandTotal.skipped_not_company += d.skipped_not_company || 0;
+                  grandTotal.skipped_no_cui += d.skipped_no_cui || 0;
+                  setImportLog(prev => [
+                    ...prev.filter(l => !l.includes('⏳')),
+                    `[${new Date().toLocaleTimeString()}]    ✅ ${file.name} - GATA!`,
+                    `[${new Date().toLocaleTimeString()}]       Rânduri: ${d.total_rows?.toLocaleString()} | Create: ${d.created_new?.toLocaleString()} | Actualizate: ${d.updated?.toLocaleString()}`,
+                    `[${new Date().toLocaleTimeString()}]       Sărite (PFA/II): ${d.skipped_not_company?.toLocaleString()}`
+                  ]);
+                  resolve();
+                }
+              } catch (e) {}
+            }, 2000);
+          });
+        } else {
+          // Sync response (small file)
+          clearInterval(progressInterval);
+          grandTotal.total_rows += res.data.total_rows || 0;
+          grandTotal.processed += res.data.processed || 0;
+          grandTotal.created_new += res.data.created_new || 0;
+          grandTotal.updated += res.data.updated || 0;
+          grandTotal.skipped_not_company += res.data.skipped_not_company || 0;
+          grandTotal.skipped_no_cui += res.data.skipped_no_cui || 0;
+          setImportLog(prev => [
+            ...prev.filter(line => !line.includes('⏳ Procesat:')),
+            `[${new Date().toLocaleTimeString()}]    ✅ ${file.name} - GATA!`,
+            `[${new Date().toLocaleTimeString()}]       Rânduri: ${res.data.total_rows?.toLocaleString()}`,
+            `[${new Date().toLocaleTimeString()}]       Create: ${res.data.created_new?.toLocaleString()} | Actualizate: ${res.data.updated?.toLocaleString()}`,
+            `[${new Date().toLocaleTimeString()}]       Sărite (PFA/II): ${res.data.skipped_not_company?.toLocaleString()}`
+          ]);
+        }
         
       } catch (error) {
         const errorMsg = error.response?.data?.detail || error.message || "Eroare necunoscută";
