@@ -25,7 +25,10 @@ import state
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+SUPABASE_URL = os.environ.get(
+    "SUPABASE_URL",
+    "postgresql://postgres.bssqxfbiqydghdbkieey:kygzeFjPPa1pYcBs@aws-1-eu-west-1.pooler.supabase.com:5432/postgres"
+)
 
 # ─── Supabase sync state ──────────────────────────────────────────────────────
 supabase_sync_progress = {
@@ -49,29 +52,12 @@ def add_sync_log(message: str):
         supabase_sync_progress["logs"] = supabase_sync_progress["logs"][-200:]
 
 
-def _resolve_ipv4(hostname: str) -> str:
-    """Force IPv4 resolution — avoids Docker IPv6 issues."""
-    import socket
-    try:
-        results = socket.getaddrinfo(hostname, None, socket.AF_INET)
-        if results:
-            return results[0][4][0]
-    except Exception:
-        pass
-    return hostname
-
-
 def get_supabase_engine():
-    """Create SQLAlchemy engine for Supabase with forced IPv4."""
+    """Create SQLAlchemy engine for Supabase pooler (IPv4, no DNS issues)."""
     if not SUPABASE_URL:
-        raise ValueError("SUPABASE_URL nu este configurat în .env")
+        raise ValueError("SUPABASE_URL nu este configurat")
 
-    # Parse hostname from URL
-    # Format: postgresql://user:pass@host:port/db
-    import re
     url_clean = re.sub(r'\?.*$', '', SUPABASE_URL.strip())
-    match = re.search(r'@([^:/]+)', url_clean)
-    hostname = match.group(1) if match else None
 
     connect_args = {
         "connect_timeout": 15,
@@ -79,13 +65,7 @@ def get_supabase_engine():
         "gssencmode": "disable",
     }
 
-    # Force IPv4: resolve hostname and pass as hostaddr
-    # psycopg2 uses 'host' for SSL cert validation, 'hostaddr' for actual TCP connection
-    if hostname:
-        ipv4 = _resolve_ipv4(hostname)
-        if ipv4 != hostname:  # resolved successfully
-            connect_args["hostaddr"] = ipv4
-            logger.info(f"[SUPABASE] Forced IPv4: {hostname} → {ipv4}")
+    logger.info(f"[SUPABASE] Connecting via pooler: {url_clean.split('@')[1] if '@' in url_clean else url_clean}")
 
     return create_engine(
         url_clean,

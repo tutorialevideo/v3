@@ -26,7 +26,7 @@ POSTGRES_URL = os.environ.get('POSTGRES_URL', '').strip()
 SUPABASE_URL = os.environ.get('SUPABASE_URL', '').strip()
 
 # Priority: POSTGRES_URL > SUPABASE_URL > Supabase fallback > local
-_SUPABASE_FALLBACK = 'postgresql://postgres:kygzeFjPPa1pYcBs@db.bssqxfbiqydghdbkieey.supabase.co:5432/postgres'
+_SUPABASE_FALLBACK = 'postgresql://postgres.bssqxfbiqydghdbkieey:kygzeFjPPa1pYcBs@aws-1-eu-west-1.pooler.supabase.com:5432/postgres'
 
 if not POSTGRES_URL:
     if SUPABASE_URL:
