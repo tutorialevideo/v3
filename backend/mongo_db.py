@@ -25,6 +25,7 @@ timeline_col = db['timeline_events']
 judete_col = db['judete']
 localitati_col = db['localitati']
 counters_col = db['counters']
+counters_col = db['counters']
 
 
 # ─── Auto-increment IDs ───────────────────────────────────────────────────────

@@ -377,34 +377,18 @@ async def parse_bpi_pdf(file: UploadFile = File(...), ocr: bool = True):
     logger.info(f"[BPI] Extracted {len(records)} records from {file.filename}")
 
     # Match records to DB firms
-    if database.SessionLocal:
-        db = database.SessionLocal()
-        try:
-            for record in records:
-                record["firma_match"] = None
-                Firma = database.Firma
-                if record.get("cui"):
-                    firma = db.query(Firma).filter(Firma.cui == record["cui"]).first()
-                    if firma:
-                        record["firma_match"] = {
-                            "id": firma.id,
-                            "denumire": firma.denumire,
-                            "cui": firma.cui,
-                            "match_type": "cui_exact"
-                        }
-                if not record["firma_match"] and record.get("denumire_firma"):
-                    from helpers import normalize_company_name
-                    norm = normalize_company_name(record["denumire_firma"])
-                    firma = db.query(Firma).filter(Firma.denumire_normalized == norm).first()
-                    if firma:
-                        record["firma_match"] = {
-                            "id": firma.id,
-                            "denumire": firma.denumire,
-                            "cui": firma.cui,
-                            "match_type": "denumire_exact"
-                        }
-        finally:
-            db.close()
+    import mongo_db as mdb
+    for record in records:
+        record["firma_match"] = None
+        if record.get("cui"):
+            firma = await mdb.get_firma_by_cui(record["cui"])
+            if firma:
+                record["firma_match"] = {"id": firma["id"], "denumire": firma.get("denumire"), "cui": firma.get("cui"), "match_type": "cui_exact"}
+        if not record["firma_match"] and record.get("denumire_firma"):
+            from helpers import normalize_company_name
+            firma = await mdb.get_firma_by_denumire_norm(normalize_company_name(record["denumire_firma"]))
+            if firma:
+                record["firma_match"] = {"id": firma["id"], "denumire": firma.get("denumire"), "cui": firma.get("cui"), "match_type": "denumire_exact"}
 
     return {
         "success": True,
@@ -448,24 +432,19 @@ async def parse_bpi_batch(files: List[UploadFile] = File(...)):
             pages = parsed["pages"]
             records = extract_bpi_data(text, file.filename) if text.strip() else []
 
-            # Match to DB
-            if database.SessionLocal and records:
-                db = database.SessionLocal()
-                try:
-                    for record in records:
-                        record["firma_match"] = None
-                        Firma = database.Firma
-                        if record.get("cui"):
-                            firma = db.query(Firma).filter(Firma.cui == record["cui"]).first()
-                            if firma:
-                                record["firma_match"] = {"id": firma.id, "denumire": firma.denumire, "cui": firma.cui, "match_type": "cui_exact"}
-                        if not record["firma_match"] and record.get("denumire_firma"):
-                            from helpers import normalize_company_name
-                            firma = db.query(Firma).filter(Firma.denumire_normalized == normalize_company_name(record["denumire_firma"])).first()
-                            if firma:
-                                record["firma_match"] = {"id": firma.id, "denumire": firma.denumire, "cui": firma.cui, "match_type": "denumire_exact"}
-                finally:
-                    db.close()
+            # Match to DB — MongoDB
+            import mongo_db as mdb
+            for record in records:
+                record["firma_match"] = None
+                if record.get("cui"):
+                    firma = await mdb.get_firma_by_cui(record["cui"])
+                    if firma:
+                        record["firma_match"] = {"id": firma["id"], "denumire": firma.get("denumire"), "cui": firma.get("cui"), "match_type": "cui_exact"}
+                if not record["firma_match"] and record.get("denumire_firma"):
+                    from helpers import normalize_company_name
+                    firma = await mdb.get_firma_by_denumire_norm(normalize_company_name(record["denumire_firma"]))
+                    if firma:
+                        record["firma_match"] = {"id": firma["id"], "denumire": firma.get("denumire"), "cui": firma.get("cui"), "match_type": "denumire_exact"}
 
             all_results.append({
                 "filename": file.filename,
@@ -665,19 +644,12 @@ async def _run_folder_scan(scan_dir: Path, skip_processed: bool, auto_save: bool
                             record["source_file"] = str(pdf_path)
                             record["source_folder"] = str(scan_dir)
                             record["saved_at"] = datetime.utcnow().isoformat()
-                            # Match to DB firm
                             record["firma_match"] = None
-                            if database.SessionLocal:
-                                db = database.SessionLocal()
-                                try:
-                                    Firma = database.Firma
-                                    if record.get("cui"):
-                                        f = db.query(Firma).filter(Firma.cui == record["cui"]).first()
-                                        if f:
-                                            record["firma_match"] = {"id": f.id, "denumire": f.denumire, "cui": f.cui}
-                                finally:
-                                    db.close()
-                            # Save to MongoDB
+                            if record.get("cui"):
+                                import mongo_db as mdb
+                                f = await mdb.get_firma_by_cui(record["cui"])
+                                if f:
+                                    record["firma_match"] = {"id": f["id"], "denumire": f.get("denumire"), "cui": f.get("cui")}
                             await state.mongo_db.bpi_records.insert_one(
                                 {k: v for k, v in record.items() if k != "_id"}
                             )

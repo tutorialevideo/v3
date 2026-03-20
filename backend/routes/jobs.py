@@ -41,25 +41,9 @@ async def fetch_dosare(session: aiohttp.ClientSession, nume_parte: str, institut
     return []
 
 
-def _build_firma_cache(db, Firma) -> dict:
-    """
-    Build a lookup cache: normalized_name -> Firma.
-    Prioritizes anaf_denumire (official ANAF name) over denumire.
-    Used for local matching when only_match_existing=True.
-    """
-    cache = {}
-    firme = db.query(Firma).filter(Firma.cui.isnot(None), Firma.cui != '').all()
-    for f in firme:
-        # Index by normalized anaf_denumire (highest priority)
-        if f.anaf_denumire:
-            key = normalize_company_name(f.anaf_denumire)
-            if key not in cache:
-                cache[key] = f
-        # Also index by normalized denumire
-        if f.denumire_normalized:
-            if f.denumire_normalized not in cache:
-                cache[f.denumire_normalized] = f
-    return cache
+def _build_firma_cache(db=None, Firma=None) -> dict:
+    """Legacy stub — cache is built in save_to_mongo via MongoDB."""
+    return {}
 
 
 async def save_to_mongo(dosare: list, search_term: str,
@@ -447,14 +431,12 @@ async def get_stats():
     next_run = job.next_run_time.isoformat() if job and job.next_run_time else None
     firme_count = 0
     dosare_count = 0
-    if database.SessionLocal is not None:
-        try:
-            db = database.SessionLocal()
-            firme_count = db.query(database.Firma).count()
-            dosare_count = db.query(database.Dosar).count()
-            db.close()
-        except Exception as e:
-            logger.warning(f"Could not get DB stats: {e}")
+    try:
+        import mongo_db as mdb
+        firme_count = await mdb.firme_col.count_documents({})
+        dosare_count = await mdb.dosare_col.count_documents({})
+    except Exception as e:
+        logger.warning(f"Could not get MongoDB stats: {e}")
     return {
         "total_runs": total_runs, "completed_runs": completed_runs, "failed_runs": failed_runs,
         "total_files": total_files, "total_size_mb": round(total_size / (1024 * 1024), 2),
@@ -509,8 +491,6 @@ async def start_sync_dosare(
     Sync dosare from Portal JUST for each ANAF-active firm.
     Searches Portal JUST using anaf_denumire as numeParte.
     """
-    if database.SessionLocal is None:
-        raise HTTPException(status_code=503, detail="Database not available")
     if state.sync_dosare_progress["active"]:
         raise HTTPException(status_code=400, detail="Sync already running")
 
@@ -539,35 +519,31 @@ async def _run_sync_dosare_per_firma(
     For each active firm (anaf_sync_status='found' AND active),
     search Portal JUST using anaf_denumire as numeParte.
     """
-    db = database.SessionLocal()
-    Firma = database.Firma
-    Dosar = database.Dosar
+    import mongo_db as mdb
 
     try:
-        # Build query: only ANAF-verified active firms WITH anaf_denumire
-        query = db.query(Firma).filter(
-            Firma.anaf_sync_status == 'found',
-            Firma.anaf_denumire.isnot(None),
-            Firma.anaf_denumire != '',
-            Firma.anaf_stare.isnot(None),
-            Firma.anaf_stare.ilike('%ACTIV%'),
-            ~Firma.anaf_stare.ilike('%INACTIV%'),
-            ~Firma.anaf_stare.ilike('%RADIERE%')
-        )
-
+        mf_query = {
+            "anaf_sync_status": "found",
+            "anaf_denumire": {"$ne": None, "$not": {"$in": [None, ""]}},
+            "anaf_stare": {"$regex": "ACTIV", "$options": "i"},
+            "$nor": [{"anaf_stare": {"$regex": "INACTIV", "$options": "i"}},
+                     {"anaf_stare": {"$regex": "RADIERE", "$options": "i"}}]
+        }
         if judet:
-            query = query.filter(
-                (Firma.anaf_sediu_judet.ilike(f"%{judet}%")) |
-                (Firma.judet.ilike(f"%{judet}%"))
-            )
+            mf_query["$or"] = [
+                {"anaf_sediu_judet": {"$regex": judet, "$options": "i"}},
+                {"judet": {"$regex": judet, "$options": "i"}}
+            ]
 
+        all_firms = await mdb.firme_col.find(mf_query, {"_id": 0}).sort("id", 1).limit(limit).to_list(limit)
+        
         if only_without_dosare:
-            # Only firms that have no dosare yet
-            existing_ids = db.query(Dosar.firma_id).distinct().subquery()
-            query = query.filter(~Firma.id.in_(existing_ids))
+            # Exclude firms that already have dosare
+            firm_ids_with_dosare = set(await mdb.dosare_col.distinct("firma_id"))
+            all_firms = [f for f in all_firms if f["id"] not in firm_ids_with_dosare]
 
-        total = query.count()
-        firms = query.order_by(Firma.id).limit(limit).all()
+        total = len(all_firms)
+        firms = all_firms
 
         state.sync_dosare_progress["total_firms"] = len(firms)
         state.add_sync_dosare_log(f"Firme active ANAF cu denumire: {total:,} total")
@@ -586,7 +562,7 @@ async def _run_sync_dosare_per_firma(
                     break
 
                 idx = state.sync_dosare_progress["processed"] + 1
-                search_name = firma.anaf_denumire
+                search_name = firma.get("anaf_denumire", "")
                 state.sync_dosare_progress["current_firma"] = search_name
 
                 try:
@@ -641,68 +617,53 @@ async def _run_sync_dosare_per_firma(
     except Exception as e:
         state.add_sync_dosare_log(f"Eroare generală: {str(e)[:60]}")
         logger.error(f"[SYNC_DOSARE] Error: {e}")
-    finally:
-        db.close()
         state.sync_dosare_progress["active"] = False
 
 
-async def _save_dosare_for_firma(db, firma, dosare: list, categorie_caz: str = None) -> int:
-    """Save dosare linked directly to a specific firma (matched by anaf_denumire)."""
-    Dosar = database.Dosar
-    TimelineEvent = database.TimelineEvent
+async def _save_dosare_for_firma(firma: dict, dosare: list, categorie_caz: str = None) -> int:
+    """Save dosare linked to a firma in MongoDB."""
+    import mongo_db as mdb
+    from pymongo import InsertOne
+    firma_id = firma["id"]
     new_count = 0
+    bulk_dosare = []
+    bulk_timeline = []
 
-    try:
-        for dosar_data in dosare:
-            if categorie_caz and dosar_data.get('categorieCaz') != categorie_caz:
-                continue
+    for dosar_data in dosare:
+        if categorie_caz and dosar_data.get('categorieCaz') != categorie_caz:
+            continue
+        numar_dosar = dosar_data.get('numar', '')
+        if not numar_dosar:
+            continue
+        existing = await mdb.get_dosar_by_firma_and_numar(firma_id, numar_dosar)
+        if existing:
+            continue
+        dosar_id = await mdb.next_id("dosare")
+        bulk_dosare.append(InsertOne({
+            "id": dosar_id, "firma_id": firma_id,
+            "numar_dosar": numar_dosar,
+            "institutie": dosar_data.get('institutie', ''),
+            "obiect": dosar_data.get('obiect', ''),
+            "data_dosar": parse_date(dosar_data.get('data', '')),
+            "stadiu": dosar_data.get('stadiuProcesual', ''),
+            "categorie": dosar_data.get('categorieCaz', ''),
+            "materie": dosar_data.get('materie', ''),
+            "created_at": datetime.now(timezone.utc),
+        }))
+        new_count += 1
+        for sedinta in (dosar_data.get('sedinte', []) or []):
+            t_id = await mdb.next_id("timeline")
+            bulk_timeline.append(InsertOne({"id": t_id, "dosar_id": dosar_id, "tip": "sedinta",
+                "data": parse_date(sedinta.get('data', '')),
+                "descriere": sedinta.get('solutie', '') or sedinta.get('complet', ''),
+                "detalii": sedinta, "created_at": datetime.now(timezone.utc)}))
 
-            numar_dosar = dosar_data.get('numar', '')
-            if not numar_dosar:
-                continue
-
-            # Skip if dosar already linked to this firma
-            existing = db.query(Dosar).filter(
-                Dosar.firma_id == firma.id,
-                Dosar.numar_dosar == numar_dosar
-            ).first()
-            if existing:
-                continue
-
-            dosar = Dosar(
-                firma_id=firma.id,
-                numar_dosar=numar_dosar,
-                institutie=dosar_data.get('institutie', ''),
-                obiect=dosar_data.get('obiect', ''),
-                data_dosar=parse_date(dosar_data.get('data', '')),
-                stadiu=dosar_data.get('stadiuProcesual', ''),
-                categorie=dosar_data.get('categorieCaz', ''),
-                materie=dosar_data.get('materie', ''),
-                raw_data=dosar_data
-            )
-            db.add(dosar)
-            db.flush()
-            new_count += 1
-
-            # Save timeline events
-            for sedinta in (dosar_data.get('sedinte', []) or []):
-                db.add(TimelineEvent(
-                    dosar_id=dosar.id, tip='sedinta',
-                    data=parse_date(sedinta.get('data', '')),
-                    descriere=sedinta.get('solutie', '') or sedinta.get('complet', ''),
-                    detalii=sedinta
-                ))
-            for cale in (dosar_data.get('caiAtac', []) or []):
-                db.add(TimelineEvent(
-                    dosar_id=dosar.id, tip='cale_atac',
-                    data=parse_date(cale.get('dataDeclarare', '')),
-                    descriere=cale.get('tipCaleAtac', ''), detalii=cale
-                ))
-
-        db.commit()
-    except Exception as e:
-        db.rollback()
-        logger.error(f"[SYNC_DOSARE] Save error: {e}")
-
+    if bulk_dosare:
+        try:
+            await mdb.dosare_col.bulk_write(bulk_dosare, ordered=False)
+            if bulk_timeline:
+                await mdb.timeline_col.bulk_write(bulk_timeline, ordered=False)
+        except Exception as e:
+            logger.error(f"[SYNC_DOSARE] Save error: {e}")
     return new_count
 
