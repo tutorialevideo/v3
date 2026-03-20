@@ -151,3 +151,25 @@ def add_bpi_log(message: str):
     bpi_scan_progress["logs"].append(f"[{timestamp}] {message}")
     if len(bpi_scan_progress["logs"]) > 200:
         bpi_scan_progress["logs"] = bpi_scan_progress["logs"][-200:]
+
+
+# ─── MFirme crawler state ─────────────────────────────────────────────────────
+mfirme_crawl_progress = {
+    "active": False,
+    "total_pages": 0,
+    "current_page": 0,
+    "cuis_found": 0,
+    "cuis_new": 0,
+    "cuis_skipped": 0,
+    "errors": 0,
+    "last_page_saved": 0,
+    "logs": []
+}
+
+
+def add_mfirme_log(message: str):
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    mfirme_crawl_progress["logs"].append(f"[{timestamp}] {message}")
+    if len(mfirme_crawl_progress["logs"]) > 300:
+        mfirme_crawl_progress["logs"] = mfirme_crawl_progress["logs"][-300:]

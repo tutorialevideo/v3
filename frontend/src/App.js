@@ -166,6 +166,10 @@ function App() {
   const [syncDosareCategorie, setSyncDosareCategorie] = useState("Litigiicuprofesionistii");
   const [syncDosareDateStart, setSyncDosareDateStart] = useState("");
   const [syncDosareDateEnd, setSyncDosareDateEnd] = useState("");
+  // MFirme crawler
+  const [mfirmeCrawlStatus, setMfirmeCrawlStatus] = useState(null);
+  const [mfirmeCrawlLogs, setMfirmeCrawlLogs] = useState([]);
+  const [mfirmeCrawling, setMfirmeCrawling] = useState(false);
   // BPI Parser
   const [bpiParsing, setBpiParsing] = useState(false);
   const [bpiResults, setBpiResults] = useState(null);
@@ -877,6 +881,55 @@ function App() {
     } catch (e) {}
   };
 
+  // MFirme crawler functions
+  const loadMfirmeCrawlStatus = async () => {
+    try {
+      const res = await axios.get(`${API}/crawler/mfirme/status`);
+      setMfirmeCrawlStatus(res.data);
+      setMfirmeCrawlLogs(res.data.logs || []);
+    } catch (e) {}
+  };
+
+  const startMfirmeCrawl = async (resume = true, concurrent = 5) => {
+    setMfirmeCrawling(true);
+    setMfirmeCrawlLogs([]);
+    try {
+      await axios.post(`${API}/crawler/mfirme/start?resume=${resume}&concurrent=${concurrent}`);
+      toast.success('Crawl MFirme pornit!');
+      const pollInterval = setInterval(async () => {
+        try {
+          const res = await axios.get(`${API}/crawler/mfirme/status`);
+          setMfirmeCrawlStatus(res.data);
+          setMfirmeCrawlLogs(res.data.logs || []);
+          if (!res.data.active) {
+            clearInterval(pollInterval);
+            setMfirmeCrawling(false);
+            fetchData();
+            toast.success(`Crawl finalizat: ${res.data.progress?.cuis_new?.toLocaleString()} firme noi adăugate`);
+          }
+        } catch (e) { clearInterval(pollInterval); setMfirmeCrawling(false); }
+      }, 3000);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Eroare la pornire');
+      setMfirmeCrawling(false);
+    }
+  };
+
+  const stopMfirmeCrawl = async () => {
+    try {
+      await axios.post(`${API}/crawler/mfirme/stop`);
+      toast.info('Oprire solicitată — se salvează checkpoint...');
+    } catch (e) {}
+  };
+
+  const clearMfirmeCheckpoint = async () => {
+    try {
+      await axios.delete(`${API}/crawler/mfirme/checkpoint`);
+      toast.success('Checkpoint șters — next crawl starts from page 1');
+      loadMfirmeCrawlStatus();
+    } catch (e) {}
+  };
+
   const cleanupDuplicateDenumiri = async () => {
     if (!window.confirm("Sigur vrei să ștergi duplicatele după denumire? Această acțiune este ireversibilă!")) {
       return;
@@ -1422,7 +1475,9 @@ function App() {
     loadBpiFolderInfo, startBpiFolderScan, stopBpiFolderScan,
     localitatiStats, localitatiLoading, normalizeProgress,
     loadLocalitatiStats, importLocalitati, startNormalizare,
-    // Sync Dosare per Firma
+    // MFirme crawler
+    mfirmeCrawlStatus, mfirmeCrawlLogs, mfirmeCrawling,
+    startMfirmeCrawl, stopMfirmeCrawl, clearMfirmeCheckpoint,
     syncDosareProgress, syncDosareLogs, syncDosareLoading,
     syncDosareLimit, setSyncDosareLimit,
     syncDosareCategorie, setSyncDosareCategorie,

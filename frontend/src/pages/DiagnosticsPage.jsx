@@ -61,6 +61,9 @@ export default function DiagnosticsPage({ ctx }) {
     formatDate, formatBytes,
     localitatiStats, localitatiLoading, normalizeProgress,
     loadLocalitatiStats, importLocalitati, startNormalizare,
+    // MFirme crawler
+    mfirmeCrawlStatus, mfirmeCrawlLogs, mfirmeCrawling,
+    startMfirmeCrawl, stopMfirmeCrawl, clearMfirmeCheckpoint,
   } = ctx;
 
   return (
@@ -445,6 +448,118 @@ export default function DiagnosticsPage({ ctx }) {
                   <p style={{fontSize:'0.78rem', color:'var(--text-muted)', marginTop:'8px'}}>
                     Firmele cu cod SIRUTA au județ și localitate normalizate conform bazei oficiale de localități.
                   </p>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* MFirme Crawler Card */}
+            <Card data-testid="mfirme-crawler-card">
+              <CardHeader>
+                <CardTitle className="card-title">
+                  <Database size={20} />
+                  Crawler MFirme — Import CUI-uri
+                </CardTitle>
+                <CardDescription>
+                  Descarcă automat toate CUI-urile de pe mfirme.ro (~1.7M firme), le compară cu DB-ul local și adaugă ce lipsește.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {/* Status card */}
+                {mfirmeCrawlStatus && (
+                  <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(130px,1fr))', gap:'8px', marginBottom:'14px'}}>
+                    {[
+                      { label: 'Pagina curentă', value: mfirmeCrawlStatus.progress?.current_page?.toLocaleString() },
+                      { label: 'Total pagini', value: mfirmeCrawlStatus.progress?.total_pages?.toLocaleString() },
+                      { label: '✅ CUI-uri noi', value: mfirmeCrawlStatus.progress?.cuis_new?.toLocaleString(), color: '#22c55e' },
+                      { label: 'Skip (existente)', value: mfirmeCrawlStatus.progress?.cuis_skipped?.toLocaleString() },
+                    ].map((s, i) => (
+                      <div key={i} style={{background:'var(--bg-secondary)', borderRadius:'8px', padding:'10px', textAlign:'center', border:'1px solid var(--border)'}}>
+                        <div style={{fontSize:'1.1rem', fontWeight:700, color: s.color || 'var(--text-primary)'}}>{s.value ?? '-'}</div>
+                        <div style={{fontSize:'0.72rem', color:'var(--text-muted)', marginTop:'2px'}}>{s.label}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Progress bar */}
+                {mfirmeCrawlStatus?.progress?.total_pages > 0 && (
+                  <div style={{marginBottom:'12px'}}>
+                    <div style={{display:'flex', justifyContent:'space-between', fontSize:'0.75rem', color:'var(--text-muted)', marginBottom:'4px'}}>
+                      <span>{mfirmeCrawlStatus.progress.current_page?.toLocaleString()} / {mfirmeCrawlStatus.progress.total_pages?.toLocaleString()} pagini</span>
+                      <span style={{color:'var(--primary)'}}>
+                        {mfirmeCrawlStatus.progress.total_pages > 0
+                          ? `${((mfirmeCrawlStatus.progress.current_page / mfirmeCrawlStatus.progress.total_pages) * 100).toFixed(1)}%`
+                          : '0%'}
+                      </span>
+                    </div>
+                    <div style={{height:'6px', background:'var(--border)', borderRadius:'3px', overflow:'hidden'}}>
+                      <div style={{
+                        height:'100%', background:'var(--primary)', transition:'width 0.5s',
+                        width: `${mfirmeCrawlStatus.progress.total_pages > 0 ? (mfirmeCrawlStatus.progress.current_page / mfirmeCrawlStatus.progress.total_pages * 100) : 0}%`
+                      }} />
+                    </div>
+                  </div>
+                )}
+
+                {/* Checkpoint info */}
+                {mfirmeCrawlStatus?.checkpoint?.last_page > 0 && !mfirmeCrawling && (
+                  <div style={{padding:'8px 12px', background:'rgba(99,102,241,0.08)', border:'1px solid rgba(99,102,241,0.25)', borderRadius:'8px', marginBottom:'10px', fontSize:'0.82rem', display:'flex', alignItems:'center', justifyContent:'space-between'}}>
+                    <span>
+                      Checkpoint salvat la pagina <strong>{mfirmeCrawlStatus.checkpoint.last_page?.toLocaleString()}</strong>
+                      {' '}— continuă de unde a rămas
+                    </span>
+                    <Button size="sm" variant="ghost" onClick={clearMfirmeCheckpoint} style={{fontSize:'0.72rem', padding:'2px 8px'}}>
+                      Resetează
+                    </Button>
+                  </div>
+                )}
+
+                {/* Controls */}
+                <div style={{display:'flex', gap:'8px', marginBottom:'12px', flexWrap:'wrap'}}>
+                  <Button
+                    onClick={() => startMfirmeCrawl(true, 5)}
+                    disabled={mfirmeCrawling}
+                    data-testid="start-mfirme-crawl-btn"
+                    style={{flex: 1}}
+                  >
+                    {mfirmeCrawling
+                      ? <><Loader2 className="animate-spin" size={14} style={{marginRight:6}} />Crawl în progres...</>
+                      : <><Download size={14} style={{marginRight:6}} />{mfirmeCrawlStatus?.checkpoint?.last_page > 0 ? 'Continuă Crawl' : 'Pornește Crawl'}</>
+                    }
+                  </Button>
+                  {mfirmeCrawling && (
+                    <Button variant="destructive" onClick={stopMfirmeCrawl} data-testid="stop-mfirme-crawl-btn">
+                      <XCircle size={14} style={{marginRight:4}} /> Stop
+                    </Button>
+                  )}
+                  <Button variant="outline" size="sm" onClick={() => { startMfirmeCrawl(false, 5); }} disabled={mfirmeCrawling} title="Start de la pagina 1 (ignoră checkpoint)">
+                    De la început
+                  </Button>
+                </div>
+
+                <p style={{fontSize:'0.75rem', color:'var(--text-muted)', marginBottom:'8px'}}>
+                  ~17.000 pagini × 100 firme = ~1.7M firme | 5 pagini concurrent | Checkpoint automat la 500 pag.
+                </p>
+
+                {/* Live log */}
+                {mfirmeCrawlLogs.length > 0 && (
+                  <div className="download-log-panel">
+                    <div className="download-log-header">
+                      <Activity size={14} />
+                      <span>Log crawler MFirme</span>
+                      {mfirmeCrawling && <span className="download-log-stats">pagina {mfirmeCrawlStatus?.progress?.current_page?.toLocaleString()}</span>}
+                    </div>
+                    <ScrollArea className="download-log-scroll">
+                      <div className="download-log-content">
+                        {mfirmeCrawlLogs.map((line, i) => (
+                          <div key={i} className="download-log-line"
+                            style={{color: line.includes('❌') ? '#ef4444' : line.includes('✅') ? '#22c55e' : line.includes('⚠️') ? '#eab308' : undefined}}>
+                            {line}
+                          </div>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  </div>
                 )}
               </CardContent>
             </Card>

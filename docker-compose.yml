@@ -70,6 +70,9 @@ services:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - EMERGENT_LLM_KEY=${EMERGENT_LLM_KEY}
       - BPI_INPUT_DIR=/app/bpi_input
+      - MFIRME_URL=${MFIRME_URL}
+      - MFIRME_USER=${MFIRME_USER}
+      - MFIRME_PASS=${MFIRME_PASS}
     volumes:
       - backend_downloads:/app/downloads
       # Mount your local BPI PDF folder here — edit the left side to your path
