@@ -3,7 +3,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies + Node.js (for LiteParse)
 RUN apt-get update && apt-get install -y \
     gcc \
     libpq-dev \
@@ -12,7 +12,12 @@ RUN apt-get update && apt-get install -y \
     zlib1g-dev \
     tesseract-ocr \
     tesseract-ocr-eng \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
+
+# Install LiteParse globally
+RUN npm install -g @llamaindex/liteparse
 
 # Copy requirements first for better caching
 COPY requirements.txt .
@@ -24,7 +29,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Create downloads directory
-RUN mkdir -p /app/downloads
+RUN mkdir -p /app/downloads /app/downloads/bpi
 
 # Expose port
 EXPOSE 8001

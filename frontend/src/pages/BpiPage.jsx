@@ -14,7 +14,16 @@ export default function BpiPage({ ctx }) {
 
   const [dragOver, setDragOver] = useState(false);
   const [expandedIdx, setExpandedIdx] = useState(null);
+  const [liteparseVersion, setLiteparseVersion] = useState(null);
   const fileInputRef = useRef(null);
+
+  // Check LiteParse version on mount
+  useState(() => {
+    fetch('/api/bpi/liteparse-version')
+      .then(r => r.json())
+      .then(d => setLiteparseVersion(d))
+      .catch(() => {});
+  });
 
   const handleFile = (file) => {
     if (file && file.name.toLowerCase().endsWith('.pdf')) {
@@ -60,6 +69,11 @@ export default function BpiPage({ ctx }) {
               </CardTitle>
               <CardDescription>
                 Parsare locala PDF-uri BPI. Extrage: firma, CUI, dosar, tribunal, tip procedura, termen, administrator.
+                {liteparseVersion?.installed && (
+                  <span style={{ marginLeft: 8, color: '#22c55e', fontSize: '0.75rem' }}>
+                    LiteParse v{liteparseVersion.version} instalat
+                  </span>
+                )}
               </CardDescription>
             </CardHeader>
             <CardContent>

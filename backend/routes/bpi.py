@@ -1,18 +1,19 @@
 """
 BPI (Buletinul Procedurilor de Insolvență) PDF Parser.
-Extracts firm data from Romanian insolvency bulletin PDFs using PyMuPDF.
-No external API — runs entirely locally.
+Uses LiteParse (https://github.com/run-llama/liteparse) for local PDF parsing.
+No external API — runs entirely locally via 'lit parse' CLI.
 """
 import re
-import io
-import logging
+import os
 import json
+import logging
+import tempfile
+import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
 from fastapi import APIRouter, File, UploadFile, HTTPException
-from fastapi.responses import JSONResponse
 
 import database
 import state
@@ -23,39 +24,101 @@ logger = logging.getLogger(__name__)
 BPI_UPLOADS_DIR = Path(__file__).parent.parent / "downloads" / "bpi"
 BPI_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
-# ─── BPI Text Extraction (PyMuPDF) ───────────────────────────────────────────
 
-def extract_text_from_pdf(pdf_bytes: bytes) -> str:
-    """Extract full text from PDF using PyMuPDF."""
+# ─── LiteParse PDF Extraction ─────────────────────────────────────────────────
+
+def find_lit_binary() -> str:
+    """Find the 'lit' binary from LiteParse."""
+    candidates = [
+        "lit",
+        "/usr/bin/lit",
+        "/usr/local/bin/lit",
+        os.path.expanduser("~/.npm-global/bin/lit"),
+        "/usr/lib/node_modules/.bin/lit",
+    ]
+    for c in candidates:
+        try:
+            result = subprocess.run([c, "--version"], capture_output=True, timeout=5)
+            if result.returncode == 0:
+                return c
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            continue
+    raise RuntimeError("LiteParse ('lit') nu este instalat. Rulează: npm install -g @llamaindex/liteparse")
+
+
+def extract_text_with_liteparse(pdf_bytes: bytes, ocr: bool = True) -> dict:
+    """
+    Parse PDF using LiteParse CLI.
+    Returns dict with 'text' and 'metadata'.
+    """
+    lit_bin = find_lit_binary()
+
+    with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as f:
+        f.write(pdf_bytes)
+        tmp_pdf = f.name
+
     try:
-        import fitz
-        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        text_parts = []
-        for page in doc:
-            text_parts.append(page.get_text("text"))
-        doc.close()
-        return "\n".join(text_parts)
-    except ImportError:
-        raise HTTPException(status_code=500, detail="PyMuPDF nu este instalat")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Eroare la citirea PDF: {str(e)}")
+        cmd = [lit_bin, 'parse', tmp_pdf, '--format', 'json', '--quiet']
+        if not ocr:
+            cmd.append('--no-ocr')
+        # Add Romanian language for OCR if available
+        cmd += ['--ocr-language', 'ron+eng']
+
+        logger.info(f"[BPI] Running: {' '.join(cmd)}")
+        result = subprocess.run(
+            cmd,
+            capture_output=True, text=True, timeout=300,
+            env={**os.environ, 'NODE_NO_WARNINGS': '1'}
+        )
+
+        if result.returncode != 0:
+            # Fallback: try without OCR language (might not have Romanian trained data)
+            cmd_fallback = [lit_bin, 'parse', tmp_pdf, '--format', 'json', '--quiet']
+            result = subprocess.run(
+                cmd_fallback, capture_output=True, text=True, timeout=300,
+                env={**os.environ, 'NODE_NO_WARNINGS': '1'}
+            )
+
+        if result.returncode != 0:
+            raise RuntimeError(f"LiteParse error: {result.stderr[:200]}")
+
+        # Parse JSON output from LiteParse
+        try:
+            data = json.loads(result.stdout)
+            # LiteParse JSON structure: {"pages": [{"page": N, "text": "...", ...}]}
+            if isinstance(data, dict) and "pages" in data:
+                text = "\n\n".join(
+                    p.get("text", "") for p in data["pages"] if p.get("text")
+                )
+                pages = len(data["pages"])
+            elif isinstance(data, dict) and "text" in data:
+                text = data["text"]
+                pages = data.get("numPages", 0)
+            else:
+                text = result.stdout
+                pages = 0
+        except (json.JSONDecodeError, KeyError):
+            text = result.stdout
+            pages = 0
+
+        return {"text": text, "pages": pages, "raw": data if isinstance(data, dict) else {}}
+
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=500, detail="Timeout la parsarea PDF-ului (> 5 minute)")
+    finally:
+        os.unlink(tmp_pdf)
 
 
-def extract_pdf_metadata(pdf_bytes: bytes) -> dict:
-    """Extract page count and metadata."""
-    try:
-        import fitz
-        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        meta = {
-            "pages": doc.page_count,
-            "title": doc.metadata.get("title", ""),
-            "author": doc.metadata.get("author", ""),
-            "creation_date": doc.metadata.get("creationDate", ""),
-        }
-        doc.close()
-        return meta
-    except Exception:
-        return {"pages": 0}
+def _extract_text_from_json(data: dict) -> str:
+    """Extract text from LiteParse JSON output structure."""
+    parts = []
+    for page in data.get("pages", []):
+        for block in page.get("blocks", []):
+            parts.append(block.get("text", ""))
+        # Also try 'lines' structure
+        for line in page.get("lines", []):
+            parts.append(line.get("text", ""))
+    return "\n".join(parts)
 
 
 # ─── BPI Data Extraction (Regex patterns for Romanian BPI format) ─────────────
@@ -241,9 +304,9 @@ def _extract_single_record(text: str) -> dict:
 # ─── API Routes ───────────────────────────────────────────────────────────────
 
 @router.post("/bpi/parse")
-async def parse_bpi_pdf(file: UploadFile = File(...)):
+async def parse_bpi_pdf(file: UploadFile = File(...), ocr: bool = True):
     """
-    Parse a BPI PDF file and extract firm data.
+    Parse a BPI PDF using LiteParse (local, no external API).
     Returns structured data extracted from the document.
     """
     if not file.filename.lower().endswith('.pdf'):
@@ -252,36 +315,41 @@ async def parse_bpi_pdf(file: UploadFile = File(...)):
     pdf_bytes = await file.read()
     if len(pdf_bytes) == 0:
         raise HTTPException(status_code=400, detail="Fișierul PDF este gol")
-    if len(pdf_bytes) > 50 * 1024 * 1024:  # 50MB max
+    if len(pdf_bytes) > 50 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Fișierul este prea mare (max 50MB)")
 
-    logger.info(f"[BPI] Parsing PDF: {file.filename} ({len(pdf_bytes):,} bytes)")
+    logger.info(f"[BPI] Parsing with LiteParse: {file.filename} ({len(pdf_bytes):,} bytes)")
 
-    # Extract text
-    text = extract_text_from_pdf(pdf_bytes)
-    metadata = extract_pdf_metadata(pdf_bytes)
+    # Parse with LiteParse
+    try:
+        parsed = extract_text_with_liteparse(pdf_bytes, ocr=ocr)
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-    if not text.strip():
+    text = parsed["text"]
+    pages = parsed["pages"]
+
+    if not text or not text.strip():
         return {
             "success": False,
-            "error": "PDF-ul nu conține text selectabil. Poate fi un scan (imagine). Încercați OCR.",
+            "error": "PDF-ul nu conține text. Dacă e un scan, activați OCR.",
             "filename": file.filename,
-            "pages": metadata.get("pages", 0),
-            "records": []
+            "pages": pages,
+            "records": [],
+            "parser": "liteparse"
         }
 
     # Extract BPI records
     records = extract_bpi_data(text, file.filename)
     logger.info(f"[BPI] Extracted {len(records)} records from {file.filename}")
 
-    # Try to match each record to existing firms in DB
+    # Match records to DB firms
     if database.SessionLocal:
         db = database.SessionLocal()
         try:
             for record in records:
                 record["firma_match"] = None
                 Firma = database.Firma
-                # Match by CUI first
                 if record.get("cui"):
                     firma = db.query(Firma).filter(Firma.cui == record["cui"]).first()
                     if firma:
@@ -291,7 +359,6 @@ async def parse_bpi_pdf(file: UploadFile = File(...)):
                             "cui": firma.cui,
                             "match_type": "cui_exact"
                         }
-                # Match by name if no CUI match
                 if not record["firma_match"] and record.get("denumire_firma"):
                     from helpers import normalize_company_name
                     norm = normalize_company_name(record["denumire_firma"])
@@ -309,12 +376,28 @@ async def parse_bpi_pdf(file: UploadFile = File(...)):
     return {
         "success": True,
         "filename": file.filename,
-        "pages": metadata.get("pages", 0),
+        "pages": pages,
         "text_length": len(text),
         "records_count": len(records),
         "records": records,
-        "raw_text_preview": text[:1000] if text else ""
+        "raw_text_preview": text[:1000],
+        "parser": "liteparse"
     }
+
+
+@router.get("/bpi/liteparse-version")
+async def get_liteparse_version():
+    """Check if LiteParse is installed and return version."""
+    try:
+        lit_bin = find_lit_binary()
+        result = subprocess.run([lit_bin, "--version"], capture_output=True, text=True, timeout=5)
+        return {
+            "installed": True,
+            "version": result.stdout.strip(),
+            "binary": lit_bin
+        }
+    except Exception as e:
+        return {"installed": False, "error": str(e)}
 
 
 @router.post("/bpi/parse-batch")
