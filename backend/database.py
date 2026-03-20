@@ -22,6 +22,9 @@ load_dotenv(ROOT_DIR / '.env')
 logger = logging.getLogger(__name__)
 
 POSTGRES_URL = os.environ.get('POSTGRES_URL', 'postgresql://justapp:justapp123@localhost:5432/justportal')
+# Supabase requires SSL — add sslmode=require if not already present
+if 'supabase.co' in POSTGRES_URL and 'sslmode' not in POSTGRES_URL:
+    POSTGRES_URL = POSTGRES_URL + '?sslmode=require'
 DATABASE_URL = POSTGRES_URL.replace('postgresql://', 'postgresql+asyncpg://')
 
 database = Database(DATABASE_URL)
@@ -37,13 +40,18 @@ def init_postgres_connection(max_retries=5, retry_delay=3):
     from sqlalchemy import text
     for attempt in range(max_retries):
         try:
+            # Supabase needs SSL
+            connect_args = {}
+            if 'supabase.co' in POSTGRES_URL:
+                connect_args = {"sslmode": "require"}
             engine = create_engine(
                 POSTGRES_URL,
-                pool_size=20,           # conexiuni permanente în pool
-                max_overflow=40,        # conexiuni extra la peak
-                pool_timeout=30,        # așteptare pentru o conexiune liberă
-                pool_pre_ping=True,     # verifică conexiunea înainte de folosire
-                pool_recycle=3600,      # reciclează conexiunile la fiecare oră
+                pool_size=20,
+                max_overflow=40,
+                pool_timeout=30,
+                pool_pre_ping=True,
+                pool_recycle=3600,
+                connect_args=connect_args,
             )
             with engine.connect() as conn:
                 conn.execute(text("SELECT 1"))

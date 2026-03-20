@@ -1,42 +1,5 @@
 services:
-  # PostgreSQL Database
-  postgres:
-    image: postgres:15-alpine
-    container_name: just_postgres
-    shm_size: '4g'
-    env_file: .env
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-    command: >
-      postgres
-      -c shared_buffers=4GB
-      -c effective_cache_size=48GB
-      -c maintenance_work_mem=2GB
-      -c work_mem=64MB
-      -c max_connections=200
-      -c checkpoint_completion_target=0.9
-      -c wal_buffers=64MB
-      -c random_page_cost=1.1
-      -c max_worker_processes=24
-      -c max_parallel_workers_per_gather=8
-      -c max_parallel_workers=16
-      -c synchronous_commit=off
-      -c autovacuum_vacuum_cost_delay=2ms
-      -c autovacuum_vacuum_scale_factor=0.01
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5433:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U justapp -d justportal"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-
-  # MongoDB Database
+  # MongoDB Database (local)
   mongodb:
     image: mongo:6-jammy
     container_name: just_mongodb
@@ -47,7 +10,7 @@ services:
     volumes:
       - mongodb_data:/data/db
     ports:
-      - "27018:27017"  # Changed to 27018 to avoid conflicts
+      - "27018:27017"
     healthcheck:
       test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
       interval: 10s
@@ -55,7 +18,7 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # FastAPI Backend
+  # FastAPI Backend (PostgreSQL = Supabase cloud, MongoDB = local)
   backend:
     build:
       context: ./backend
@@ -64,8 +27,8 @@ services:
     env_file: .env
     environment:
       - MONGO_URL=mongodb://${MONGO_ROOT_USER}:${MONGO_ROOT_PASSWORD}@mongodb:27017/
-      - DB_NAME=${POSTGRES_DB}
-      - POSTGRES_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - DB_NAME=justportal
+      - POSTGRES_URL=${POSTGRES_URL}
       - CORS_ORIGINS=*
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - EMERGENT_LLM_KEY=${EMERGENT_LLM_KEY}
@@ -75,14 +38,10 @@ services:
       - MFIRME_PASS=${MFIRME_PASS}
     volumes:
       - backend_downloads:/app/downloads
-      # Mount your local BPI PDF folder here — edit the left side to your path
-      # Example: /home/adrian/bpi_pdfs:/app/bpi_input
       - ./bpi_input:/app/bpi_input
     ports:
       - "8001:8001"
     depends_on:
-      postgres:
-        condition: service_healthy
       mongodb:
         condition: service_healthy
     healthcheck:
@@ -101,12 +60,11 @@ services:
         - REACT_APP_BACKEND_URL=http://localhost:8001
     container_name: just_frontend
     ports:
-      - "3080:80"  # Changed to 3080 to avoid conflicts with port 3000
+      - "3080:80"
     depends_on:
       - backend
     restart: unless-stopped
 
 volumes:
-  postgres_data:
   mongodb_data:
   backend_downloads:
