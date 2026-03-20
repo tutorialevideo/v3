@@ -166,12 +166,14 @@ function App() {
   const [syncDosareCategorie, setSyncDosareCategorie] = useState("Litigiicuprofesionistii");
   const [syncDosareDateStart, setSyncDosareDateStart] = useState("");
   const [syncDosareDateEnd, setSyncDosareDateEnd] = useState("");
+  // Supabase sync
+  const [supabaseStatus, setSupabaseStatus] = useState(null);
+  const [supabaseSyncing, setSupabaseSyncing] = useState(false);
+  const [supabaseLogs, setSupabaseLogs] = useState([]);
   // Atlas sync
   const [atlasStatus, setAtlasStatus] = useState(null);
   const [atlasSyncing, setAtlasSyncing] = useState(false);
   const [atlasLogs, setAtlasLogs] = useState([]);
-  const [supabaseSyncing, setSupabaseSyncing] = useState(false);
-  const [supabaseLogs, setSupabaseLogs] = useState([]);
   // MFirme crawler
   const [mfirmeCrawlStatus, setMfirmeCrawlStatus] = useState(null);
   const [mfirmeCrawlLogs, setMfirmeCrawlLogs] = useState([]);
