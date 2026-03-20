@@ -1,9 +1,13 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 import { ScrollArea } from "../components/ui/scroll-area";
-import { Loader2, FileJson, Upload, CheckCircle2, XCircle, Building2, Search, ChevronDown } from "lucide-react";
+import { Loader2, FileJson, Upload, CheckCircle2, XCircle, Building2, Search, ChevronDown, FolderDown } from "lucide-react";
+import axios from "axios";
+import { toast } from "sonner";
+
+const API = "/api";
 
 export default function BpiPage({ ctx }) {
   const {
@@ -17,15 +21,18 @@ export default function BpiPage({ ctx }) {
   const [dragOver, setDragOver] = useState(false);
   const [expandedIdx, setExpandedIdx] = useState(null);
   const [liteparseVersion, setLiteparseVersion] = useState(null);
+  const [folderUploadProgress, setFolderUploadProgress] = useState(null);
+  const [folderResults, setFolderResults] = useState([]);
+  const [uploadMode, setUploadMode] = useState('file'); // 'file' | 'folder'
   const fileInputRef = useRef(null);
+  const folderInputRef = useRef(null);
 
-  // Check LiteParse version on mount
-  useState(() => {
-    fetch('/api/bpi/liteparse-version')
+  useEffect(() => {
+    fetch(`${API}/bpi/liteparse-version`)
       .then(r => r.json())
       .then(d => setLiteparseVersion(d))
       .catch(() => {});
-  });
+  }, []);
 
   const handleFile = (file) => {
     if (file && file.name.toLowerCase().endsWith('.pdf')) {
@@ -33,9 +40,58 @@ export default function BpiPage({ ctx }) {
     }
   };
 
+  const handleFolderUpload = async (files) => {
+    const pdfs = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.pdf'));
+    if (pdfs.length === 0) {
+      toast.error('Niciun PDF găsit în folder');
+      return;
+    }
+
+    const totalSize = pdfs.reduce((s, f) => s + f.size, 0);
+    const totalSizeMB = (totalSize / (1024 * 1024)).toFixed(1);
+
+    setFolderResults([]);
+    setFolderUploadProgress({ total: pdfs.length, processed: 0, records: 0, errors: 0, sizeMB: totalSizeMB });
+    toast.info(`Procesare ${pdfs.length} PDF-uri (${totalSizeMB} MB)...`);
+
+    // Process in batches of 3 (parallel uploads)
+    const BATCH = 3;
+    for (let i = 0; i < pdfs.length; i += BATCH) {
+      const batch = pdfs.slice(i, i + BATCH);
+      await Promise.all(batch.map(async (file) => {
+        try {
+          const formData = new FormData();
+          formData.append('file', file);
+          const res = await axios.post(`${API}/bpi/parse`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+          });
+          setFolderResults(prev => [...prev, { ...res.data, filename: file.name }]);
+          setFolderUploadProgress(prev => ({
+            ...prev,
+            processed: prev.processed + 1,
+            records: prev.records + (res.data.records_count || 0)
+          }));
+        } catch (err) {
+          setFolderUploadProgress(prev => ({
+            ...prev,
+            processed: prev.processed + 1,
+            errors: prev.errors + 1
+          }));
+        }
+      }));
+    }
+    toast.success(`Folder procesat!`);
+  };
+
   const handleDrop = (e) => {
     e.preventDefault();
     setDragOver(false);
+    const items = e.dataTransfer.items;
+    // Check if a folder was dropped
+    if (items && items.length > 0 && items[0].webkitGetAsEntry?.()?.isDirectory) {
+      toast.info('Pentru foldere mari folosește butonul "Selectează Folder"');
+      return;
+    }
     const file = e.dataTransfer.files[0];
     handleFile(file);
   };
@@ -111,13 +167,54 @@ export default function BpiPage({ ctx }) {
                 data-testid="bpi-file-input"
                 onChange={(e) => handleFile(e.target.files[0])} />
 
-              <Button onClick={() => fileInputRef.current?.click()} disabled={bpiParsing}
-                style={{ width: '100%' }} data-testid="bpi-upload-btn">
-                {bpiParsing
-                  ? <><Loader2 className="animate-spin" size={16} style={{ marginRight: 6 }} />Se proceseaza...</>
-                  : <><Upload size={16} style={{ marginRight: 6 }} />Selecteaza PDF BPI</>
-                }
-              </Button>
+              {/* Hidden folder input */}
+              <input ref={folderInputRef} type="file" accept=".pdf"
+                webkitdirectory="true" directory="true" multiple
+                style={{ display: 'none' }}
+                data-testid="bpi-folder-input"
+                onChange={(e) => handleFolderUpload(e.target.files)} />
+
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <Button onClick={() => fileInputRef.current?.click()} disabled={bpiParsing}
+                  variant="outline" style={{ flex: 1 }} data-testid="bpi-upload-btn">
+                  {bpiParsing
+                    ? <><Loader2 className="animate-spin" size={16} style={{ marginRight: 6 }} />Procesare...</>
+                    : <><Upload size={16} style={{ marginRight: 6 }} />Un fișier PDF</>
+                  }
+                </Button>
+                <Button onClick={() => folderInputRef.current?.click()}
+                  disabled={bpiParsing || folderUploadProgress?.processed < folderUploadProgress?.total}
+                  style={{ flex: 1 }} data-testid="bpi-folder-btn">
+                  <FolderDown size={16} style={{ marginRight: 6 }} />
+                  Folder (max 1GB)
+                </Button>
+              </div>
+
+              {/* Folder upload progress */}
+              {folderUploadProgress && folderUploadProgress.processed < folderUploadProgress.total && (
+                <div style={{ marginTop: '12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                    <span>Procesare {folderUploadProgress.processed}/{folderUploadProgress.total} PDF-uri ({folderUploadProgress.sizeMB} MB)</span>
+                    <span style={{ color: 'var(--primary)' }}>{Math.round(folderUploadProgress.processed / folderUploadProgress.total * 100)}%</span>
+                  </div>
+                  <div style={{ height: '6px', background: 'var(--border)', borderRadius: '3px', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', background: 'var(--primary)', width: `${folderUploadProgress.processed / folderUploadProgress.total * 100}%`, transition: 'width 0.3s' }} />
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                    Înregistrări extrase: <strong style={{ color: 'var(--primary)' }}>{folderUploadProgress.records?.toLocaleString()}</strong>
+                    {folderUploadProgress.errors > 0 && <span style={{ color: '#ef4444', marginLeft: 8 }}>{folderUploadProgress.errors} erori</span>}
+                  </div>
+                </div>
+              )}
+
+              {/* Folder results summary */}
+              {folderUploadProgress?.processed === folderUploadProgress?.total && folderUploadProgress?.total > 1 && (
+                <div style={{ marginTop: '10px', padding: '10px 12px', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: '8px', fontSize: '0.82rem' }}>
+                  <CheckCircle2 size={14} style={{ color: '#22c55e', marginRight: 6, display: 'inline' }} />
+                  <strong>{folderUploadProgress.total} PDF-uri</strong> procesate — <strong style={{ color: 'var(--primary)' }}>{folderUploadProgress.records?.toLocaleString()} înregistrări</strong> extrase
+                  {folderUploadProgress.errors > 0 && <span style={{ color: '#ef4444' }}> ({folderUploadProgress.errors} erori)</span>}
+                </div>
+              )}
             </CardContent>
           </Card>
 
