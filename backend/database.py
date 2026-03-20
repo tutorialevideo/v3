@@ -25,14 +25,17 @@ logger = logging.getLogger(__name__)
 POSTGRES_URL = os.environ.get('POSTGRES_URL', '').strip()
 SUPABASE_URL = os.environ.get('SUPABASE_URL', '').strip()
 
-# Priority: POSTGRES_URL > SUPABASE_URL > local fallback
+# Priority: POSTGRES_URL > SUPABASE_URL > Supabase fallback > local
+_SUPABASE_FALLBACK = 'postgresql://postgres:kygzeFjPPa1pYcBs@db.bssqxfbiqydghdbkieey.supabase.co:5432/postgres'
+
 if not POSTGRES_URL:
     if SUPABASE_URL:
         POSTGRES_URL = SUPABASE_URL
         logger.info("[DB] Using SUPABASE_URL as POSTGRES_URL")
     else:
-        POSTGRES_URL = 'postgresql://justapp:justapp123@localhost:5432/justportal'
-        logger.warning("[DB] No POSTGRES_URL/SUPABASE_URL set, using local fallback")
+        # Use Supabase as default cloud DB (for production deploy)
+        POSTGRES_URL = _SUPABASE_FALLBACK
+        logger.info("[DB] Using Supabase fallback connection")
 
 # Supabase requires SSL
 if 'supabase.co' in POSTGRES_URL and 'sslmode' not in POSTGRES_URL:
