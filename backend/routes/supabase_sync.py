@@ -10,6 +10,7 @@ What gets synced:
 import asyncio
 import logging
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -49,18 +50,31 @@ def add_sync_log(message: str):
 
 
 def get_supabase_engine():
-    """Create engine for Supabase (target database)."""
-    url = SUPABASE_URL
+    """Create engine for Supabase — forces IPv4 via port 6543 (PgBouncer pooler)."""
     if not SUPABASE_URL:
         raise ValueError("SUPABASE_URL nu este configurat în .env")
-    if 'supabase.co' in url and 'sslmode' not in url:
-        url += '?sslmode=require'
+
+    # Strip existing query params — pass SSL via connect_args
+    url_clean = re.sub(r'\?.*$', '', SUPABASE_URL.strip())
+
+    # Use port 6543 (Supabase connection pooler, IPv4 stable)
+    # Port 5432 = direct connection (can resolve to IPv6, unstable in Docker)
+    url_clean = re.sub(r':5432/', ':6543/', url_clean)
+
+    connect_args = {
+        "connect_timeout": 15,
+        "sslmode": "require",
+        "gssencmode": "disable",      # prevents IPv6/GSSAPI issues
+        "options": "-c statement_timeout=30000",
+    }
+
     return create_engine(
-        url,
-        pool_size=5,
-        max_overflow=10,
+        url_clean,
+        pool_size=3,
+        max_overflow=5,
         pool_pre_ping=True,
-        connect_args={"connect_timeout": 30, "sslmode": "require"} if 'supabase.co' in url else {}
+        pool_timeout=20,
+        connect_args=connect_args,
     )
 
 
