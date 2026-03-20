@@ -62,8 +62,6 @@ export default function DiagnosticsPage({ ctx }) {
     loadLocalitatiStats, importLocalitati, startNormalizare,
     mfirmeCrawlStatus, mfirmeCrawlLogs, mfirmeCrawling,
     startMfirmeCrawl, stopMfirmeCrawl, clearMfirmeCheckpoint,
-    supabaseStatus, supabaseSyncing, supabaseLogs,
-    loadSupabaseStatus, startSupabaseSync, stopSupabaseSync, initSupabaseSchema,
     atlasStatus, atlasSyncing, atlasLogs,
     loadAtlasStatus, startAtlasSync, stopAtlasSync,
   } = ctx;
@@ -556,120 +554,6 @@ export default function DiagnosticsPage({ ctx }) {
                         {mfirmeCrawlLogs.map((line, i) => (
                           <div key={i} className="download-log-line"
                             style={{color: line.includes('❌') ? '#ef4444' : line.includes('✅') ? '#22c55e' : line.includes('⚠️') ? '#eab308' : undefined}}>
-                            {line}
-                          </div>
-                        ))}
-                      </div>
-                    </ScrollArea>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Supabase Sync Card */}
-            <Card data-testid="supabase-sync-card">
-              <CardHeader>
-                <CardTitle className="card-title">
-                  <Database size={20} style={{color:'#3ecf8e'}} />
-                  Sync Supabase
-                </CardTitle>
-                <CardDescription>
-                  Trimite datele procesate local în Supabase. Local = procesare grea, Supabase = producție curată.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {supabaseStatus ? (
-                  <div style={{marginBottom:'14px'}}>
-                    <div style={{
-                      display:'flex', alignItems:'center', gap:'8px', padding:'10px 14px',
-                      background: supabaseStatus.supabase_connected ? 'rgba(62,207,142,0.08)' : 'rgba(239,68,68,0.08)',
-                      border: `1px solid ${supabaseStatus.supabase_connected ? 'rgba(62,207,142,0.3)' : 'rgba(239,68,68,0.3)'}`,
-                      borderRadius:'8px', marginBottom:'10px', fontSize:'0.82rem'
-                    }}>
-                      <div style={{width:8,height:8,borderRadius:'50%',background:supabaseStatus.supabase_connected?'#3ecf8e':'#ef4444',flexShrink:0}}/>
-                      <strong>{supabaseStatus.supabase_connected ? 'Supabase conectat' : 'Supabase deconectat'}</strong>
-                      {supabaseStatus.supabase_error && <span style={{color:'#ef4444',marginLeft:8,fontSize:'0.75rem'}}>{supabaseStatus.supabase_error}</span>}
-                    </div>
-
-                    {supabaseStatus.supabase_connected && (
-                      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:'10px'}}>
-                        <div style={{background:'var(--bg-secondary)',borderRadius:'8px',padding:'10px',border:'1px solid var(--border)'}}>
-                          <div style={{fontSize:'0.7rem',color:'var(--text-muted)',marginBottom:'4px'}}>LOCAL (sursă)</div>
-                          <div style={{fontSize:'0.82rem'}}>
-                            <div>Firme totale: <strong>{supabaseStatus.local_counts?.firme_total?.toLocaleString()}</strong></div>
-                            <div style={{color:'#22c55e'}}>Active ANAF: <strong>{supabaseStatus.local_counts?.firme_active?.toLocaleString()}</strong></div>
-                            <div>Bilanțuri: <strong>{supabaseStatus.local_counts?.bilanturi?.toLocaleString()}</strong></div>
-                          </div>
-                        </div>
-                        <div style={{background:'rgba(62,207,142,0.05)',borderRadius:'8px',padding:'10px',border:'1px solid rgba(62,207,142,0.2)'}}>
-                          <div style={{fontSize:'0.7rem',color:'var(--text-muted)',marginBottom:'4px'}}>SUPABASE (destinație)</div>
-                          <div style={{fontSize:'0.82rem'}}>
-                            <div>Firme: <strong>{supabaseStatus.supabase_counts?.firme?.toLocaleString()??'-'}</strong></div>
-                            <div>Bilanțuri: <strong>{supabaseStatus.supabase_counts?.bilanturi?.toLocaleString()??'-'}</strong></div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <Button variant="outline" size="sm" onClick={loadSupabaseStatus} style={{marginBottom:'12px'}}>
-                    Verifică conexiunea Supabase
-                  </Button>
-                )}
-
-                {supabaseStatus?.supabase_connected && (
-                  <>
-                    {/* Init schema button — shown when tables missing */}
-                    {supabaseStatus?.supabase_error?.includes('Inițializează') && (
-                      <div style={{padding:'10px 14px', background:'rgba(234,179,8,0.08)', border:'1px solid rgba(234,179,8,0.3)', borderRadius:'8px', marginBottom:'10px', fontSize:'0.82rem'}}>
-                        <p style={{marginBottom:'8px'}}>⚠️ {supabaseStatus.supabase_error}</p>
-                        <Button onClick={initSupabaseSchema} disabled={supabaseSyncing} style={{background:'#eab308',color:'white'}}>
-                          <Database size={14} style={{marginRight:6}}/>Inițializează Schema Supabase
-                        </Button>
-                      </div>
-                    )}
-
-                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:'8px'}}>
-                      <Button onClick={()=>startSupabaseSync({onlyActive:true,cleanFirst:false})} disabled={supabaseSyncing}
-                        style={{background:'#3ecf8e',color:'white',fontWeight:600}} data-testid="supabase-sync-btn">
-                        {supabaseSyncing?<><Loader2 className="animate-spin" size={14} style={{marginRight:6}}/>Sync în curs...</>:<><RefreshCw size={14} style={{marginRight:6}}/>Sync Incremental</>}
-                      </Button>
-                      <Button onClick={()=>startSupabaseSync({onlyActive:true,cleanFirst:true})} disabled={supabaseSyncing} variant="outline">
-                        <RefreshCw size={14} style={{marginRight:6}}/>Sync Complet (reset)
-                      </Button>
-                    </div>
-                    {supabaseSyncing && <Button variant="destructive" size="sm" onClick={stopSupabaseSync} style={{marginBottom:'8px'}}><XCircle size={14} style={{marginRight:4}}/>Stop</Button>}
-                    <p style={{fontSize:'0.72rem',color:'var(--text-muted)',marginBottom:'8px'}}>
-                      <strong>Incremental</strong> — upsert fără ștergere &nbsp;|&nbsp; <strong>Complet</strong> — șterge și rescrie tot
-                    </p>
-                  </>
-                )}
-
-                {supabaseStatus?.progress?.total > 0 && (
-                  <div style={{marginBottom:'8px'}}>
-                    <div style={{display:'flex',justifyContent:'space-between',fontSize:'0.75rem',color:'var(--text-muted)',marginBottom:'3px'}}>
-                      <span>{supabaseStatus.progress.phase} — {supabaseStatus.progress.processed?.toLocaleString()}/{supabaseStatus.progress.total?.toLocaleString()}</span>
-                      <span style={{color:'#3ecf8e'}}>{supabaseStatus.progress.total>0?`${(supabaseStatus.progress.processed/supabaseStatus.progress.total*100).toFixed(0)}%`:''}</span>
-                    </div>
-                    <div style={{height:'5px',background:'var(--border)',borderRadius:'3px',overflow:'hidden'}}>
-                      <div style={{height:'100%',background:'#3ecf8e',transition:'width 0.5s',width:`${supabaseStatus.progress.total>0?Math.min(supabaseStatus.progress.processed/supabaseStatus.progress.total*100,100):0}%`}}/>
-                    </div>
-                    <div style={{fontSize:'0.72rem',color:'var(--text-muted)',marginTop:'3px',display:'flex',gap:'12px'}}>
-                      <span style={{color:'#3ecf8e'}}>Inserate: {supabaseStatus.progress.inserted?.toLocaleString()}</span>
-                      <span>Actualizate: {supabaseStatus.progress.updated?.toLocaleString()}</span>
-                      {supabaseStatus.progress.errors>0&&<span style={{color:'#ef4444'}}>Erori: {supabaseStatus.progress.errors}</span>}
-                    </div>
-                  </div>
-                )}
-
-                {supabaseLogs.length > 0 && (
-                  <div className="download-log-panel">
-                    <div className="download-log-header"><Activity size={14}/><span>Log sync Supabase</span></div>
-                    <ScrollArea className="download-log-scroll">
-                      <div className="download-log-content">
-                        {supabaseLogs.map((line,i)=>(
-                          <div key={i} className="download-log-line"
-                            style={{color:line.includes('❌')?'#ef4444':line.includes('✅')?'#3ecf8e':line.includes('⚠️')?'#eab308':undefined}}>
                             {line}
                           </div>
                         ))}
