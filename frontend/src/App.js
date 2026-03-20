@@ -49,6 +49,7 @@ import FirmePage from "./pages/FirmePage";
 import AnafPage from "./pages/AnafPage";
 import DbFinalPage from "./pages/DbFinalPage";
 import DiagnosticsPage from "./pages/DiagnosticsPage";
+import BpiPage from "./pages/BpiPage";
 import FirmaProfileModal from "./components/FirmaProfileModal";
 import CaptchaModal from "./components/CaptchaModal";
 
@@ -165,6 +166,11 @@ function App() {
   const [syncDosareCategorie, setSyncDosareCategorie] = useState("Litigiicuprofesionistii");
   const [syncDosareDateStart, setSyncDosareDateStart] = useState("");
   const [syncDosareDateEnd, setSyncDosareDateEnd] = useState("");
+  // BPI Parser
+  const [bpiParsing, setBpiParsing] = useState(false);
+  const [bpiResults, setBpiResults] = useState(null);
+  const [bpiHistory, setBpiHistory] = useState([]);
+  const [bpiStats, setBpiStats] = useState(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -779,6 +785,53 @@ function App() {
     } catch (e) {}
   };
 
+  // BPI functions
+  const parseBpiPdf = async (file) => {
+    setBpiParsing(true);
+    setBpiResults(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await axios.post(`${API}/bpi/parse`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      setBpiResults(res.data);
+      if (res.data.success) {
+        toast.success(`${res.data.records_count} înregistrări extrase din ${res.data.pages} pagini`);
+      } else {
+        toast.error(res.data.error || 'Eroare la parsare');
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Eroare la upload PDF');
+    } finally {
+      setBpiParsing(false);
+    }
+  };
+
+  const saveBpiRecord = async (record) => {
+    try {
+      await axios.post(`${API}/bpi/save-record`, record);
+      toast.success('Record salvat!');
+      loadBpiHistory();
+    } catch (e) {
+      toast.error('Eroare la salvare');
+    }
+  };
+
+  const loadBpiHistory = async () => {
+    try {
+      const res = await axios.get(`${API}/bpi/history?limit=20`);
+      setBpiHistory(res.data.records || []);
+    } catch (e) {}
+  };
+
+  const loadBpiStats = async () => {
+    try {
+      const res = await axios.get(`${API}/bpi/stats`);
+      setBpiStats(res.data);
+    } catch (e) {}
+  };
+
   const cleanupDuplicateDenumiri = async () => {
     if (!window.confirm("Sigur vrei să ștergi duplicatele după denumire? Această acțiune este ireversibilă!")) {
       return;
@@ -1317,7 +1370,9 @@ function App() {
     cleanupDuplicateDenumiri, cleanupDuplicateCui, cleanupOrphanedDosare,
     optimizeDatabase, createIndexes, migrateSchema,
     loadDiagnostics, reconnectDatabase, fetchData,
-    // Localitati
+    // BPI
+    bpiParsing, bpiResults, bpiHistory, bpiStats,
+    parseBpiPdf, saveBpiRecord, loadBpiHistory, loadBpiStats,
     localitatiStats, localitatiLoading, normalizeProgress,
     loadLocalitatiStats, importLocalitati, startNormalizare,
     // Sync Dosare per Firma
@@ -1361,6 +1416,9 @@ function App() {
           <button className={`tab-btn ${activeTab === 'diagnostics' ? 'active' : ''}`} onClick={() => setActiveTab('diagnostics')} data-testid="tab-diagnostics">
             <Database size={18} /> Diagnosticare DB
           </button>
+          <button className={`tab-btn ${activeTab === 'bpi' ? 'active' : ''}`} onClick={() => { setActiveTab('bpi'); loadBpiHistory(); loadBpiStats(); }} data-testid="tab-bpi">
+            <FileJson size={18} /> BPI Parser
+          </button>
         </div>
       </header>
 
@@ -1381,6 +1439,7 @@ function App() {
         {activeTab === 'anaf' && <AnafPage ctx={ctx} />}
         {activeTab === 'dbfinal' && <DbFinalPage ctx={ctx} />}
         {activeTab === 'diagnostics' && <DiagnosticsPage ctx={ctx} />}
+        {activeTab === 'bpi' && <BpiPage ctx={ctx} />}
       </main>
 
       <footer className="app-footer">

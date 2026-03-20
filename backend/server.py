@@ -16,6 +16,7 @@ from routes.anaf import router as anaf_router
 from routes.mfinante import router as mfinante_router
 from routes.diagnostics import router as diagnostics_router
 from routes.localitati import router as localitati_router
+from routes.bpi import router as bpi_router
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -47,6 +48,7 @@ app.include_router(anaf_router, prefix=PREFIX)
 app.include_router(mfinante_router, prefix=PREFIX)
 app.include_router(diagnostics_router, prefix=PREFIX)
 app.include_router(localitati_router, prefix=PREFIX)
+app.include_router(bpi_router, prefix=PREFIX)
 
 
 # ─── Lifecycle ────────────────────────────────────────────────────────────────
