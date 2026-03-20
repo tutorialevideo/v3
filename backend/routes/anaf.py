@@ -3,6 +3,7 @@ ANAF sync routes: sync progress, stats, start/stop sync, test CUI endpoints.
 """
 import asyncio
 import logging
+import re
 from datetime import datetime
 
 import aiohttp
@@ -10,6 +11,13 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 
 import state
 import database
+
+
+def _s(value) -> str:
+    """Sanitize string: remove NUL bytes and other invalid PostgreSQL characters."""
+    if not isinstance(value, str):
+        return value
+    return value.replace('\x00', '').replace('\u0000', '').strip() or None
 from constants import ANAF_API_URL, ANAF_BATCH_SIZE, ANAF_CHUNK_SIZE, \
     ANAF_RATE_LIMIT_SECONDS, ANAF_TIMEOUT_SECONDS, ANAF_RETRY_DELAYS, ANAF_PAUSE_AFTER_FAILS
 
@@ -313,50 +321,48 @@ async def run_anaf_sync(limit: int, only_unsynced: bool, judet: str):
                                             inactiv = item.get("stare_inactiv", {})
                                             split = item.get("inregistrare_SplitTVA", {})
                                             sediu = item.get("adresa_sediu_social", {})
-                                            firma.anaf_denumire = dg.get("denumire")
-                                            firma.anaf_adresa = dg.get("adresa")
-                                            firma.anaf_nr_reg_com = dg.get("nrRegCom")
-                                            firma.anaf_telefon = dg.get("telefon")
-                                            firma.anaf_fax = dg.get("fax")
-                                            firma.anaf_cod_postal = dg.get("codPostal")
-                                            firma.anaf_stare = dg.get("stare_inregistrare")
-                                            firma.anaf_data_inregistrare = dg.get("data_inregistrare")
-                                            firma.anaf_cod_caen = dg.get("cod_CAEN")
-                                            firma.anaf_forma_juridica = dg.get("forma_juridica")
-                                            firma.anaf_forma_organizare = dg.get("forma_organizare")
-                                            firma.anaf_forma_proprietate = dg.get("forma_de_proprietate")
-                                            firma.anaf_organ_fiscal = dg.get("organFiscalCompetent")
+                                            df = item.get("adresa_domiciliu_fiscal", {})
+                                            # Apply _s() to ALL string fields to strip NUL bytes
+                                            firma.anaf_denumire = _s(dg.get("denumire"))
+                                            firma.anaf_adresa = _s(dg.get("adresa"))
+                                            firma.anaf_nr_reg_com = _s(dg.get("nrRegCom"))
+                                            firma.anaf_telefon = _s(dg.get("telefon"))
+                                            firma.anaf_fax = _s(dg.get("fax"))
+                                            firma.anaf_cod_postal = _s(dg.get("codPostal"))
+                                            firma.anaf_stare = _s(dg.get("stare_inregistrare"))
+                                            firma.anaf_data_inregistrare = _s(dg.get("data_inregistrare"))
+                                            firma.anaf_cod_caen = _s(dg.get("cod_CAEN"))
+                                            firma.anaf_forma_juridica = _s(dg.get("forma_juridica"))
+                                            firma.anaf_forma_organizare = _s(dg.get("forma_organizare"))
+                                            firma.anaf_forma_proprietate = _s(dg.get("forma_de_proprietate"))
+                                            firma.anaf_organ_fiscal = _s(dg.get("organFiscalCompetent"))
                                             firma.anaf_platitor_tva = tva.get("scpTVA", False)
                                             firma.anaf_tva_incasare = rtvai.get("statusTvaIncasare", False)
                                             firma.anaf_split_tva = split.get("statusSplitTVA", False)
                                             firma.anaf_inactiv = inactiv.get("statusInactivi", False)
                                             firma.anaf_e_factura = dg.get("statusRO_e_Factura", False)
-                                            firma.anaf_sediu_judet = sediu.get("sdenumire_Judet")
-                                            firma.anaf_sediu_localitate = sediu.get("sdenumire_Localitate")
-                                            firma.anaf_sediu_strada = sediu.get("sdenumire_Strada")
-                                            firma.anaf_sediu_numar = sediu.get("snumar_Strada")
-                                            firma.anaf_sediu_cod_postal = sediu.get("scod_Postal")
-                                            # Extra fields
-                                            firma.anaf_iban = dg.get("iban") or None
-                                            firma.anaf_data_efactura = dg.get("data_inreg_Reg_RO_e_Factura") or None
-                                            firma.anaf_data_inactivare = inactiv.get("dataInactivare") or None
-                                            firma.anaf_data_reactivare = inactiv.get("dataReactivare") or None
-                                            firma.anaf_data_radiere = inactiv.get("dataRadiere") or None
-                                            firma.anaf_data_inceput_tva_inc = rtvai.get("dataInceputTvaInc") or None
-                                            firma.anaf_data_sfarsit_tva_inc = rtvai.get("dataSfarsitTvaInc") or None
-                                            firma.anaf_data_inceput_split_tva = split.get("dataInceputSplitTVA") or None
-                                            df = item.get("adresa_domiciliu_fiscal", {})
-                                            firma.anaf_df_judet = df.get("ddenumire_Judet") or None
-                                            firma.anaf_df_localitate = df.get("ddenumire_Localitate") or None
-                                            firma.anaf_df_strada = df.get("ddenumire_Strada") or None
-                                            firma.anaf_df_numar = df.get("dnumar_Strada") or None
-                                            firma.anaf_df_cod_postal = df.get("dcod_Postal") or None
+                                            firma.anaf_sediu_judet = _s(sediu.get("sdenumire_Judet"))
+                                            firma.anaf_sediu_localitate = _s(sediu.get("sdenumire_Localitate"))
+                                            firma.anaf_sediu_strada = _s(sediu.get("sdenumire_Strada"))
+                                            firma.anaf_sediu_numar = _s(sediu.get("snumar_Strada"))
+                                            firma.anaf_sediu_cod_postal = _s(sediu.get("scod_Postal"))
+                                            firma.anaf_iban = _s(dg.get("iban"))
+                                            firma.anaf_data_efactura = _s(dg.get("data_inreg_Reg_RO_e_Factura"))
+                                            firma.anaf_data_inactivare = _s(inactiv.get("dataInactivare"))
+                                            firma.anaf_data_reactivare = _s(inactiv.get("dataReactivare"))
+                                            firma.anaf_data_radiere = _s(inactiv.get("dataRadiere"))
+                                            firma.anaf_data_inceput_tva_inc = _s(rtvai.get("dataInceputTvaInc"))
+                                            firma.anaf_data_sfarsit_tva_inc = _s(rtvai.get("dataSfarsitTvaInc"))
+                                            firma.anaf_data_inceput_split_tva = _s(split.get("dataInceputSplitTVA"))
+                                            firma.anaf_df_judet = _s(df.get("ddenumire_Judet"))
+                                            firma.anaf_df_localitate = _s(df.get("ddenumire_Localitate"))
+                                            firma.anaf_df_strada = _s(df.get("ddenumire_Strada"))
+                                            firma.anaf_df_numar = _s(df.get("dnumar_Strada"))
+                                            firma.anaf_df_cod_postal = _s(df.get("dcod_Postal"))
                                             firma.anaf_last_sync = now
                                             firma.anaf_sync_status = "found"
                                             state.anaf_sync_progress["found"] += 1
                                         else:
-                                            # Firm is in batch but cui not in found_map
-                                            # (either invalid CUI or not found by ANAF)
                                             cui_int = _parse_cui(firma.cui)
                                             if cui_int:
                                                 firma.anaf_last_sync = now
@@ -368,7 +374,7 @@ async def run_anaf_sync(limit: int, only_unsynced: bool, judet: str):
                                         state.anaf_sync_progress["processed"] += 1
 
                                     db.commit()
-                                    consecutive_failures = 0  # reset on success
+                                    consecutive_failures = 0
                                     success = True
                                     break
                                 elif response.status == 429:
@@ -379,17 +385,27 @@ async def run_anaf_sync(limit: int, only_unsynced: bool, judet: str):
                                     state.add_anaf_log(f"✗ Batch {current_batch}: HTTP {response.status}")
                     except asyncio.TimeoutError:
                         state.add_anaf_log(f"⏱ Batch {current_batch}: Timeout ({ANAF_TIMEOUT_SECONDS}s) - attempt {attempt+1}/3")
+                        # Rollback and get fresh session for next attempt
+                        try: db.rollback()
+                        except Exception: pass
                     except Exception as e:
-                        error_msg = str(e)[:60] or "connection error"
+                        error_msg = str(e)[:80] or "connection error"
                         state.add_anaf_log(f"⚠️ Batch {current_batch}: {error_msg} - attempt {attempt+1}/3")
+                        # Rollback invalid transaction before retry
+                        try: db.rollback()
+                        except Exception: pass
 
                 if not success:
                     consecutive_failures += 1
-                    for firma in batch:
-                        firma.anaf_sync_status = "error"
-                        state.anaf_sync_progress["errors"] += 1
-                        state.anaf_sync_progress["processed"] += 1
-                    db.commit()
+                    try:
+                        for firma in batch:
+                            firma.anaf_sync_status = "error"
+                            state.anaf_sync_progress["errors"] += 1
+                            state.anaf_sync_progress["processed"] += 1
+                        db.commit()
+                    except Exception:
+                        try: db.rollback()
+                        except Exception: pass
                     state.add_anaf_log(f"✗ Batch {current_batch}: Eșuat după 3 încercări (consecutive: {consecutive_failures})")
 
                     if consecutive_failures >= 3:
