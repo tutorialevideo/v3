@@ -826,9 +826,9 @@ async def get_mfinante_full(cui: str):
 async def start_mfinante_sync(
     background_tasks: BackgroundTasks,
     limit: int = 100,
-    only_without_bilant: bool = True,
-    only_anaf_active: bool = True
+    only_without_bilant: bool = True
 ):
+    """Sync MFinante data — ONLY for ANAF-confirmed ACTIVE firms."""
     if not state.mfinante_session.get("jsessionid"):
         await _load_session_from_db()
     if not state.mfinante_session.get("jsessionid"):
@@ -840,8 +840,9 @@ async def start_mfinante_sync(
         "processed": 0, "found": 0, "not_found": 0, "skipped": 0, "errors": 0,
         "last_update": datetime.utcnow().isoformat(), "last_cui": None, "logs": []
     })
-    background_tasks.add_task(_run_mfinante_sync, limit, only_without_bilant, only_anaf_active)
-    return {"message": "MFinante sync started", "status": "running"}
+    # only_anaf_active is always True — we never sync inactive/radiated firms
+    background_tasks.add_task(_run_mfinante_sync, limit, only_without_bilant, True)
+    return {"message": "MFinante sync started (doar firme active ANAF)", "status": "running"}
 
 
 @router.get("/mfinante/sync-logs")
@@ -1047,6 +1048,7 @@ async def get_mfinante_stats():
     if db is None:
         return {
             "total_firme": 0, "synced_mfinante": 0, "not_synced": 0,
+            "active_anaf_eligible": 0, "active_fara_bilant": 0,
             "with_cifra_afaceri": 0, "total_bilanturi_istorice": 0,
             "session_status": {
                 "has_session": state.mfinante_session.get("jsessionid") is not None,
@@ -1057,12 +1059,38 @@ async def get_mfinante_stats():
     try:
         Firma = database.Firma
         Bilant = database.Bilant
+        total = db.query(Firma).filter(Firma.cui.isnot(None)).count()
+        synced = db.query(Firma).filter(Firma.mf_last_sync.isnot(None)).count()
+        with_ca = db.query(Firma).filter(Firma.mf_cifra_afaceri.isnot(None)).count()
+        bilanturi = db.query(Bilant).count()
+
+        # Firme ACTIVE ANAF — eligibile pentru sync MFinante
+        active_anaf = db.query(Firma).filter(
+            Firma.anaf_sync_status == 'found',
+            Firma.anaf_stare.isnot(None),
+            Firma.anaf_stare.ilike('%ACTIV%'),
+            ~Firma.anaf_stare.ilike('%INACTIV%'),
+            ~Firma.anaf_stare.ilike('%RADIERE%')
+        ).count()
+
+        # Active ANAF fără bilanț salvat încă
+        active_fara_bilant = db.query(Firma).filter(
+            Firma.anaf_sync_status == 'found',
+            Firma.anaf_stare.isnot(None),
+            Firma.anaf_stare.ilike('%ACTIV%'),
+            ~Firma.anaf_stare.ilike('%INACTIV%'),
+            ~Firma.anaf_stare.ilike('%RADIERE%'),
+            Firma.mf_last_sync.is_(None)
+        ).count()
+
         return {
-            "total_firme": db.query(Firma).filter(Firma.cui.isnot(None)).count(),
-            "synced_mfinante": db.query(Firma).filter(Firma.mf_last_sync.isnot(None)).count(),
-            "not_synced": db.query(Firma).filter(Firma.cui.isnot(None)).count() - db.query(Firma).filter(Firma.mf_last_sync.isnot(None)).count(),
-            "with_cifra_afaceri": db.query(Firma).filter(Firma.mf_cifra_afaceri.isnot(None)).count(),
-            "total_bilanturi_istorice": db.query(Bilant).count(),
+            "total_firme": total,
+            "synced_mfinante": synced,
+            "not_synced": total - synced,
+            "active_anaf_eligible": active_anaf,
+            "active_fara_bilant": active_fara_bilant,
+            "with_cifra_afaceri": with_ca,
+            "total_bilanturi_istorice": bilanturi,
             "session_status": {
                 "has_session": state.mfinante_session.get("jsessionid") is not None,
                 "session_valid": state.mfinante_sync_progress.get("session_valid", False)

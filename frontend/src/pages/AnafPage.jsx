@@ -650,30 +650,34 @@ export default function AnafPage({ ctx }) {
 
                 {/* Sync Actions */}
                 <div className="mf-sync-section">
-                  <h4>3. Sincronizează firme</h4>
+                  <h4>3. Sincronizează bilanțuri</h4>
+
+                  {/* Stats — active firms eligible */}
                   {mfStats && (
-                    <div className="mf-stats-mini">
-                      <span>Total cu CUI: {mfStats.total_firme?.toLocaleString()}</span>
-                      <span>Sincronizate MF: {mfStats.synced_mfinante?.toLocaleString()}</span>
-                      <span>Cu bilanț: {mfStats.with_cifra_afaceri?.toLocaleString()}</span>
+                    <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(140px,1fr))', gap:'8px', marginBottom:'12px'}}>
+                      <div style={{background:'rgba(34,197,94,0.1)', border:'1px solid rgba(34,197,94,0.3)', borderRadius:'8px', padding:'10px', textAlign:'center'}}>
+                        <div style={{fontSize:'1.2rem', fontWeight:700, color:'#22c55e'}}>{mfStats.active_anaf_eligible?.toLocaleString() ?? '-'}</div>
+                        <div style={{fontSize:'0.72rem', color:'var(--text-muted)'}}>Firme ACTIVE ANAF</div>
+                      </div>
+                      <div style={{background:'rgba(234,179,8,0.1)', border:'1px solid rgba(234,179,8,0.3)', borderRadius:'8px', padding:'10px', textAlign:'center'}}>
+                        <div style={{fontSize:'1.2rem', fontWeight:700, color:'#eab308'}}>{mfStats.active_fara_bilant?.toLocaleString() ?? '-'}</div>
+                        <div style={{fontSize:'0.72rem', color:'var(--text-muted)'}}>Active fără bilanț</div>
+                      </div>
+                      <div style={{background:'var(--bg-secondary)', border:'1px solid var(--border)', borderRadius:'8px', padding:'10px', textAlign:'center'}}>
+                        <div style={{fontSize:'1.2rem', fontWeight:700, color:'var(--primary)'}}>{mfStats.with_cifra_afaceri?.toLocaleString() ?? '-'}</div>
+                        <div style={{fontSize:'0.72rem', color:'var(--text-muted)'}}>Cu cifra afaceri</div>
+                      </div>
+                      <div style={{background:'var(--bg-secondary)', border:'1px solid var(--border)', borderRadius:'8px', padding:'10px', textAlign:'center'}}>
+                        <div style={{fontSize:'1.2rem', fontWeight:700}}>{mfStats.total_bilanturi_istorice?.toLocaleString() ?? '-'}</div>
+                        <div style={{fontSize:'0.72rem', color:'var(--text-muted)'}}>Bilanțuri istorice</div>
+                      </div>
                     </div>
                   )}
 
-                  {/* Filtru doar active ANAF */}
-                  <div className="mf-filter-row" style={{display:'flex',alignItems:'center',gap:'8px',margin:'8px 0',padding:'8px 12px',background:'var(--bg-secondary)',borderRadius:'8px',fontSize:'0.84rem'}}>
-                    <input
-                      type="checkbox"
-                      id="mf-only-active"
-                      checked={mfOnlyActive}
-                      onChange={(e) => setMfOnlyActive(e.target.checked)}
-                      data-testid="mf-only-active-checkbox"
-                    />
-                    <label htmlFor="mf-only-active" style={{cursor:'pointer',userSelect:'none'}}>
-                      Verifică <strong>doar firmele ACTIVE</strong> conform ANAF
-                      <span style={{color:'var(--text-muted)',marginLeft:'6px',fontWeight:'normal'}}>
-                        (recomandat — evită firme radiate/inactive)
-                      </span>
-                    </label>
+                  {/* Info box — always active-only */}
+                  <div style={{display:'flex', alignItems:'center', gap:'8px', padding:'8px 12px', background:'rgba(34,197,94,0.08)', border:'1px solid rgba(34,197,94,0.25)', borderRadius:'8px', marginBottom:'10px', fontSize:'0.82rem'}}>
+                    <CheckCircle2 size={15} style={{color:'#22c55e', flexShrink:0}} />
+                    <span>Se procesează <strong>doar firmele confirmate ACTIVE</strong> de ANAF — firmele radiate/inactive sunt excluse automat.</span>
                   </div>
 
                   <div className="sync-options">
