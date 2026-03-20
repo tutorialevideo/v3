@@ -16,7 +16,7 @@ import aiohttp
 from bs4 import BeautifulSoup
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 
-import database
+import mongo_db as mdb
 import state
 
 router = APIRouter()
@@ -228,44 +228,46 @@ async def _fetch_page(session: aiohttp.ClientSession, page: int) -> Optional[str
 
 
 async def _save_companies_to_db(companies: list, only_new: bool) -> tuple:
-    """Save companies to PostgreSQL. Returns (new_count, skipped_count)."""
-    if not database.SessionLocal or not companies:
+    """Save companies to MongoDB. Returns (new_count, skipped_count)."""
+    import mongo_db as mdb
+    from pymongo import UpdateOne, InsertOne
+    if not companies:
         return 0, 0
 
-    Firma = database.Firma
-    db = database.SessionLocal()
+    cuis = [c["cui"] for c in companies]
     new_count = 0
     skipped = 0
 
-    try:
-        # Build existing CUI set
-        cuis = [c["cui"] for c in companies]
-        existing = set(
-            row[0] for row in db.query(Firma.cui).filter(Firma.cui.in_(cuis)).all()
-        )
+    # Find existing CUIs in one query
+    existing_docs = await mdb.firme_col.find(
+        {"cui": {"$in": cuis}}, {"_id": 0, "cui": 1}
+    ).to_list(None)
+    existing_cuis = {d["cui"] for d in existing_docs}
 
-        for company in companies:
-            if company["cui"] in existing:
-                skipped += 1
-                continue
+    bulk_ops = []
+    for company in companies:
+        if company["cui"] in existing_cuis:
+            skipped += 1
+            continue
+        firma_id = await mdb.next_id("firme")
+        from helpers import normalize_company_name
+        bulk_ops.append(InsertOne({
+            "id": firma_id,
+            "cui": company["cui"],
+            "denumire": company["denumire"],
+            "denumire_normalized": normalize_company_name(company["denumire"]),
+            "cod_inregistrare": company.get("nr_reg_com"),
+            "anaf_stare": company.get("stare"),
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow(),
+        }))
+        new_count += 1
 
-            from helpers import normalize_company_name
-            db.add(Firma(
-                cui=company["cui"],
-                denumire=company["denumire"],
-                denumire_normalized=normalize_company_name(company["denumire"]),
-                cod_inregistrare=company.get("nr_reg_com"),
-                anaf_stare=company.get("stare"),
-            ))
-            new_count += 1
-
-        if new_count > 0:
-            db.commit()
-    except Exception as e:
-        db.rollback()
-        logger.error(f"[MFIRME] DB save error: {e}")
-    finally:
-        db.close()
+    if bulk_ops:
+        try:
+            await mdb.firme_col.bulk_write(bulk_ops, ordered=False)
+        except Exception as e:
+            logger.error(f"[MFIRME] DB save error: {e}")
 
     return new_count, skipped
 
