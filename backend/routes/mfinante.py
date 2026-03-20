@@ -427,6 +427,25 @@ async def get_mfinante_session_status():
     }
 
 
+@router.get("/mfinante/session-status")
+async def get_mfinante_session_status():
+    if not state.mfinante_session.get("jsessionid"):
+        await _load_session_from_db()
+    return {
+        "session_valid": state.mfinante_session.get("jsessionid") is not None,
+        "jsessionid": (state.mfinante_session.get("jsessionid", "")[:20] + "...") if state.mfinante_session.get("jsessionid") else None,
+        "progress": state.mfinante_sync_progress
+    }
+
+
+@router.get("/mfinante/sync-progress")
+async def get_mfinante_sync_progress():
+    return {
+        "session_valid": state.mfinante_session.get("jsessionid") is not None,
+        "progress": state.mfinante_sync_progress
+    }
+
+
 @router.post("/mfinante/set-session")
 async def set_mfinante_session(jsessionid: str, cookies: dict = None):
     state.mfinante_session["jsessionid"] = jsessionid
