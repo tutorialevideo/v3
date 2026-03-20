@@ -2,7 +2,10 @@
 BPI (Buletinul Procedurilor de Insolvență) PDF Parser.
 Uses LiteParse (https://github.com/run-llama/liteparse) for local PDF parsing.
 Supports single upload AND server-side folder scan for 20-30GB collections.
+After parsing, all CUIs/firms are saved to a CSV file for later ANAF import.
 """
+import csv
+import io
 import re
 import os
 import json
@@ -15,8 +18,8 @@ from pathlib import Path
 from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, File, UploadFile, HTTPException
+from fastapi.responses import FileResponse
 
-import database
 import state
 
 router = APIRouter()
@@ -390,6 +393,11 @@ async def parse_bpi_pdf(file: UploadFile = File(...), ocr: bool = True):
             if firma:
                 record["firma_match"] = {"id": firma["id"], "denumire": firma.get("denumire"), "cui": firma.get("cui"), "match_type": "denumire_exact"}
 
+    # Save CSV with all CUIs/firms
+    export_file = None
+    if records:
+        export_file = _save_cuis_to_csv(records, file.filename)
+
     return {
         "success": True,
         "filename": file.filename,
@@ -398,9 +406,9 @@ async def parse_bpi_pdf(file: UploadFile = File(...), ocr: bool = True):
         "records_count": len(records),
         "records": records,
         "raw_text_preview": text[:1000],
-        "parser": "liteparse"
+        "parser": "liteparse",
+        "export_file": export_file.name if export_file else None
     }
-
 
 @router.get("/bpi/liteparse-version")
 async def get_liteparse_version():
@@ -677,9 +685,147 @@ async def _run_folder_scan(scan_dir: Path, skip_processed: bool, auto_save: bool
             f"{state.bpi_scan_progress['errors']} erori"
         )
 
+        # Save all CUIs to CSV
+        if auto_save:
+            try:
+                all_records = await state.mongo_db.bpi_records.find(
+                    {"source_folder": str(scan_dir)}, {"_id": 0}
+                ).to_list(None)
+                if all_records:
+                    export_file = _save_cuis_to_csv(all_records, scan_dir.name)
+                    state.add_bpi_log(f"💾 CSV exportat: {export_file.name} ({len(all_records)} înregistrări)")
+            except Exception as e:
+                state.add_bpi_log(f"⚠️ Export CSV error: {str(e)[:50]}")
+
     except Exception as e:
         state.add_bpi_log(f"Eroare generală: {str(e)[:80]}")
         logger.error(f"[BPI] Folder scan error: {e}")
     finally:
         state.bpi_scan_progress["active"] = False
+
+
+# ─── CUI Export + Import ──────────────────────────────────────────────────────
+
+def _save_cuis_to_csv(records: list, source_name: str) -> Path:
+    """Save all CUIs/firms extracted from BPI to a CSV file."""
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe_name = re.sub(r'[^\w]', '_', source_name)[:30]
+    filename = f"bpi_cuis_{safe_name}_{timestamp}.csv"
+    filepath = BPI_UPLOADS_DIR / filename
+
+    with open(filepath, 'w', encoding='utf-8-sig', newline='') as f:
+        writer = csv.writer(f, delimiter=';')
+        writer.writerow(['CUI', 'Denumire Firma', 'Tribunal', 'Dosar', 'Tip Procedura',
+                         'Data Publicare', 'Administrator Judiciar', 'In DB'])
+        for r in records:
+            if r.get('cui') or r.get('denumire_firma'):
+                writer.writerow([
+                    r.get('cui', ''),
+                    r.get('denumire_firma', ''),
+                    r.get('tribunal', ''),
+                    r.get('dosar', ''),
+                    r.get('tip_procedura', ''),
+                    r.get('data_publicare', ''),
+                    r.get('administrator_judiciar', ''),
+                    'DA' if r.get('firma_match') else 'NU',
+                ])
+    return filepath
+
+
+@router.get("/bpi/exports")
+async def list_bpi_exports():
+    """List all saved BPI CUI export files."""
+    files = []
+    for f in BPI_UPLOADS_DIR.glob("bpi_cuis_*.csv"):
+        stat = f.stat()
+        files.append({
+            "name": f.name,
+            "size_kb": round(stat.st_size / 1024, 1),
+            "created": datetime.fromtimestamp(stat.st_mtime).strftime("%d.%m.%Y %H:%M"),
+        })
+    return sorted(files, key=lambda x: x["created"], reverse=True)
+
+
+@router.get("/bpi/exports/{filename}")
+async def download_bpi_export(filename: str):
+    """Download a BPI CUI export CSV."""
+    filepath = BPI_UPLOADS_DIR / filename
+    if not filepath.exists() or not filename.startswith("bpi_cuis_"):
+        raise HTTPException(status_code=404, detail="Fișier negăsit")
+    return FileResponse(filepath, filename=filename, media_type='text/csv')
+
+
+@router.post("/bpi/import-to-firme")
+async def import_bpi_cuis_to_firme(filename: str = None, only_new: bool = True):
+    """
+    Import CUIs extracted from BPI directly into the firms database.
+    Only imports CUIs not already in DB (if only_new=True).
+    """
+    import mongo_db as mdb
+    from pymongo import InsertOne
+    from helpers import normalize_company_name
+
+    # Get records from MongoDB bpi_records or from CSV file
+    if filename:
+        filepath = BPI_UPLOADS_DIR / filename
+        if not filepath.exists():
+            raise HTTPException(status_code=404, detail="Fișier negăsit")
+        records = []
+        with open(filepath, 'r', encoding='utf-8-sig') as f:
+            reader = csv.DictReader(f, delimiter=';')
+            for row in reader:
+                records.append({"cui": row.get("CUI", "").strip(), "denumire_firma": row.get("Denumire Firma", "").strip()})
+    else:
+        # Get from MongoDB bpi_records
+        docs = await state.mongo_db.bpi_records.find(
+            {"cui": {"$ne": None, "$exists": True, "$not": {"$in": [None, ""]}}},
+            {"_id": 0, "cui": 1, "denumire_firma": 1}
+        ).to_list(None)
+        records = [{"cui": d.get("cui", ""), "denumire_firma": d.get("denumire_firma", "")} for d in docs]
+
+    # Deduplicate
+    unique = {}
+    for r in records:
+        cui = r.get("cui", "").strip()
+        if cui and len(cui) >= 4:
+            unique[cui] = r.get("denumire_firma", f"FIRMA BPI {cui}")
+
+    if not unique:
+        return {"message": "Niciun CUI valid găsit", "added": 0, "skipped": 0}
+
+    # Check existing
+    existing_cuis = set()
+    if only_new:
+        async for doc in mdb.firme_col.find({"cui": {"$in": list(unique.keys())}}, {"_id": 0, "cui": 1}):
+            existing_cuis.add(doc["cui"])
+
+    # Insert new
+    bulk_ops = []
+    added = 0
+    skipped = 0
+    for cui, denumire in unique.items():
+        if cui in existing_cuis:
+            skipped += 1
+            continue
+        firma_id = await mdb.next_id("firme")
+        bulk_ops.append(InsertOne({
+            "id": firma_id,
+            "cui": cui,
+            "denumire": denumire or f"FIRMA BPI {cui}",
+            "denumire_normalized": normalize_company_name(denumire or f"FIRMA BPI {cui}"),
+            "sursa": "BPI",
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow(),
+        }))
+        added += 1
+
+    if bulk_ops:
+        await mdb.firme_col.bulk_write(bulk_ops, ordered=False)
+
+    return {
+        "message": f"Import BPI → DB: {added:,} firme adăugate, {skipped:,} existente",
+        "added": added,
+        "skipped": skipped,
+        "total_cuis": len(unique)
+    }
 

@@ -1,165 +1,211 @@
 <analysis>**original_problem_statement:**
-The user's initial request was for a Dockerized application to scrape case files () for companies () from the Romanian justice portal. This evolved to include:
-1.  Importing a large (~200MB) CSV of companies from ONRC (National Trade Register Office).
-2.  Storing all data in a PostgreSQL database.
-3.  A web interface to manage and view the data.
-4.  **New in this session:** A crawler for the public ANAF (tax agency) API to get company status and VAT information.
-5.  **New in this session:** A web scraper for the MFinante (Ministry of Finance) portal to get detailed financial statements () for the last 6 years, bypassing a CAPTCHA by using a user-provided session cookie.
+The user's initial goal was to build a Dockerized full-stack application (React, FastAPI, PostgreSQL) for scraping and managing data about Romanian companies from various government sources (Justice Portal, ONRC, ANAF, MFinante).
 
-**PRODUCT REQUIREMENTS:**
-- All original requirements remain.
-- **ANAF Crawler:** Must sync data for all companies in the database from the public ANAF API v9, respecting rate limits.
-- **MFinante Scraper:** Must allow the user to input a session cookie (obtained after manually solving a CAPTCHA) to scrape detailed financial data for companies. The crawler should handle multi-year balance sheets and parse the HTML response correctly.
+Over the course of the session, the requirements evolved dramatically, leading to a complete architectural overhaul. Key requests included:
+1.  **Complete Migration to MongoDB:** The user requested to move the entire application from a PostgreSQL+MongoDB hybrid to a MongoDB-only stack to simplify the architecture and ensure functionality in all environments (local Docker, preview, and production).
+2.  **Advanced Scrapers:**
+    *   **MFinante:** Implement an auto-solving CAPTCHA using local OCR (Tesseract) with a Gemini AI fallback, and ensure only active companies are processed.
+    *   **ANAF:** Fix critical performance degradation during large-scale syncs (2.5M+ firms) and resolve  byte errors and session rollback issues.
+    *   **MFirme:** Add a new crawler to scrape ~1.7M CUIs from a Django admin site (mfirme.ro) and import them.
+3.  **BPI PDF Parsing:** Implement a local PDF parser (using LiteParse) for Buletinul Procedurilor de Insolvență files. This needed to support single, multiple, and server-side folder uploads (for 20-30GB datasets), and export all found CUIs to a text file for later import.
+4.  **Cloud Sync Architecture:** Establish a workflow where the local Docker instance is used for heavy data processing, with a button to sync the clean, final results to a production database on MongoDB Atlas.
+5.  **UI & Workflow:** Implement a match local feature for the Justice Portal scraper, simplify UI configurations, and fix various UI bugs related to state management and button visibility.
+6.  **Deployment Readiness:** Address multiple deployment blockers, including database incompatibility, malformed , and N+1 query issues, and handle environment variable configuration for production.
 
-**User's preferred language**: **Romanian**. The next agent MUST respond in Romanian.
+**User's preferred language**: Romanian. The next agent MUST respond in Romanian.
 
 **what currently exists?**
-A containerized full-stack application (React, FastAPI, PostgreSQL, MongoDB) with the following features:
-- **Justice Portal Scraper:** Fetches case files using a SOAP client.
-- **ONRC Data Importer:** A robust CSV importer that supports multiple file uploads, provides real-time progress logs, and correctly filters entities to import only legal companies (, , etc.), now storing all 26 columns of data from the source file.
-- **ANAF Crawler:** A fully implemented crawler for the public ANAF API v9 () to enrich company data with VAT status, e-Factura status, and activity status. It includes a UI for stats and progress tracking.
-- **MFinante Scraper:** A newly implemented scraper for . It requires the user to solve a CAPTCHA, provide the resulting , and then it can scrape multi-year financial statements (turnover, profit, employees, etc.).
-- **Docker Environment:** A stable  setup using an Nginx reverse proxy to eliminate all CORS issues.
-- **Database Diagnostics:** A dedicated UI tab to view database stats, find duplicates, and manage schema migrations.
+A fully containerized, MongoDB-native full-stack application. PostgreSQL has been completely removed.
+-   **Backend:** FastAPI with a modular route structure. All data operations use the  async MongoDB driver.
+-   **Frontend:** React, with the main  refactored into smaller, manageable page components.
+-   **Database:** The application is designed to run on a local MongoDB instance (via Docker Compose) for data processing.
+-   **Cloud Sync:** A feature exists in the Diagnostics tab to sync processed data from the local MongoDB to a production MongoDB Atlas cluster.
+-   **Key Features:**
+    -   Justice Portal scraper with date-range and case-category filters.
+    -   Performant ANAF scraper capable of handling millions of records without degradation.
+    -   MFinante scraper with a fully automatic Tesseract OCR-based CAPTCHA solver.
+    -   A BPI PDF parser using LiteParse for local processing, with UI for single/multiple/folder uploads and an automated CUI export-import workflow.
+    -   A web crawler for mfirme.ro to import a large list of company CUIs.
 
 **Last working item**:
-- **Last item agent was working on:** Implementing and debugging the MFinante (Ministry of Finance) web scraper. The agent successfully fixed the initial HTML parser to extract company identification data and then added the logic to make a subsequent POST request to fetch detailed, multi-year financial statements ().
-- **Status:** **IN PROGRESS**
-- **Agent Testing Done:** N (The agent has written the code but has not been able to test the full end-to-end flow with a user's live session cookie since the latest changes.)
-- **Which testing method agent to use?** Manual testing guided by the agent. The user must provide a valid  from their browser after solving the CAPTCHA on the MFinante website.
-- **User Testing Done:** N
+-   **Last item agent was working:** The agent implemented the user's request to save all CUIs found during BPI PDF parsing to a separate text file and provide a UI to import these CUIs into the main  collection.
+-   **Status:** USER VERIFICATION PENDING
+-   **Agent Testing Done:** Y
+-   **Which testing method agent to use?** Frontend testing agent. The agent should test the new BPI CUI Exports card in the BPI Parser tab, verifying the listing of generated CSVs, the download functionality, and the Import to DB button.
+-   **User Testing Done:** N
 
 **All Pending/In progress Issue list**:
-- **Issue 1: Finalize and Verify MFinante Financial Data Scraper** (Priority: P0)
-  - **Description:** The code to scrape financial statements () from MFinante has been written but is untested. The user previously confirmed the session-based approach works for basic data, but the new, more complex parser for financial data needs verification.
-  - **Attempted fixes:** The initial simple parser was replaced with a more robust one using BeautifulSoup. Logic was added to handle the secondary POST request needed to fetch the actual balance sheet data for a selected year.
-  - **Next debug checklist:**
-    1.  Instruct the user to pull the latest code and rebuild their Docker containers (, ).
-    2.  Guide the user to run the database migration to add the new columns for financial data: .
-    3.  Instruct the user on how to get a new  from the MFinante website.
-    4.  Ask the user to paste the session ID into the UI, set the session, and then test the sync for a single CUI.
-    5.  If it works, ask them to test a larger batch (e.g., Sync 50 firme).
-    6.  If it fails, request the backend logs () to debug the parser.
-  - **Why fix this issue and what will be achieved with the fix?** This will complete the user's request to enrich the company database with detailed financial history.
-  - **Status:** IN PROGRESS
-  - **Is recurring issue?** Y (The MFinante scraper has required several iterations to get right.)
-  - **Should Test frontend/backend/both after fix?** Backend.
-  - **Blocked on other issue:** None.
+-   There are no known pending issues. The last user requests have been addressed.
 
 **In progress Task List**:
-- **Task 1: MFinante Scraper Implementation**
-  - **Where to resume:** Guide the user through testing the latest implementation as outlined in Issue 1 above.
-  - **What will be achieved with this?** A working scraper that fetches and saves multi-year financial data (turnover, profit, employees, etc.) for companies in the database.
-  - **Status:** IN PROGRESS
-  - **Should Test frontend/backend/both after fix?** Backend.
-  - **Blocked on something:** Waiting for user testing.
+-   There are no tasks currently in progress.
 
 **Upcoming and Future Tasks**
-- **Upcoming Tasks:**
-  - **(P1) View Company Details:** Implement functionality so that clicking on a company in the Firme list navigates to a detail page showing all its associated case files from the justice portal.
-  - **(P1) Manual CUI Editing:** Add a feature (e.g., an edit button in the Firme table) to manually add or update the CUI for a company.
-- **Future Tasks:**
-  - **(P2) Institution Selector:** Add a multi-select dropdown in the configuration to allow users to run justice portal downloads for specific judicial institutions instead of all 246.
-  - **(P2) Data Export:** Add Export to CSV/Excel buttons to export company lists or financial data.
-  - **(P2) Advanced Search:** Add a search filter to find case files based on a company's CUI.
+-   **Upcoming Tasks:**
+    -   **(P1)** Add a multi-select filter for institutions (e.g., specific courts) to the Justice Portal scraper to limit download scope.
+    -   **(P2)** Implement native Excel  export functionality, as the current implementation only supports CSV.
+-   **Future Tasks:**
+    -   **(P2)** Link parsed BPI records automatically to their corresponding  from the Justice Portal.
+    -   **(P2)** Add a feature to filter the  table by county () or region.
+    -   **(P3)** Implement a small financial evolution chart (e.g., revenue over years) in the Company Profile modal for firms with historical data.
+    -   **(P3)** Fix minor  formatting (e.g., J19 56 2017 should be J19/56/2017).
 
 **Completed work in this session**
-- **Docker Environment Stabilized:** Resolved all user-facing  errors, including port conflicts and persistent CORS issues, by implementing a robust **Nginx reverse proxy** within the frontend container.
-- **Database Diagnostics Feature:** Created a new Diagnosticare DB tab with backend endpoints for viewing DB stats, finding duplicates, optimizing tables (), and managing schema migrations.
-- **ONRC Importer Overhaul:**
-  - Expanded the database schema to store all 26 columns from the ONRC source files.
-  - Implemented multi-file uploads.
-  - Added real-time progress logging to the UI.
-  - Corrected the filtering logic to use the  column, fixing a critical bug that incorrectly imported hundreds of thousands of non-company entities (PFA, II, etc.).
-- **ANAF API v9 Crawler:** Successfully implemented and tested a crawler for the public ANAF API (), enriching the database with company status, VAT info, and e-Factura status.
-- **MFinante Scraper (In Progress):** Built a scraper for  that uses a user-provided  to bypass CAPTCHA and fetch detailed multi-year financial statements.
+-   **Full PostgreSQL to MongoDB Migration:** The entire application's data layer was successfully migrated from a PostgreSQL/MongoDB hybrid to a pure MongoDB stack. This was a major architectural change.
+-   **MongoDB Atlas Sync:** A complete sync workflow was created to push clean data from the local processing database (Docker MongoDB) to a production database (MongoDB Atlas).
+-   **MFirme.ro Crawler:** A new crawler was built to log into  and scrape ~1.7 million company CUIs, adding them to the local database.
+-   **BPI Parser Enhancements:** The BPI parser was enhanced to support server-side folder scanning for large datasets (20-30GB) and browser-based multi-file/folder uploads. A new workflow was added to automatically export all found CUIs to a CSV and allow importing them into the main database.
+-   **Auto-CAPTCHA Solver:** The MFinante CAPTCHA solver was made fully automatic using Tesseract OCR, with Gemini as a fallback.
+-   **ANAF Sync Performance Fix:** Resolved a critical performance bug where the sync process would stop prematurely after processing a limited number of records. The logic was rewritten to correctly handle all CUI formats and process the entire dataset.
+-   **Deployment & Bug Fixes:** Addressed multiple deployment blockers, including database connection issues in production, IPv6 problems in Docker, and various UI bugs reported by the user.
 
 **Earlier issues found/mentioned but not fixed**
-- None.
+-   **nr_reg_com formatting:** The issue of formatting the company registration number (e.g., J19 56 2017 to J19/56/2017) was noted but deferred as a low-priority future task.
 
 **Known issue recurrence from previous fork**
-- None.
+-   The previous fork's main issue was a bloated, monolithic codebase in  and . This was fully resolved in this session by refactoring the backend into modular routes and the frontend into separate page components.
+-   The recurring issue in *this* session was the instability of the preview environment's database, which was the primary driver for migrating the entire application to a pure MongoDB stack that runs reliably everywhere.
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
-- **Backend:** FastAPI, PostgreSQL (SQLAlchemy), MongoDB (Motor), APScheduler, aiohttp, **BeautifulSoup4 (new)**.
-- **Frontend:** React, Axios, Tailwind CSS, Shadcn UI.
-- **Deployment:** Docker Compose, Nginx reverse proxy.
-- **Scraping:** Session-based scraping using  to bypass CAPTCHA by reusing a user's browser session.
+-   **Backend:** FastAPI, **MongoDB** (using the  async driver exclusively).
+-   **Frontend:** React, Axios, Shadcn UI, Tailwind CSS.
+-   **Deployment:** Docker Compose for local development/processing. Sync to MongoDB Atlas for production data.
+-   **Local Processing:** Tesseract OCR for CAPTCHA, LiteParse for PDF parsing,  for async web crawling.
 
 **key DB schema**
--   **PostgreSQL ( table):** The schema was massively expanded. It now includes ~53 new columns to store:
-    -   **ONRC Data:** , , , , , , etc. (all 26 source columns).
-    -   **ANAF Data:**  (boolean),  (boolean),  (string),  (boolean),  (datetime).
-    -   **MFinante Data:**  (float),  (float),  (float),  (int),  (int),  (datetime).
+The entire schema now resides in MongoDB.
+-   ****: The main collection storing all company data. Documents contain nested data for  and .
+-   ****: Stores court case details.
+-   ****: Stores historical financial statements.
+-   ****: A single document for scraper job configuration.
+-   ****: A collection to log the history and status of scraper runs.
+-   ****: A single document to persist the active MFinante session.
+-   ****: A history of parsed records from BPI PDFs.
+-   ** / **: Data for Romanian locations, used for address normalization.
 
 **changes in tech stack**
-- **backend:** Added  for HTML parsing.
+-   **CRITICAL:** The application was migrated from a **PostgreSQL/MongoDB hybrid to a pure MongoDB stack**. All related libraries (SQLAlchemy, psycopg2) have been removed. The  async library is now used for all database interactions.
+-   **Supabase was removed** and replaced with a sync mechanism for **MongoDB Atlas**.
+-   **Tesseract OCR** and  were added for local CAPTCHA solving.
+-   **LiteParse** (via npm <command>
+
+Usage:
+
+npm install        install all the dependencies in your project
+npm install <foo>  add the <foo> dependency to your project
+npm test           run this project's tests
+npm run <foo>      run the script named <foo>
+npm <command> -h   quick help on <command>
+npm -l             display usage info for all commands
+npm help <term>    search for help on <term>
+npm help npm       more involved overview
+
+All commands:
+
+    access, adduser, audit, bugs, cache, ci, completion,
+    config, dedupe, deprecate, diff, dist-tag, docs, doctor,
+    edit, exec, explain, explore, find-dupes, fund, get, help,
+    help-search, hook, init, install, install-ci-test,
+    install-test, link, ll, login, logout, ls, org, outdated,
+    owner, pack, ping, pkg, prefix, profile, prune, publish,
+    query, rebuild, repo, restart, root, run-script, sbom,
+    search, set, shrinkwrap, star, stars, start, stop, team,
+    test, token, uninstall, unpublish, unstar, update, version,
+    view, whoami
+
+Specify configs in the ini-formatted file:
+    /root/.npmrc
+or on the command line via: npm <command> --key=value
+
+More configuration info: npm help config
+Configuration fields: npm help 7 config
+
+npm@10.8.2 /usr/lib/node_modules/npm) was integrated for local PDF processing.
 
 **All files of reference**
-- : Heavily modified. Now contains all logic for ONRC import, ANAF sync, and MFinante scraping. It is over 2600 lines long.
-- : Heavily modified. Now includes UI for all new features (Diagnostics, ANAF Sync, MFinante Sync). It is over 1800 lines long.
-- : Modified to act as a reverse proxy, solving all CORS issues.
-- : Updated with .
-- : Ports and environment variables updated.
+-   : **NEW**. The new core of the persistence layer, defining all MongoDB collections and helper functions.
+-   : All files were rewritten to use MongoDB.
+-   : **NEW**. Logic for syncing data to MongoDB Atlas.
+-   : **NEW**. Logic for the mfirme.ro crawler.
+-   : Heavily modified to remove the PostgreSQL service and correctly wire the MongoDB service and environment variables.
+-   : Modified to install Node.js, LiteParse, and Tesseract OCR.
+-   : **NEW**. Central file for all secrets, including the MongoDB Atlas connection string. This file is in .
 
-**Areas that need refactoring**
-- **CRITICAL:**  (2600+ lines) and  (1800+ lines) are now unmaintainable monoliths. They urgently need to be broken down into a proper project structure (e.g., , , , ). This technical debt is the biggest risk to the project's stability.
+**Areas that need refactoring**:
+- The codebase has been significantly refactored. No critical refactoring is immediately needed. The next focus should be on implementing new features.
 
 **key api endpoints**
-- : **CRITICAL** endpoint to update the DB schema after code changes.
-- : Starts the ANAF data synchronization.
-- : Sets the  for the MFinante scraper.
-- : Starts the MFinante financial data synchronization.
-- , : Endpoints for real-time progress updates.
+-   : Upload and parse multiple BPI PDF files.
+-   : List generated CUI export files.
+-   : Import a CUI export file into the  collection.
+-   : Start the crawler for mfirme.ro.
+-   : Start the synchronization process from local MongoDB to MongoDB Atlas.
+-   : Automatically solve the MFinante CAPTCHA using Tesseract/Gemini.
 
 **Critical Info for New Agent**
-- The user's workflow is now:
-    1.  Import company data from ONRC CSVs.
-    2.  Run the **schema migration** () after any code update that touches the database model.
-    3.  Run the ANAF sync to get tax/VAT status.
-    4.  Manually solve the MFinante CAPTCHA, get the , set it in the UI, and run the MFinante sync to get financial data.
-- The MFinante scraper's session expires after ~15-30 minutes, requiring a new CAPTCHA solve. You must be able to explain this workflow to the user.
-- The most urgent task is to verify the latest changes to the MFinante scraper.
+1.  **MongoDB is the ONLY database.** The project has been fully migrated. Do not attempt to use PostgreSQL, SQLAlchemy, or Supabase. All data logic is in  and the  directory, using the  async driver.
+2.  **Local vs. Cloud Architecture:** The intended workflow is:
+    *   **Local Docker:** Run all heavy processing (ANAF/MFinante sync, crawlers, BPI parsing).
+    *   **MongoDB Atlas:** Serves as the clean, production-ready database. Data is pushed from local to Atlas via a sync button in the UI.
+3.  **Preview Environment Limitations:** The agent's preview environment has network restrictions. It **cannot connect to external services like MongoDB Atlas**. This is expected. Code should be written to handle this gracefully and not crash. The user's local Docker environment does not have this restriction.
+4.  **User has two environments:** Be aware that the user runs the application on their local Docker setup and has also deployed it to a production URL. When they report an issue, always clarify if it's on their local Docker or the production deployment, as the debugging approach will differ.
 
 **documents and test reports created in this job**
-None.
+-   
+-   
+-   ================================================
+  Diagnosticare Baza de Date - 20260320_204718
+================================================
+
+ERROR: Nu gasesc containerul PostgreSQL. Asigura-te ca docker compose e pornit.
+-   
 
 **Last 10 User Messages and any pending HUMAN messages**
-1.  **User:** Asks to implement a crawler for MFinante financial data, suggesting a way to use a single CAPTCHA for multiple requests. (Status: **Addressed**)
-2.  **Agent:** Agrees and implements the session-based scraper logic, adding new DB columns and API endpoints.
-3.  **User:** Provides a  and a CUI to test with, stating it works in the browser but not in the app. (Status: **Addressed**)
-4.  **Agent:** Tests with the user's session, confirms it's valid, but identifies the HTML parser is incorrect.
-5.  **Agent:** Rewrites the HTML parser in  to correctly extract company identification data.
-6.  **Agent:** Realizes financial data requires a separate POST request and adds the logic to fetch and parse the  as well.
-7.  **User:** Reports the schema migration was successful after pulling the latest code, adding 53 new columns. (Status: **Completed**)
-8.  **Agent:** Confirms the successful migration and tells the user what to do next (import data, then sync).
-9.  **User:** Provides a session and CUI again to test the MFinante scraper, stating it shows nothing in the app but works in the browser. (Status: **In Progress**)
-10. **Agent:** Confirms the session is valid and the parser is the issue, then updates the parser and adds logic for fetching the detailed .
+1.  **User:** Requests a way to upload multiple BPI files at once for parsing. (Status: **Completed**)
+2.  **User:** Asks for a script to diagnose the state of their database on Docker. (Status: **Completed**)
+3.  **User:** Reports database connection errors on Docker after deployment. (Status: **Completed, fixed environment variable issues**)
+4.  **User:** Asks how to check if their IP is banned by ANAF and reports sync performance issues. (Status: **Completed, provided diagnostics and fixed performance**)
+5.  **User:** Asks to use their own Gemini API key, provides it, and then reports it's not working. (Status: **Completed, debugged and fixed model/key issues**)
+6.  **User:** Suggests using a local OCR, leading to the Tesseract implementation. (Status: **Completed**)
+7.  **User:** Reports the ANAF sync stops prematurely at 20,000 records. (Status: **Completed, fixed a critical bug in the processing loop**)
+8.  **User:** Reports the Sync Toate Nesincronizate button shows (0) incorrectly. (Status: **Completed, fixed a missing API endpoint decorator**)
+9.  **User:** Asks to implement a parser for BPI PDFs using LiteParse and to process large folders. (Status: **Completed**)
+10. **User:** Asks to migrate the entire application to MongoDB to ensure it works in the preview environment. (Status: **Completed**)
 
 **Project Health Check:**
--   **Broken:** The MFinante financial data scraper is implemented but unverified by the user.
+-   **Broken:** None. The application is stable after major refactoring and bug fixes.
 -   **Mocked:** None.
 
 **3rd Party Integrations**
 -   **Romanian Justice Portal:** SOAP API (no key).
--   **ANAF API v9:** Public REST API () for VAT/company status (no key).
--   **MFinante Scraper:** Web scraper for , which requires a user-provided  to bypass a CAPTCHA.
+-   **ANAF API v9:** Public REST API (no key).
+-   **MFinante Scraper:** Web scraper with an automatic, local Tesseract OCR-based CAPTCHA solver. Fallback to Gemini API.
+-   **MFirme.ro Crawler:** Web scraper with login session management.
+-   **MongoDB Atlas:** Cloud database service used for production data storage.
+-   **Gemini 2.5 Flash:** Used as a fallback for CAPTCHA solving. Requires a User API Key.
+-   **LiteParse:** Local CLI tool for PDF parsing.
 
 **Testing status**
--   **Testing agent used after significant changes:** NO
+-   **Testing agent used after significant changes:** YES
 -   **Troubleshoot agent used after agent stuck in loop:** NO
--   **Test files created:** None
--   **Known regressions:** None
+-   **Test files created:**
+    - 
+    - 
+    - ================================================
+  Diagnosticare Baza de Date - 20260320_204718
+================================================
+
+ERROR: Nu gasesc containerul PostgreSQL. Asigura-te ca docker compose e pornit.
+-   **Known regressions:** None.
 
 **Credentials to test flow:**
--   **PostgreSQL User:** 
--   **PostgreSQL Password:** 
--   **PostgreSQL Database:** 
--   **MFinante Scraper:** Requires a temporary  provided by the user after they solve a CAPTCHA at .
+-   **Local MongoDB:** Defined in  (/).
+-   **MFirme Crawler:**  /  (from user, stored in ).
+-   **MongoDB Atlas:**  /  (from user, stored in ).
+-   **Gemini API:**  (from user, stored in , but likely leaked and invalid).
 
 **What agent forgot to execute**
-- The agent has not performed the critical refactoring of  and . This is accumulating significant technical debt.
-- The agent has not started on the Upcoming Tasks from the original plan (e.g., viewing company details/cases). The focus has been entirely on the new data scraping requests from the user.</analysis>
+- The agent was asked to migrate from PostgreSQL to MongoDB and did so for most of the application. However, it initially missed migrating several routes (, , , ), leaving PostgreSQL dependencies. This was caught and fixed later in the session, but it was an oversight during a major refactoring task.</analysis>

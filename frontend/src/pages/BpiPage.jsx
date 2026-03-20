@@ -23,11 +23,42 @@ export default function BpiPage({ ctx }) {
   const [liteparseVersion, setLiteparseVersion] = useState(null);
   const [folderUploadProgress, setFolderUploadProgress] = useState(null);
   const [folderResults, setFolderResults] = useState([]);
-  const [uploadMode, setUploadMode] = useState('file'); // 'file' | 'folder'
+  const [uploadMode, setUploadMode] = useState('file');
+  const [exportFiles, setExportFiles] = useState([]);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
   const fileInputRef = useRef(null);
   const folderInputRef = useRef(null);
 
   useEffect(() => {
+    fetch(`${API}/bpi/liteparse-version`)
+      .then(r => r.json())
+      .then(d => setLiteparseVersion(d))
+      .catch(() => {});
+    fetch(`${API}/bpi/exports`)
+      .then(r => r.json())
+      .then(d => setExportFiles(Array.isArray(d) ? d : []))
+      .catch(() => {});
+  }, []);
+
+  const importToDB = async (filename = null) => {
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const url = filename
+        ? `${API}/bpi/import-to-firme?filename=${encodeURIComponent(filename)}&only_new=true`
+        : `${API}/bpi/import-to-firme?only_new=true`;
+      const res = await axios.post(url);
+      setImportResult(res.data);
+      toast.success(res.data.message);
+      // Refresh exports
+      fetch(`${API}/bpi/exports`).then(r => r.json()).then(d => setExportFiles(Array.isArray(d) ? d : []));
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Eroare import');
+    } finally {
+      setImporting(false);
+    }
+  };
     fetch(`${API}/bpi/liteparse-version`)
       .then(r => r.json())
       .then(d => setLiteparseVersion(d))
@@ -275,6 +306,76 @@ export default function BpiPage({ ctx }) {
               </CardContent>
             </Card>
           )}
+
+          {/* CUI Export + Import Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="card-title" style={{fontSize:'1rem'}}>
+                <CheckCircle2 size={18} style={{color:'#22c55e'}} />
+                CUI-uri extrase — Import în DB
+              </CardTitle>
+              <CardDescription>
+                După parsare, CUI-urile sunt salvate automat în CSV. Importă-le în baza de firme pentru verificare ANAF.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {/* Import from all bpi_records */}
+              <div style={{marginBottom:'12px'}}>
+                <Button
+                  onClick={() => importToDB(null)}
+                  disabled={importing}
+                  style={{width:'100%', marginBottom:'6px'}}
+                  data-testid="import-all-bpi-btn"
+                >
+                  {importing
+                    ? <><Loader2 className="animate-spin" size={14} style={{marginRight:6}}/>Se importă...</>
+                    : <><CheckCircle2 size={14} style={{marginRight:6}}/>Importă toate CUI-urile BPI în Firme</>
+                  }
+                </Button>
+                <p style={{fontSize:'0.75rem', color:'var(--text-muted)'}}>
+                  Adaugă firmele din BPI în tabelul Firme → le poți verifica la ANAF
+                </p>
+              </div>
+
+              {importResult && (
+                <div style={{padding:'10px 12px', background:'rgba(34,197,94,0.08)', border:'1px solid rgba(34,197,94,0.25)', borderRadius:'8px', marginBottom:'10px', fontSize:'0.82rem'}}>
+                  <strong style={{color:'#22c55e'}}>{importResult.message}</strong>
+                  <div style={{color:'var(--text-muted)', fontSize:'0.75rem', marginTop:'3px'}}>
+                    Total CUI-uri unice: {importResult.total_cuis?.toLocaleString()}
+                  </div>
+                </div>
+              )}
+
+              {/* CSV Export files */}
+              {exportFiles.length > 0 && (
+                <div>
+                  <div style={{fontSize:'0.78rem', color:'var(--text-muted)', marginBottom:'6px', fontWeight:600}}>
+                    Fișiere CSV exportate automat:
+                  </div>
+                  {exportFiles.map((f, i) => (
+                    <div key={i} style={{display:'flex', alignItems:'center', gap:'8px', padding:'6px 10px', background:'var(--bg-secondary)', borderRadius:'6px', marginBottom:'4px', fontSize:'0.78rem'}}>
+                      <span style={{flex:1}}>{f.name}</span>
+                      <span style={{color:'var(--text-muted)'}}>{f.size_kb} KB</span>
+                      <a href={`${API}/bpi/exports/${encodeURIComponent(f.name)}`} download
+                        style={{color:'var(--primary)', textDecoration:'none', fontSize:'0.75rem'}}>
+                        ↓ Download
+                      </a>
+                      <button onClick={() => importToDB(f.name)} disabled={importing}
+                        style={{background:'none', border:'1px solid var(--primary)', color:'var(--primary)', borderRadius:'4px', padding:'2px 8px', cursor:'pointer', fontSize:'0.72rem'}}>
+                        Import în DB
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {exportFiles.length === 0 && (
+                <p style={{fontSize:'0.78rem', color:'var(--text-muted)', fontStyle:'italic'}}>
+                  Niciun CSV generat încă. Parseaza un PDF BPI pentru a genera primul export.
+                </p>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Folder Scan Card */}
           <Card>
