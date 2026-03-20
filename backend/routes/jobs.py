@@ -62,116 +62,100 @@ def _build_firma_cache(db, Firma) -> dict:
     return cache
 
 
-async def save_to_postgres(dosare: list, search_term: str,
-                           categorie_caz: str = None,
-                           only_match_existing: bool = False) -> dict:
-    db = database.SessionLocal()
-    Firma = database.Firma
-    Dosar = database.Dosar
-    TimelineEvent = database.TimelineEvent
+async def save_to_mongo(dosare: list, search_term: str,
+                       categorie_caz: str = None,
+                       only_match_existing: bool = False) -> dict:
+    """Save dosare and firms to MongoDB."""
+    import mongo_db as mdb
+    from pymongo import UpdateOne
     stats = {
         'firme_new': 0, 'firme_existing': 0, 'firme_matched_anaf': 0,
         'dosare_new': 0, 'timeline_new': 0,
         'skipped_categorie': 0, 'skipped_no_match': 0
     }
 
-    # Build match cache once for the whole batch
-    firma_cache = _build_firma_cache(db, Firma) if only_match_existing else {}
+    # Build match cache if only_match_existing
+    norm_cache = {}
+    if only_match_existing:
+        async for doc in mdb.firme_col.find(
+            {"cui": {"$ne": None}}, {"_id": 0, "id": 1, "denumire": 1, "denumire_normalized": 1, "cui": 1, "anaf_denumire": 1}
+        ):
+            if doc.get("denumire_normalized"):
+                norm_cache[doc["denumire_normalized"]] = doc
+            if doc.get("anaf_denumire"):
+                norm_cache[normalize_company_name(doc["anaf_denumire"])] = doc
 
-    try:
-        for dosar_data in dosare:
-            # Filter by category
-            if categorie_caz:
-                if dosar_data.get('categorieCaz', '') != categorie_caz:
-                    stats['skipped_categorie'] += 1
-                    continue
+    from pymongo import InsertOne, UpdateOne
+    bulk_dosare = []
+    bulk_timeline = []
 
-            parti = dosar_data.get('parti', [])
-            if not isinstance(parti, list):
-                continue
-            companies = extract_companies_from_parti(parti)
-            if not companies:
-                continue
+    for dosar_data in dosare:
+        if categorie_caz and dosar_data.get('categorieCaz', '') != categorie_caz:
+            stats['skipped_categorie'] += 1
+            continue
+        parti = dosar_data.get('parti', [])
+        if not isinstance(parti, list):
+            continue
+        companies = extract_companies_from_parti(parti)
+        if not companies:
+            continue
 
-            for company in companies:
-                if only_match_existing:
-                    # Match ONLY against existing firms (no new firm creation)
-                    norm = company['denumire_normalized']
-                    firma = firma_cache.get(norm)
-
-                    # Try partial match if exact not found
-                    if not firma and len(norm) >= 5:
-                        for cache_key, cached_firma in firma_cache.items():
-                            if (cache_key.startswith(norm[:min(len(norm), 20)]) or
-                                    norm.startswith(cache_key[:min(len(cache_key), 20)])):
-                                firma = cached_firma
-                                break
-
-                    if not firma:
-                        stats['skipped_no_match'] += 1
-                        continue
-
-                    if firma_cache.get(norm) == firma and company['denumire_normalized'] != firma.denumire_normalized:
-                        stats['firme_matched_anaf'] += 1
-                    stats['firme_existing'] += 1
+        for company in companies:
+            firma_doc = None
+            if only_match_existing:
+                norm = company['denumire_normalized']
+                firma_doc = norm_cache.get(norm)
+                if not firma_doc and len(norm) >= 5:
+                    for k, v in norm_cache.items():
+                        if k.startswith(norm[:20]) or norm.startswith(k[:20]):
+                            firma_doc = v; break
+                if not firma_doc:
+                    stats['skipped_no_match'] += 1; continue
+                stats['firme_existing'] += 1
+            else:
+                firma_doc = await mdb.get_firma_by_denumire_norm(company['denumire_normalized'])
+                if not firma_doc:
+                    firma_doc = await mdb.upsert_firma_by_norm(company['denumire'], company['denumire_normalized'])
+                    stats['firme_new'] += 1
                 else:
-                    # Original behavior: find or create
-                    firma = db.query(Firma).filter(
-                        Firma.denumire_normalized == company['denumire_normalized']
-                    ).first()
-                    if not firma:
-                        firma = Firma(
-                            denumire=company['denumire'],
-                            denumire_normalized=company['denumire_normalized']
-                        )
-                        db.add(firma)
-                        db.flush()
-                        stats['firme_new'] += 1
-                    else:
-                        stats['firme_existing'] += 1
+                    stats['firme_existing'] += 1
 
-                numar_dosar = dosar_data.get('numar', '')
-                if db.query(Dosar).filter(
-                    Dosar.firma_id == firma.id, Dosar.numar_dosar == numar_dosar
-                ).first():
-                    continue
+            numar_dosar = dosar_data.get('numar', '')
+            existing_dosar = await mdb.get_dosar_by_firma_and_numar(firma_doc['id'], numar_dosar)
+            if existing_dosar:
+                continue
 
-                dosar = Dosar(
-                    firma_id=firma.id, numar_dosar=numar_dosar,
-                    institutie=dosar_data.get('institutie', ''),
-                    obiect=dosar_data.get('obiect', ''),
-                    data_dosar=parse_date(dosar_data.get('data', '')),
-                    stadiu=dosar_data.get('stadiuProcesual', ''),
-                    categorie=dosar_data.get('categorieCaz', ''),
-                    materie=dosar_data.get('materie', ''),
-                    raw_data=dosar_data
-                )
-                db.add(dosar)
-                db.flush()
-                stats['dosare_new'] += 1
+            dosar_id = await mdb.next_id("dosare")
+            dosar_doc = {
+                "id": dosar_id, "firma_id": firma_doc['id'],
+                "numar_dosar": numar_dosar,
+                "institutie": dosar_data.get('institutie', ''),
+                "obiect": dosar_data.get('obiect', ''),
+                "data_dosar": parse_date(dosar_data.get('data', '')),
+                "stadiu": dosar_data.get('stadiuProcesual', ''),
+                "categorie": dosar_data.get('categorieCaz', ''),
+                "materie": dosar_data.get('materie', ''),
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
+            }
+            bulk_dosare.append(InsertOne(dosar_doc))
+            stats['dosare_new'] += 1
 
-                for sedinta in (dosar_data.get('sedinte', []) or []):
-                    db.add(TimelineEvent(
-                        dosar_id=dosar.id, tip='sedinta',
-                        data=parse_date(sedinta.get('data', '')),
-                        descriere=sedinta.get('solutie', '') or sedinta.get('complet', ''),
-                        detalii=sedinta
-                    ))
-                    stats['timeline_new'] += 1
-                for cale in (dosar_data.get('caiAtac', []) or []):
-                    db.add(TimelineEvent(
-                        dosar_id=dosar.id, tip='cale_atac',
-                        data=parse_date(cale.get('dataDeclarare', '')),
-                        descriere=cale.get('tipCaleAtac', ''), detalii=cale
-                    ))
-                    stats['timeline_new'] += 1
-        db.commit()
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Error saving to PostgreSQL: {e}")
-        raise
-    finally:
-        db.close()
+            for sedinta in (dosar_data.get('sedinte', []) or []):
+                t_id = await mdb.next_id("timeline")
+                bulk_timeline.append(InsertOne({
+                    "id": t_id, "dosar_id": dosar_id, "tip": "sedinta",
+                    "data": parse_date(sedinta.get('data', '')),
+                    "descriere": sedinta.get('solutie', '') or sedinta.get('complet', ''),
+                    "detalii": sedinta, "created_at": datetime.now(timezone.utc)
+                }))
+                stats['timeline_new'] += 1
+
+    if bulk_dosare:
+        await mdb.dosare_col.bulk_write(bulk_dosare, ordered=False)
+    if bulk_timeline:
+        await mdb.timeline_col.bulk_write(bulk_timeline, ordered=False)
+
     return stats
 
 
@@ -205,7 +189,7 @@ async def run_download_job(search_term: str, job_run_id: str,
                 break
             dosare = await fetch_dosare(session, search_term, institutie, date_start, date_end)
             if dosare:
-                stats = await save_to_postgres(dosare, search_term, categorie_caz, only_match_existing)
+                stats = await save_to_mongo(dosare, search_term, categorie_caz, only_match_existing)
                 for key in total_stats:
                     total_stats[key] = total_stats.get(key, 0) + stats.get(key, 0)
                 all_dosare.extend(d for d in dosare if not categorie_caz or d.get('categorieCaz') == categorie_caz)

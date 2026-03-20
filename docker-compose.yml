@@ -1,41 +1,5 @@
 services:
-  # PostgreSQL local — baza principala de lucru
-  postgres:
-    image: postgres:15-alpine
-    container_name: just_postgres
-    shm_size: '4g'
-    environment:
-      POSTGRES_USER: justapp
-      POSTGRES_PASSWORD: justapp123
-      POSTGRES_DB: justportal
-    command: >
-      postgres
-      -c shared_buffers=4GB
-      -c effective_cache_size=48GB
-      -c maintenance_work_mem=2GB
-      -c work_mem=64MB
-      -c max_connections=200
-      -c checkpoint_completion_target=0.9
-      -c wal_buffers=64MB
-      -c random_page_cost=1.1
-      -c max_worker_processes=24
-      -c max_parallel_workers_per_gather=8
-      -c max_parallel_workers=16
-      -c synchronous_commit=off
-      -c autovacuum_vacuum_cost_delay=2ms
-      -c autovacuum_vacuum_scale_factor=0.01
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5433:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U justapp -d justportal"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-
-  # MongoDB local
+  # MongoDB — singura baza de date (firme, dosare, bilanturi + config)
   mongodb:
     image: mongo:6-jammy
     container_name: just_mongodb
@@ -54,9 +18,7 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # FastAPI Backend
-  # POSTGRES_URL = local postgres (lucru)
-  # SUPABASE_URL = Supabase cloud (sync/deploy) — setat in .env
+  # FastAPI Backend — MongoDB only, PostgreSQL optional (Supabase sync)
   backend:
     build:
       context: ./backend
@@ -66,7 +28,6 @@ services:
     environment:
       - MONGO_URL=mongodb://${MONGO_ROOT_USER}:${MONGO_ROOT_PASSWORD}@mongodb:27017/
       - DB_NAME=justportal
-      - POSTGRES_URL=postgresql://justapp:justapp123@postgres:5432/justportal
       - SUPABASE_URL=${SUPABASE_URL}
       - CORS_ORIGINS=*
       - GEMINI_API_KEY=${GEMINI_API_KEY}
@@ -81,13 +42,8 @@ services:
     ports:
       - "8001:8001"
     depends_on:
-      postgres:
-        condition: service_healthy
       mongodb:
         condition: service_healthy
-    sysctls:
-      - net.ipv6.conf.all.disable_ipv6=1
-      - net.ipv6.conf.default.disable_ipv6=1
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/api/"]
       interval: 30s
@@ -110,6 +66,5 @@ services:
     restart: unless-stopped
 
 volumes:
-  postgres_data:
   mongodb_data:
   backend_downloads:

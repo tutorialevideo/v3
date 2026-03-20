@@ -1,16 +1,17 @@
 """
-Firma/Dosar/DBFinal routes: list, get, update, profile, CSV import, dbfinal stats & list.
+Firma/Dosar/DBFinal routes — MongoDB backend.
+All PostgreSQL/SQLAlchemy replaced with Motor async MongoDB.
 """
 import csv
 import io
 import logging
 from datetime import datetime
+from typing import Optional
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
-from sqlalchemy import func
 
-import database
+import mongo_db as mdb
 import state
 from constants import DOWNLOADS_DIR
 from helpers import normalize_company_name, is_company
@@ -24,221 +25,121 @@ logger = logging.getLogger(__name__)
 
 @router.get("/db/firme/export")
 async def export_firme_csv():
-    db = database.SessionLocal()
-    Firma = database.Firma
-    Dosar = database.Dosar
-    try:
-        firme = db.query(Firma).order_by(Firma.denumire).all()
-        # Single aggregated query instead of N+1
-        dosare_counts = dict(
-            db.query(Dosar.firma_id, func.count(Dosar.id))
-            .group_by(Dosar.firma_id).all()
-        )
-        output = io.StringIO()
-        writer = csv.writer(output)
-        writer.writerow(['id', 'cui', 'denumire', 'dosare_count'])
-        for firma in firme:
-            writer.writerow([firma.id, firma.cui or '', firma.denumire, dosare_counts.get(firma.id, 0)])
-        output.seek(0)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"firme_export_{timestamp}.csv"
-        filepath = DOWNLOADS_DIR / filename
-        with open(filepath, 'w', encoding='utf-8', newline='') as f:
-            f.write(output.getvalue())
-        return FileResponse(filepath, filename=filename, media_type='text/csv',
-                            headers={"Content-Disposition": f"attachment; filename={filename}"})
-    finally:
-        db.close()
+    firme = await mdb.firme_col.find({}, {"_id": 0, "id": 1, "cui": 1, "denumire": 1}).sort("denumire", 1).to_list(None)
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['id', 'cui', 'denumire', 'dosare_count'])
+    for firma in firme:
+        cnt = await mdb.count_dosare_for_firma(firma['id'])
+        writer.writerow([firma['id'], firma.get('cui', ''), firma.get('denumire', ''), cnt])
+    output.seek(0)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"firme_export_{timestamp}.csv"
+    filepath = DOWNLOADS_DIR / filename
+    with open(filepath, 'w', encoding='utf-8', newline='') as f:
+        f.write(output.getvalue())
+    return FileResponse(filepath, filename=filename, media_type='text/csv')
 
 
 # ─── Firme list & CRUD ────────────────────────────────────────────────────────
 
 @router.get("/db/firme")
 async def get_firme(skip: int = 0, limit: int = 100, search: str = None, judet: str = None):
-    db = database.get_db_session()
-    if db is None:
-        return {"firme": [], "total": 0, "db_available": False}
-    Firma = database.Firma
-    Dosar = database.Dosar
-    try:
-        query = db.query(Firma)
-        if search:
-            s = search.strip()
-            if s.isdigit():
-                query = query.filter(Firma.cui.contains(s))
-            else:
-                query = query.filter(Firma.denumire_normalized.contains(normalize_company_name(s)))
-        if judet:
-            query = query.filter(Firma.judet.ilike(f"%{judet}%"))
-        total = query.count()
-        firme = query.order_by(Firma.id.desc()).offset(skip).limit(limit).all()
-        # Single query for all dosare counts (no N+1)
-        firma_ids = [f.id for f in firme]
-        dosare_counts = {}
-        if firma_ids:
-            dosare_counts = dict(
-                db.query(Dosar.firma_id, func.count(Dosar.id))
-                .filter(Dosar.firma_id.in_(firma_ids))
-                .group_by(Dosar.firma_id).all()
-            )
-        result = []
-        for f in firme:
-            result.append({
-                "id": f.id, "cui": f.cui, "denumire": f.denumire,
-                "cod_inregistrare": f.cod_inregistrare, "data_inregistrare": f.data_inregistrare,
-                "forma_juridica": f.forma_juridica, "judet": f.judet, "localitate": f.localitate,
-                "strada": f.strada, "numar": f.numar,
-                "dosare_count": dosare_counts.get(f.id, 0),
-                "created_at": f.created_at.isoformat() if f.created_at else None
-            })
-        return {"total": total, "firme": result}
-    finally:
-        db.close()
+    query = {}
+    if search:
+        s = search.strip()
+        if s.isdigit():
+            query["cui"] = {"$regex": s}
+        else:
+            query["denumire_normalized"] = {"$regex": normalize_company_name(s), "$options": "i"}
+    if judet:
+        query["judet"] = {"$regex": judet, "$options": "i"}
+
+    total = await mdb.firme_col.count_documents(query)
+    cursor = mdb.firme_col.find(query, {"_id": 0}).sort("id", -1).skip(skip).limit(limit)
+    firme = await cursor.to_list(limit)
+
+    result = []
+    for f in firme:
+        cnt = await mdb.dosare_col.count_documents({"firma_id": f["id"]})
+        result.append({**f, "dosare_count": cnt})
+
+    return {"total": total, "firme": result}
 
 
 @router.get("/db/firme/{firma_id}")
 async def get_firma(firma_id: int):
-    db = database.SessionLocal()
-    Firma = database.Firma
-    Dosar = database.Dosar
-    try:
-        firma = db.query(Firma).filter(Firma.id == firma_id).first()
-        if not firma:
-            raise HTTPException(status_code=404, detail="Firma not found")
-        dosare = db.query(Dosar).filter(Dosar.firma_id == firma_id).all()
-        return {
-            "id": firma.id, "cui": firma.cui, "denumire": firma.denumire,
-            "cod_inregistrare": firma.cod_inregistrare, "data_inregistrare": firma.data_inregistrare,
-            "cod_onrc": firma.cod_onrc, "forma_juridica": firma.forma_juridica,
-            "tara": firma.tara, "judet": firma.judet, "localitate": firma.localitate,
-            "strada": firma.strada, "numar": firma.numar, "bloc": firma.bloc,
-            "scara": firma.scara, "etaj": firma.etaj, "apartament": firma.apartament,
-            "cod_postal": firma.cod_postal, "detalii_adresa": firma.detalii_adresa,
-            "created_at": firma.created_at.isoformat() if firma.created_at else None,
-            "updated_at": firma.updated_at.isoformat() if firma.updated_at else None,
-            "dosare_count": len(dosare),
-            "dosare": [{
-                "id": d.id, "numar_dosar": d.numar_dosar, "institutie": d.institutie,
-                "obiect": d.obiect, "stadiu": d.stadiu,
-                "data_dosar": d.data_dosar.isoformat() if d.data_dosar else None
-            } for d in dosare]
-        }
-    finally:
-        db.close()
+    firma = await mdb.get_firma_by_id(firma_id)
+    if not firma:
+        raise HTTPException(status_code=404, detail="Firma not found")
+    dosare = await mdb.dosare_col.find({"firma_id": firma_id}, {"_id": 0}).to_list(None)
+    return {**firma, "dosare_count": len(dosare), "dosare": dosare}
 
 
 @router.put("/db/firme/{firma_id}")
 async def update_firma(firma_id: int, update: FirmaUpdate):
-    db = database.SessionLocal()
-    Firma = database.Firma
-    try:
-        firma = db.query(Firma).filter(Firma.id == firma_id).first()
-        if not firma:
-            raise HTTPException(status_code=404, detail="Firma not found")
-        if update.cui is not None:
-            firma.cui = update.cui if update.cui else None
-        if update.denumire is not None:
-            firma.denumire = update.denumire
-            firma.denumire_normalized = normalize_company_name(update.denumire)
-        firma.updated_at = datetime.utcnow()
-        db.commit()
-        return {"id": firma.id, "cui": firma.cui, "denumire": firma.denumire}
-    finally:
-        db.close()
+    update_data = {}
+    if update.cui is not None:
+        update_data["cui"] = update.cui if update.cui else None
+    if update.denumire is not None:
+        update_data["denumire"] = update.denumire
+        update_data["denumire_normalized"] = normalize_company_name(update.denumire)
+    if update_data:
+        update_data["updated_at"] = datetime.utcnow()
+        await mdb.firme_col.update_one({"id": firma_id}, {"$set": update_data})
+    firma = await mdb.get_firma_by_id(firma_id)
+    if not firma:
+        raise HTTPException(status_code=404, detail="Firma not found")
+    return {"id": firma["id"], "cui": firma.get("cui"), "denumire": firma.get("denumire")}
 
 
 @router.get("/db/dosare/{dosar_id}")
 async def get_dosar(dosar_id: int):
-    db = database.SessionLocal()
-    Dosar = database.Dosar
-    Firma = database.Firma
-    TimelineEvent = database.TimelineEvent
-    try:
-        dosar = db.query(Dosar).filter(Dosar.id == dosar_id).first()
-        if not dosar:
-            raise HTTPException(status_code=404, detail="Dosar not found")
-        timeline = db.query(TimelineEvent).filter(TimelineEvent.dosar_id == dosar_id).order_by(TimelineEvent.data).all()
-        firma = db.query(Firma).filter(Firma.id == dosar.firma_id).first()
-        return {
-            "id": dosar.id, "numar_dosar": dosar.numar_dosar,
-            "firma": {"id": firma.id, "cui": firma.cui, "denumire": firma.denumire} if firma else None,
-            "institutie": dosar.institutie, "obiect": dosar.obiect, "stadiu": dosar.stadiu,
-            "categorie": dosar.categorie, "materie": dosar.materie,
-            "data_dosar": dosar.data_dosar.isoformat() if dosar.data_dosar else None,
-            "timeline": [{"id": t.id, "tip": t.tip,
-                          "data": t.data.isoformat() if t.data else None,
-                          "descriere": t.descriere, "detalii": t.detalii} for t in timeline]
-        }
-    finally:
-        db.close()
+    dosar = await mdb.dosare_col.find_one({"id": dosar_id}, {"_id": 0})
+    if not dosar:
+        raise HTTPException(status_code=404, detail="Dosar not found")
+    firma = await mdb.get_firma_by_id(dosar.get("firma_id"))
+    timeline = await mdb.timeline_col.find({"dosar_id": dosar_id}, {"_id": 0}).sort("data", 1).to_list(None)
+    return {**dosar, "firma": firma, "timeline": timeline}
 
 
 # ─── DB Stats & reconnect ─────────────────────────────────────────────────────
 
 @router.get("/db/stats")
 async def get_db_stats():
-    db = database.get_db_session()
-    if db is None:
-        raise HTTPException(status_code=503, detail="Database not available. Try /api/db/reconnect")
-    Firma = database.Firma
-    Dosar = database.Dosar
-    TimelineEvent = database.TimelineEvent
     try:
-        firme_count = db.query(Firma).count()
-        firme_with_cui = db.query(Firma).filter(Firma.cui.isnot(None), Firma.cui != '').count()
-        dosare_count = db.query(Dosar).count()
-        timeline_count = db.query(TimelineEvent).count()
+        firme_total = await mdb.firme_col.count_documents({})
+        firme_with_cui = await mdb.firme_col.count_documents({"cui": {"$ne": None, "$exists": True, "$not": {"$in": [None, ""]}}})
+        dosare_total = await mdb.dosare_col.count_documents({})
+        timeline_total = await mdb.timeline_col.count_documents({})
         return {
-            "firme_total": firme_count, "firme_with_cui": firme_with_cui,
-            "firme_without_cui": firme_count - firme_with_cui,
-            "dosare_total": dosare_count, "timeline_events": timeline_count
+            "firme_total": firme_total,
+            "firme_with_cui": firme_with_cui,
+            "firme_without_cui": firme_total - firme_with_cui,
+            "dosare_total": dosare_total,
+            "timeline_events": timeline_total,
         }
-    finally:
-        db.close()
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Database error: {str(e)}")
 
 
 @router.post("/db/reconnect")
 async def reconnect_database():
-    success = database.init_postgres_connection(max_retries=3, retry_delay=2)
-    if success:
-        try:
-            database.Base.metadata.create_all(bind=database.engine)
-            database._migrate_schema()
-        except Exception as e:
-            logger.warning(f"Table/schema migration after reconnect: {e}")
-        return {"success": True, "message": "Database connection established successfully", "postgres_available": True}
-    raise HTTPException(status_code=503, detail="Could not connect to PostgreSQL.")
-
-
-@router.get("/db/debug-connection")
-async def debug_connection():
-    """Debug endpoint — shows exact connection error."""
-    import sqlalchemy
-    url = database.POSTGRES_URL
-    # Mask password
-    masked = url.split('@')[0].rsplit(':', 1)[0] + ':***@' + url.split('@')[-1] if '@' in url else url
-    result = {"url_used": masked, "error": None, "connected": False}
     try:
-        connect_args = {}
-        if 'supabase.co' in url or 'pooler.supabase.com' in url:
-            connect_args = {"sslmode": "require", "gssencmode": "disable", "connect_timeout": 10}
-        eng = sqlalchemy.create_engine(url, connect_args=connect_args)
-        with eng.connect() as conn:
-            conn.execute(sqlalchemy.text("SELECT version()"))
-        result["connected"] = True
-        eng.dispose()
+        await mdb.client.admin.command('ping')
+        await mdb.create_indexes()
+        return {"success": True, "message": "MongoDB connection OK", "postgres_available": True}
     except Exception as e:
-        result["error"] = str(e)
-    return result
+        raise HTTPException(status_code=503, detail=f"MongoDB error: {str(e)}")
 
 
 @router.get("/db/status")
 async def get_db_status():
-    return {
-        "postgres_available": database.postgres_available,
-        "session_local_exists": database.SessionLocal is not None,
-        "engine_exists": database.engine is not None
-    }
+    try:
+        await mdb.client.admin.command('ping')
+        return {"postgres_available": True, "mongodb": True}
+    except Exception:
+        return {"postgres_available": False, "mongodb": False}
 
 
 @router.get("/db/import-progress")
@@ -280,14 +181,11 @@ async def import_cui_csv(file: UploadFile = File(...), has_header: bool = False,
         "skipped_no_cui": 0, "last_update": datetime.utcnow().isoformat()
     })
 
-    db = database.SessionLocal()
-    Firma = database.Firma
     results = {
         "total_rows": 0, "processed": 0, "skipped_not_company": 0,
         "created_new": 0, "already_exists": 0, "updated": 0,
         "skipped_no_cui": 0, "sample_created": [], "delimiter_detected": delimiter
     }
-    existing_by_cui = {f.cui: f for f in db.query(Firma).all() if f.cui}
 
     def get_col(cols, idx, default=None):
         if idx < len(cols):
@@ -295,100 +193,105 @@ async def import_cui_csv(file: UploadFile = File(...), has_header: bool = False,
             return v if v else default
         return default
 
-    try:
-        batch_count = 0
-        for line in lines[start_row:]:
-            if not line.strip():
-                continue
-            results["total_rows"] += 1
-            cols = line.split(delimiter)
-            denumire = get_col(cols, 0)
-            cui = get_col(cols, 1)
-            cod_inregistrare = get_col(cols, 2)
-            data_inregistrare = get_col(cols, 3)
-            cod_onrc = get_col(cols, 4)
-            forma_juridica = get_col(cols, 5)
-            tara = get_col(cols, 6)
-            judet = get_col(cols, 7)
-            localitate = get_col(cols, 8)
-            strada = get_col(cols, 9)
-            numar = get_col(cols, 10)
-            bloc = get_col(cols, 11)
-            scara = get_col(cols, 12)
-            etaj = get_col(cols, 13)
-            apartament = get_col(cols, 14)
-            cod_postal = get_col(cols, 15)
-            detalii_adresa = ' | '.join(c.strip() for c in cols[16:] if c.strip()) if len(cols) > 16 else None
+    batch = []
+    existing_cuis = set()
 
-            if not denumire:
-                continue
-            if only_companies:
-                excluded_forms = {'PF', 'PFA', 'II', 'IF', 'AF', 'CA', 'FORMA_JURIDICA'}
-                if forma_juridica and forma_juridica.upper() in excluded_forms:
-                    results["skipped_not_company"] += 1
-                    continue
-                if not is_company(denumire) and forma_juridica not in {'SRL', 'SA', 'SNC', 'SCS', 'SCA', 'RA', 'GIE', 'SC', 'OCR', 'OCC', 'OCM', 'OC1', 'OC2'}:
-                    results["skipped_not_company"] += 1
-                    continue
-            if cui == 'CUI' or denumire == 'DENUMIRE':
-                continue
-            if not cui or cui == '0' or len(cui) < 2:
-                results["skipped_no_cui"] += 1
-                continue
+    # Pre-load existing CUIs
+    async for doc in mdb.firme_col.find({}, {"cui": 1, "_id": 0}):
+        if doc.get("cui"):
+            existing_cuis.add(doc["cui"])
 
-            results["processed"] += 1
-            denumire_normalized = normalize_company_name(denumire)
-            existing_firma = existing_by_cui.get(cui)
+    for line in lines[start_row:]:
+        if not line.strip():
+            continue
+        results["total_rows"] += 1
+        cols = line.split(delimiter)
+        denumire = get_col(cols, 0)
+        cui = get_col(cols, 1)
+        cod_inregistrare = get_col(cols, 2)
+        data_inregistrare = get_col(cols, 3)
+        cod_onrc = get_col(cols, 4)
+        forma_juridica = get_col(cols, 5)
+        tara = get_col(cols, 6)
+        judet = get_col(cols, 7)
+        localitate = get_col(cols, 8)
+        strada = get_col(cols, 9)
+        numar = get_col(cols, 10)
+        bloc = get_col(cols, 11)
+        scara = get_col(cols, 12)
+        etaj = get_col(cols, 13)
+        apartament = get_col(cols, 14)
+        cod_postal = get_col(cols, 15)
+        detalii_adresa = ' | '.join(c.strip() for c in cols[16:] if c.strip()) if len(cols) > 16 else None
 
-            if existing_firma:
-                existing_firma.denumire = denumire
-                existing_firma.denumire_normalized = denumire_normalized
-                existing_firma.cod_inregistrare = cod_inregistrare
-                existing_firma.data_inregistrare = data_inregistrare
-                existing_firma.cod_onrc = cod_onrc
-                existing_firma.forma_juridica = forma_juridica
-                existing_firma.tara = tara
-                existing_firma.judet = judet
-                existing_firma.localitate = localitate
-                existing_firma.strada = strada
-                existing_firma.numar = numar
-                existing_firma.bloc = bloc
-                existing_firma.scara = scara
-                existing_firma.etaj = etaj
-                existing_firma.apartament = apartament
-                existing_firma.cod_postal = cod_postal
-                existing_firma.detalii_adresa = detalii_adresa
-                existing_firma.updated_at = datetime.utcnow()
-                results["updated"] += 1
+        if not denumire:
+            continue
+        if only_companies:
+            excluded_forms = {'PF', 'PFA', 'II', 'IF', 'AF', 'CA'}
+            if forma_juridica and forma_juridica.upper() in excluded_forms:
+                results["skipped_not_company"] += 1
+                continue
+            if not is_company(denumire) and forma_juridica not in {'SRL', 'SA', 'SNC', 'SCS', 'RA'}:
+                results["skipped_not_company"] += 1
+                continue
+        if cui == 'CUI' or denumire == 'DENUMIRE':
+            continue
+        if not cui or cui == '0' or len(cui) < 2:
+            results["skipped_no_cui"] += 1
+            continue
+
+        results["processed"] += 1
+        denumire_normalized = normalize_company_name(denumire)
+        doc = {
+            "cui": cui, "denumire": denumire, "denumire_normalized": denumire_normalized,
+            "cod_inregistrare": cod_inregistrare, "data_inregistrare": data_inregistrare,
+            "cod_onrc": cod_onrc, "forma_juridica": forma_juridica, "tara": tara,
+            "judet": judet, "localitate": localitate, "strada": strada, "numar": numar,
+            "bloc": bloc, "scara": scara, "etaj": etaj, "apartament": apartament,
+            "cod_postal": cod_postal, "detalii_adresa": detalii_adresa,
+            "updated_at": datetime.utcnow()
+        }
+
+        if cui in existing_cuis:
+            batch.append({"filter": {"cui": cui}, "update": {"$set": doc}, "upsert": False, "type": "update"})
+            results["updated"] += 1
+        else:
+            firma_id = await mdb.next_id("firme")
+            doc.update({"id": firma_id, "created_at": datetime.utcnow()})
+            batch.append({"filter": None, "doc": doc, "type": "insert"})
+            existing_cuis.add(cui)
+            results["created_new"] += 1
+            if len(results["sample_created"]) < 5:
+                results["sample_created"].append({"denumire": denumire[:50], "cui": cui})
+
+        if len(batch) >= 2000:
+            from pymongo import InsertOne, UpdateOne
+            ops = []
+            for b in batch:
+                if b["type"] == "insert":
+                    ops.append(InsertOne(b["doc"]))
+                else:
+                    ops.append(UpdateOne(b["filter"], b["update"]))
+            if ops:
+                await mdb.firme_col.bulk_write(ops, ordered=False)
+            batch = []
+            state.import_progress.update({
+                "processed": results["processed"], "created_new": results["created_new"],
+                "updated": results["updated"]
+            })
+
+    if batch:
+        from pymongo import InsertOne, UpdateOne
+        ops = []
+        for b in batch:
+            if b["type"] == "insert":
+                ops.append(InsertOne(b["doc"]))
             else:
-                new_firma = Firma(
-                    cui=cui, denumire=denumire, denumire_normalized=denumire_normalized,
-                    cod_inregistrare=cod_inregistrare, data_inregistrare=data_inregistrare,
-                    cod_onrc=cod_onrc, forma_juridica=forma_juridica, tara=tara, judet=judet,
-                    localitate=localitate, strada=strada, numar=numar, bloc=bloc, scara=scara,
-                    etaj=etaj, apartament=apartament, cod_postal=cod_postal, detalii_adresa=detalii_adresa
-                )
-                db.add(new_firma)
-                existing_by_cui[cui] = new_firma
-                results["created_new"] += 1
-                if len(results["sample_created"]) < 5:
-                    results["sample_created"].append({"denumire": denumire[:50], "cui": cui, "forma_juridica": forma_juridica, "judet": judet})
+                ops.append(UpdateOne(b["filter"], b["update"]))
+        if ops:
+            await mdb.firme_col.bulk_write(ops, ordered=False)
 
-            batch_count += 1
-            if batch_count >= 5000:
-                db.commit()
-                batch_count = 0
-                state.import_progress.update({"processed": results["total_rows"], "created_new": results["created_new"], "updated": results["updated"]})
-
-        db.commit()
-        state.import_progress.update({"processed": results["total_rows"], "created_new": results["created_new"], "updated": results["updated"]})
-    except Exception as e:
-        db.rollback()
-        state.import_progress["active"] = False
-        raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
-    finally:
-        db.close()
-        state.import_progress["active"] = False
+    state.import_progress["active"] = False
     return results
 
 
@@ -396,232 +299,162 @@ async def import_cui_csv(file: UploadFile = File(...), has_header: bool = False,
 
 @router.get("/db/firma/{firma_id}")
 async def get_firma_profile(firma_id: int):
-    db = database.get_db_session()
-    if db is None:
-        raise HTTPException(status_code=503, detail="Database not available")
-    Firma = database.Firma
-    Dosar = database.Dosar
-    Bilant = database.Bilant
-    try:
-        firma = db.query(Firma).filter(Firma.id == firma_id).first()
-        if not firma:
-            raise HTTPException(status_code=404, detail=f"Firma cu ID {firma_id} nu a fost găsită")
-        bilanturi = db.query(Bilant).filter(Bilant.firma_id == firma_id).order_by(Bilant.an.desc()).all()
-        dosare_count = db.query(Dosar).filter(Dosar.firma_id == firma_id).count()
-        dosare_list = db.query(Dosar).filter(Dosar.firma_id == firma_id).order_by(Dosar.data_dosar.desc()).limit(20).all()
-        return {
-            "id": firma.id,
-            "basic_info": {
-                "denumire": firma.denumire, "cui": firma.cui,
-                "cod_inregistrare": firma.cod_inregistrare, "data_inregistrare": firma.data_inregistrare,
-                "cod_onrc": firma.cod_onrc, "forma_juridica": firma.forma_juridica,
-            },
-            "adresa": {
-                "judet": firma.judet, "localitate": firma.localitate, "strada": firma.strada,
-                "numar": firma.numar, "bloc": firma.bloc, "scara": firma.scara,
-                "etaj": firma.etaj, "apartament": firma.apartament,
-                "cod_postal": firma.cod_postal, "tara": firma.tara, "detalii_adresa": firma.detalii_adresa,
-            },
-            "anaf_data": {
-                "anaf_denumire": firma.anaf_denumire, "anaf_adresa": firma.anaf_adresa,
-                "anaf_stare": firma.anaf_stare, "anaf_nr_reg_com": firma.anaf_nr_reg_com,
-                "anaf_telefon": firma.anaf_telefon, "anaf_fax": firma.anaf_fax,
-                "anaf_cod_postal": firma.anaf_cod_postal, "anaf_data_inregistrare": firma.anaf_data_inregistrare,
-                "anaf_cod_caen": firma.anaf_cod_caen, "anaf_forma_juridica": firma.anaf_forma_juridica,
-                "anaf_forma_organizare": firma.anaf_forma_organizare, "anaf_forma_proprietate": firma.anaf_forma_proprietate,
-                "anaf_organ_fiscal": firma.anaf_organ_fiscal, "anaf_platitor_tva": firma.anaf_platitor_tva,
-                "anaf_tva_incasare": firma.anaf_tva_incasare, "anaf_split_tva": firma.anaf_split_tva,
-                "anaf_inactiv": firma.anaf_inactiv, "anaf_e_factura": firma.anaf_e_factura,
-                "anaf_sediu_judet": firma.anaf_sediu_judet, "anaf_sediu_localitate": firma.anaf_sediu_localitate,
-                "anaf_sediu_strada": firma.anaf_sediu_strada, "anaf_sediu_numar": firma.anaf_sediu_numar,
-                "anaf_last_sync": firma.anaf_last_sync.isoformat() if firma.anaf_last_sync else None,
-                "anaf_sync_status": firma.anaf_sync_status,
-            },
-            "mfinante_data": {
-                "mf_denumire": firma.mf_denumire, "mf_judet": firma.mf_judet,
-                "mf_nr_reg_com": firma.mf_nr_reg_com, "mf_stare": firma.mf_stare,
-                "mf_platitor_tva": firma.mf_platitor_tva, "mf_impozit_profit": firma.mf_impozit_profit,
-                "mf_impozit_micro": firma.mf_impozit_micro, "mf_an_bilant": firma.mf_an_bilant,
-                "mf_cifra_afaceri": firma.mf_cifra_afaceri, "mf_venituri_totale": firma.mf_venituri_totale,
-                "mf_cheltuieli_totale": firma.mf_cheltuieli_totale, "mf_profit_brut": firma.mf_profit_brut,
-                "mf_pierdere_bruta": firma.mf_pierdere_bruta, "mf_profit_net": firma.mf_profit_net,
-                "mf_pierdere_neta": firma.mf_pierdere_neta, "mf_numar_angajati": firma.mf_numar_angajati,
-                "mf_active_imobilizate": firma.mf_active_imobilizate, "mf_active_circulante": firma.mf_active_circulante,
-                "mf_capitaluri_proprii": firma.mf_capitaluri_proprii, "mf_datorii": firma.mf_datorii,
-                "mf_ani_disponibili": firma.mf_ani_disponibili,
-                "mf_last_sync": firma.mf_last_sync.isoformat() if firma.mf_last_sync else None,
-                "mf_sync_status": firma.mf_sync_status,
-            },
-            "bilanturi_history": [
-                {"an": b.an, "cifra_afaceri_neta": b.cifra_afaceri_neta, "venituri_totale": b.venituri_totale,
-                 "cheltuieli_totale": b.cheltuieli_totale, "profit_brut": b.profit_brut, "pierdere_bruta": b.pierdere_bruta,
-                 "profit_net": b.profit_net, "pierdere_neta": b.pierdere_neta, "numar_angajati": b.numar_angajati,
-                 "active_imobilizate": b.active_imobilizate, "active_circulante": b.active_circulante,
-                 "capitaluri_proprii": b.capitaluri_proprii, "datorii": b.datorii}
-                for b in bilanturi
-            ],
-            "dosare_summary": {
-                "total": dosare_count,
-                "recente": [
-                    {"numar_dosar": d.numar_dosar, "institutie": d.institutie, "obiect": d.obiect,
-                     "stadiu": d.stadiu, "data_dosar": d.data_dosar.strftime("%d.%m.%Y") if d.data_dosar else None}
-                    for d in dosare_list
-                ]
-            },
-            "metadata": {
-                "created_at": firma.created_at.isoformat() if firma.created_at else None,
-                "updated_at": firma.updated_at.isoformat() if firma.updated_at else None,
-            }
+    firma = await mdb.get_firma_by_id(firma_id)
+    if not firma:
+        raise HTTPException(status_code=404, detail=f"Firma cu ID {firma_id} nu a fost găsită")
+
+    bilanturi = await mdb.bilanturi_col.find(
+        {"firma_id": firma_id}, {"_id": 0}
+    ).sort("an", -1).to_list(None)
+
+    dosare_total = await mdb.dosare_col.count_documents({"firma_id": firma_id})
+    dosare_list = await mdb.dosare_col.find(
+        {"firma_id": firma_id}, {"_id": 0}
+    ).sort("data_dosar", -1).limit(20).to_list(20)
+
+    return {
+        "id": firma.get("id"),
+        "basic_info": {
+            "denumire": firma.get("denumire"),
+            "cui": firma.get("cui"),
+            "cod_inregistrare": firma.get("cod_inregistrare"),
+            "data_inregistrare": firma.get("data_inregistrare"),
+            "cod_onrc": firma.get("cod_onrc"),
+            "forma_juridica": firma.get("forma_juridica"),
+        },
+        "adresa": {
+            "judet": firma.get("judet"), "localitate": firma.get("localitate"),
+            "strada": firma.get("strada"), "numar": firma.get("numar"),
+            "bloc": firma.get("bloc"), "scara": firma.get("scara"),
+            "etaj": firma.get("etaj"), "apartament": firma.get("apartament"),
+            "cod_postal": firma.get("cod_postal"), "tara": firma.get("tara"),
+        },
+        "anaf_data": {k: v for k, v in firma.items() if k.startswith("anaf_")},
+        "mfinante_data": {k: v for k, v in firma.items() if k.startswith("mf_")},
+        "bilanturi_history": bilanturi,
+        "dosare_summary": {
+            "total": dosare_total,
+            "recente": [{"numar_dosar": d.get("numar_dosar"), "institutie": d.get("institutie"),
+                         "obiect": d.get("obiect"), "stadiu": d.get("stadiu"),
+                         "data_dosar": d.get("data_dosar").strftime("%d.%m.%Y") if d.get("data_dosar") else None}
+                        for d in dosare_list]
+        },
+        "metadata": {
+            "created_at": firma.get("created_at").isoformat() if firma.get("created_at") else None,
+            "updated_at": firma.get("updated_at").isoformat() if firma.get("updated_at") else None,
         }
-    finally:
-        db.close()
+    }
 
 
 @router.get("/db/firma-by-cui/{cui}")
 async def get_firma_by_cui(cui: str):
-    db = database.get_db_session()
-    if db is None:
-        raise HTTPException(status_code=503, detail="Database not available")
-    Firma = database.Firma
-    try:
-        firma = db.query(Firma).filter(Firma.cui == cui).first()
-        if not firma:
-            raise HTTPException(status_code=404, detail=f"Firma cu CUI {cui} nu a fost găsită")
-        firma_id = firma.id
-    finally:
-        db.close()
-    return await get_firma_profile(firma_id)
+    firma = await mdb.get_firma_by_cui(cui)
+    if not firma:
+        raise HTTPException(status_code=404, detail=f"Firma cu CUI {cui} nu a fost găsită")
+    return await get_firma_profile(firma["id"])
 
 
 # ─── DB Final ─────────────────────────────────────────────────────────────────
 
 @router.get("/dbfinal/stats")
 async def get_dbfinal_stats():
-    db = database.get_db_session()
-    if db is None:
-        return {"total_cu_cui": 0, "sincronizate_anaf": 0, "sincronizate_mfinante": 0,
-                "cu_date_bilant": 0, "active": 0, "db_available": False}
-    Firma = database.Firma
-    try:
-        base = db.query(Firma).filter(Firma.cui.isnot(None), Firma.cui != '')
-        return {
-            "total_cu_cui": base.count(),
-            "sincronizate_anaf": base.filter(Firma.anaf_last_sync.isnot(None)).count(),
-            "sincronizate_mfinante": base.filter(Firma.mf_last_sync.isnot(None)).count(),
-            "cu_date_bilant": base.filter(Firma.mf_cifra_afaceri.isnot(None)).count(),
-            "active": base.filter(Firma.anaf_stare.ilike('%ACTIV%'), ~Firma.anaf_stare.ilike('%INACTIV%'), ~Firma.anaf_stare.ilike('%RADIERE%')).count(),
-            "db_available": True
-        }
-    finally:
-        db.close()
+    base = {"cui": {"$ne": None, "$exists": True, "$not": {"$in": [None, ""]}}}
+    active = {**base, "anaf_stare": {"$regex": "ACTIV", "$options": "i"},
+              "$nor": [{"anaf_stare": {"$regex": "INACTIV", "$options": "i"}},
+                       {"anaf_stare": {"$regex": "RADIERE", "$options": "i"}}]}
+    return {
+        "total_cu_cui": await mdb.firme_col.count_documents(base),
+        "sincronizate_anaf": await mdb.firme_col.count_documents({**base, "anaf_last_sync": {"$ne": None}}),
+        "sincronizate_mfinante": await mdb.firme_col.count_documents({**base, "mf_last_sync": {"$ne": None}}),
+        "cu_date_bilant": await mdb.firme_col.count_documents({**base, "mf_cifra_afaceri": {"$ne": None}}),
+        "active": await mdb.firme_col.count_documents(active),
+        "db_available": True
+    }
 
 
 @router.get("/dbfinal/firme")
 async def get_dbfinal_firme(skip: int = 0, limit: int = 100, search: str = None,
                              judet: str = None, doar_active: bool = False, doar_cu_bilant: bool = False):
-    db = database.get_db_session()
-    if db is None:
-        return {"firme": [], "total": 0, "skip": skip, "limit": limit, "db_available": False}
-    Firma = database.Firma
-    try:
-        query = db.query(Firma).filter(Firma.cui.isnot(None), Firma.cui != '')
-        if search:
-            query = query.filter((Firma.denumire.ilike(f"%{search}%")) | (Firma.cui.ilike(f"%{search}%")))
-        if judet:
-            query = query.filter(Firma.judet.ilike(f"%{judet}%"))
-        if doar_active:
-            query = query.filter(Firma.anaf_stare.ilike('%ACTIV%'), ~Firma.anaf_stare.ilike('%INACTIV%'), ~Firma.anaf_stare.ilike('%RADIERE%'))
-        if doar_cu_bilant:
-            query = query.filter(Firma.mf_cifra_afaceri.isnot(None))
-        total = query.count()
-        firme = query.order_by(Firma.denumire).offset(skip).limit(limit).all()
-        return {
-            "firme": [
-                {"id": f.id, "denumire": f.denumire, "cui": f.cui, "judet": f.judet,
-                 "localitate": f.localitate, "stare": f.anaf_stare or f.mf_stare,
-                 "cifra_afaceri": f.mf_cifra_afaceri, "profit": f.mf_profit_net,
-                 "angajati": f.mf_numar_angajati, "an_bilant": f.mf_an_bilant,
-                 "platitor_tva": f.anaf_platitor_tva, "anaf_sync": f.anaf_last_sync is not None,
-                 "mf_sync": f.mf_last_sync is not None}
-                for f in firme
-            ],
-            "total": total, "skip": skip, "limit": limit, "db_available": True
-        }
-    finally:
-        db.close()
+    query = {"cui": {"$ne": None, "$exists": True, "$not": {"$in": [None, ""]}}}
+    if search:
+        query["$or"] = [
+            {"denumire": {"$regex": search, "$options": "i"}},
+            {"cui": {"$regex": search, "$options": "i"}}
+        ]
+    if judet:
+        query["judet"] = {"$regex": judet, "$options": "i"}
+    if doar_active:
+        query["anaf_stare"] = {"$regex": "ACTIV", "$options": "i"}
+        query["$nor"] = [{"anaf_stare": {"$regex": "INACTIV", "$options": "i"}},
+                         {"anaf_stare": {"$regex": "RADIERE", "$options": "i"}}]
+    if doar_cu_bilant:
+        query["mf_cifra_afaceri"] = {"$ne": None}
+
+    total = await mdb.firme_col.count_documents(query)
+    firme = await mdb.firme_col.find(query, {"_id": 0}).sort("denumire", 1).skip(skip).limit(limit).to_list(limit)
+
+    return {
+        "firme": [{"id": f.get("id"), "denumire": f.get("denumire"), "cui": f.get("cui"),
+                   "judet": f.get("judet"), "localitate": f.get("localitate"),
+                   "stare": f.get("anaf_stare") or f.get("mf_stare"),
+                   "cifra_afaceri": f.get("mf_cifra_afaceri"), "profit": f.get("mf_profit_net"),
+                   "angajati": f.get("mf_numar_angajati"), "an_bilant": f.get("mf_an_bilant"),
+                   "platitor_tva": f.get("anaf_platitor_tva"), "anaf_sync": f.get("anaf_last_sync") is not None,
+                   "mf_sync": f.get("mf_last_sync") is not None} for f in firme],
+        "total": total, "skip": skip, "limit": limit, "db_available": True
+    }
 
 
 @router.get("/dbfinal/export")
-async def export_dbfinal_csv(
-    search: str = None,
-    judet: str = None,
-    doar_active: bool = False,
-    doar_cu_bilant: bool = False,
-    format: str = "csv"
-):
-    """Export all DB Final firms (with CUI) as CSV with full financial data."""
-    db = database.get_db_session()
-    if db is None:
-        raise HTTPException(status_code=503, detail="Database not available")
-    Firma = database.Firma
-    try:
-        query = db.query(Firma).filter(Firma.cui.isnot(None), Firma.cui != '')
-        if search:
-            query = query.filter((Firma.denumire.ilike(f"%{search}%")) | (Firma.cui.ilike(f"%{search}%")))
-        if judet:
-            query = query.filter(Firma.judet.ilike(f"%{judet}%"))
-        if doar_active:
-            query = query.filter(Firma.anaf_stare.ilike('%ACTIV%'), ~Firma.anaf_stare.ilike('%INACTIV%'), ~Firma.anaf_stare.ilike('%RADIERE%'))
-        if doar_cu_bilant:
-            query = query.filter(Firma.mf_cifra_afaceri.isnot(None))
-        firme = query.order_by(Firma.denumire).all()
+async def export_dbfinal_csv(search: str = None, judet: str = None,
+                              doar_active: bool = False, doar_cu_bilant: bool = False):
+    query = {"cui": {"$ne": None, "$exists": True, "$not": {"$in": [None, ""]}}}
+    if search:
+        query["$or"] = [{"denumire": {"$regex": search, "$options": "i"}},
+                        {"cui": {"$regex": search, "$options": "i"}}]
+    if judet:
+        query["judet"] = {"$regex": judet, "$options": "i"}
+    if doar_active:
+        query["anaf_stare"] = {"$regex": "ACTIV", "$options": "i"}
+    if doar_cu_bilant:
+        query["mf_cifra_afaceri"] = {"$ne": None}
 
-        output = io.StringIO()
-        writer = csv.writer(output, delimiter=';')
+    firme = await mdb.firme_col.find(query, {"_id": 0}).sort("denumire", 1).to_list(None)
+    output = io.StringIO()
+    writer = csv.writer(output, delimiter=';')
+    writer.writerow(['CUI', 'Denumire', 'Forma Juridica', 'Judet', 'Localitate', 'Stare ANAF',
+                     'Nr Reg Com', 'Cod CAEN', 'Platitor TVA', 'e-Factura', 'An Bilant',
+                     'Cifra Afaceri', 'Profit Net', 'Nr Angajati', 'Capitaluri', 'Datorii'])
+    for f in firme:
         writer.writerow([
-            'CUI', 'Denumire', 'Forma Juridica', 'Judet', 'Localitate', 'Strada', 'Nr',
-            'Stare ANAF', 'Nr Reg Com', 'Cod CAEN',
-            'Platitor TVA', 'e-Factura', 'Inactiv',
-            'An Bilant', 'Cifra Afaceri (RON)', 'Venituri Totale (RON)',
-            'Profit Brut (RON)', 'Profit Net (RON)', 'Pierdere Neta (RON)',
-            'Nr Angajati', 'Active Imobilizate (RON)', 'Active Circulante (RON)',
-            'Capitaluri Proprii (RON)', 'Datorii Totale (RON)',
-            'Ani Disponibili MF', 'Sync ANAF', 'Sync MFinante'
+            f.get('cui', ''), f.get('denumire', ''), f.get('forma_juridica', ''),
+            f.get('judet', ''), f.get('localitate', ''), f.get('anaf_stare', ''),
+            f.get('anaf_nr_reg_com', ''), f.get('anaf_cod_caen', ''),
+            'DA' if f.get('anaf_platitor_tva') else 'NU',
+            'DA' if f.get('anaf_e_factura') else 'NU',
+            f.get('mf_an_bilant', ''),
+            round(f['mf_cifra_afaceri']) if f.get('mf_cifra_afaceri') else '',
+            round(f['mf_profit_net']) if f.get('mf_profit_net') else '',
+            f.get('mf_numar_angajati', ''),
+            round(f['mf_capitaluri_proprii']) if f.get('mf_capitaluri_proprii') else '',
+            round(f['mf_datorii']) if f.get('mf_datorii') else '',
         ])
-        for f in firme:
-            writer.writerow([
-                f.cui or '', f.denumire or '', f.forma_juridica or '',
-                f.judet or '', f.localitate or '', f.strada or '', f.numar or '',
-                f.anaf_stare or f.mf_stare or '', f.anaf_nr_reg_com or '', f.anaf_cod_caen or '',
-                'DA' if f.anaf_platitor_tva else 'NU',
-                'DA' if f.anaf_e_factura else 'NU',
-                'DA' if f.anaf_inactiv else 'NU',
-                f.mf_an_bilant or '',
-                round(f.mf_cifra_afaceri) if f.mf_cifra_afaceri else '',
-                round(f.mf_venituri_totale) if f.mf_venituri_totale else '',
-                round(f.mf_profit_brut) if f.mf_profit_brut else '',
-                round(f.mf_profit_net) if f.mf_profit_net else '',
-                round(f.mf_pierdere_neta) if f.mf_pierdere_neta else '',
-                f.mf_numar_angajati or '',
-                round(f.mf_active_imobilizate) if f.mf_active_imobilizate else '',
-                round(f.mf_active_circulante) if f.mf_active_circulante else '',
-                round(f.mf_capitaluri_proprii) if f.mf_capitaluri_proprii else '',
-                round(f.mf_datorii) if f.mf_datorii else '',
-                f.mf_ani_disponibili or '',
-                'DA' if f.anaf_last_sync else 'NU',
-                'DA' if f.mf_last_sync else 'NU',
-            ])
+    output.seek(0)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"dbfinal_export_{timestamp}.csv"
+    filepath = DOWNLOADS_DIR / filename
+    with open(filepath, 'w', encoding='utf-8-sig', newline='') as f_out:
+        f_out.write(output.getvalue())
+    return FileResponse(filepath, filename=filename, media_type='text/csv')
 
-        output.seek(0)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"dbfinal_export_{timestamp}.csv"
-        filepath = DOWNLOADS_DIR / filename
-        with open(filepath, 'w', encoding='utf-8-sig', newline='') as file:
-            file.write(output.getvalue())
 
-        return FileResponse(
-            filepath, filename=filename, media_type='text/csv',
-            headers={"Content-Disposition": f"attachment; filename={filename}"}
-        )
-    finally:
-        db.close()
+# ─── Debug ────────────────────────────────────────────────────────────────────
+
+@router.get("/db/debug-connection")
+async def debug_connection():
+    try:
+        await mdb.client.admin.command('ping')
+        firme_count = await mdb.firme_col.count_documents({})
+        return {"connected": True, "type": "MongoDB", "firme_count": firme_count}
+    except Exception as e:
+        return {"connected": False, "error": str(e)}

@@ -59,12 +59,21 @@ app.include_router(supabase_router, prefix=PREFIX)
 
 @app.on_event("startup")
 async def startup_event():
+    # MongoDB indexes
+    try:
+        import mongo_db as mdb
+        await mdb.create_indexes()
+        logger.info("[MongoDB] Indexes created")
+    except Exception as e:
+        logger.warning(f"[MongoDB] Index creation failed: {e}")
+
+    # Async PostgreSQL (Supabase) — optional, used only for Supabase sync
     if database.database is not None:
         try:
             await database.database.connect()
-            logger.info("[DB] Async PostgreSQL connection established")
+            logger.info("[DB] Async connection established")
         except Exception as e:
-            logger.warning(f"[DB] Async PostgreSQL connection failed: {e}")
+            logger.warning(f"[DB] Async connection failed (non-fatal): {e}")
 
     state.scheduler.start()
 
