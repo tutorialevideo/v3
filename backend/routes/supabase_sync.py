@@ -24,7 +24,7 @@ import state
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-SUPABASE_URL = os.environ.get("POSTGRES_URL", "")
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 
 # ─── Supabase sync state ──────────────────────────────────────────────────────
 supabase_sync_progress = {
@@ -51,8 +51,8 @@ def add_sync_log(message: str):
 def get_supabase_engine():
     """Create engine for Supabase (target database)."""
     url = SUPABASE_URL
-    if not url:
-        raise ValueError("POSTGRES_URL (Supabase) nu este configurat în .env")
+    if not SUPABASE_URL:
+        raise ValueError("SUPABASE_URL nu este configurat în .env")
     if 'supabase.co' in url and 'sslmode' not in url:
         url += '?sslmode=require'
     return create_engine(
@@ -145,7 +145,7 @@ async def start_supabase_sync(
     sync_dosare: also sync court cases (can be large)
     """
     if not SUPABASE_URL:
-        raise HTTPException(status_code=400, detail="POSTGRES_URL (Supabase) nu este configurat")
+        raise HTTPException(status_code=400, detail="SUPABASE_URL nu este configurat în .env")
     if database.SessionLocal is None:
         raise HTTPException(status_code=503, detail="Local DB not available")
     if supabase_sync_progress["active"]:
