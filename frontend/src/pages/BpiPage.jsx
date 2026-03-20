@@ -9,7 +9,9 @@ export default function BpiPage({ ctx }) {
   const {
     bpiParsing, bpiResults, bpiHistory, bpiStats,
     parseBpiPdf, saveBpiRecord, loadBpiHistory,
-    openFirmaProfile
+    openFirmaProfile,
+    bpiFolderInfo, bpiScanProgress, bpiScanLogs, bpiScanning,
+    loadBpiFolderInfo, startBpiFolderScan, stopBpiFolderScan,
   } = ctx;
 
   const [dragOver, setDragOver] = useState(false);
@@ -116,6 +118,123 @@ export default function BpiPage({ ctx }) {
                   : <><Upload size={16} style={{ marginRight: 6 }} />Selecteaza PDF BPI</>
                 }
               </Button>
+            </CardContent>
+          </Card>
+
+          {/* Folder Scan Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="card-title" style={{fontSize:'1rem'}}>
+                <Upload size={18} />
+                Scan Folder Server (20-30GB)
+              </CardTitle>
+              <CardDescription>
+                Procesare colectii mari de PDF-uri BPI direct de pe server — fara upload browser.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {/* Folder info */}
+              {bpiFolderInfo ? (
+                <div style={{marginBottom:'12px'}}>
+                  <div style={{
+                    padding:'10px 14px', borderRadius:'8px', fontSize:'0.82rem',
+                    background: bpiFolderInfo.exists ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)',
+                    border: `1px solid ${bpiFolderInfo.exists ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
+                    marginBottom:'8px'
+                  }}>
+                    <div style={{fontWeight:600, marginBottom:'4px'}}>
+                      {bpiFolderInfo.exists ? '✅ Folder montat' : '❌ Folder negăsit'}
+                    </div>
+                    <div style={{color:'var(--text-muted)', fontFamily:'monospace', fontSize:'0.78rem'}}>{bpiFolderInfo.path}</div>
+                    {bpiFolderInfo.exists && (
+                      <div style={{marginTop:'6px', display:'flex', gap:'16px', flexWrap:'wrap'}}>
+                        <span><strong>{bpiFolderInfo.total_pdfs?.toLocaleString()}</strong> PDF-uri</span>
+                        <span><strong>{bpiFolderInfo.total_size_gb}</strong> GB</span>
+                        <span style={{color:'#22c55e'}}><strong>{bpiFolderInfo.already_processed?.toLocaleString()}</strong> procesate</span>
+                        <span style={{color:'#eab308'}}><strong>{bpiFolderInfo.remaining?.toLocaleString()}</strong> rămase</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {!bpiFolderInfo.exists && (
+                    <div style={{fontSize:'0.78rem', color:'var(--text-muted)', padding:'8px', background:'var(--bg-secondary)', borderRadius:'6px'}}>
+                      <strong>Configurare docker-compose.yml:</strong><br/>
+                      <code style={{display:'block', marginTop:'4px', fontFamily:'monospace'}}>
+                        volumes:<br/>
+                        &nbsp;&nbsp;- /calea/ta/bpi_pdfs:/app/bpi_input
+                      </code>
+                      <p style={{marginTop:'6px'}}>Pune toate PDF-urile în folderul <code>/calea/ta/bpi_pdfs</code> pe serverul tău, apoi rebuild Docker.</p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div style={{display:'flex', justifyContent:'center', padding:'8px'}}>
+                  <button onClick={loadBpiFolderInfo} style={{background:'none', border:'none', cursor:'pointer', color:'var(--primary)', fontSize:'0.85rem'}}>
+                    Verifică folder →
+                  </button>
+                </div>
+              )}
+
+              {/* Scan controls */}
+              {bpiFolderInfo?.exists && bpiFolderInfo?.remaining > 0 && (
+                <div style={{display:'flex', gap:'8px', marginBottom:'10px'}}>
+                  <Button onClick={() => startBpiFolderScan(true)} disabled={bpiScanning} style={{flex:1}} data-testid="start-folder-scan-btn">
+                    {bpiScanning
+                      ? <><Loader2 className="animate-spin" size={14} style={{marginRight:6}} />Procesare {bpiScanProgress?.processed?.toLocaleString()}/{bpiScanProgress?.total_files?.toLocaleString()}...</>
+                      : <><Upload size={14} style={{marginRight:6}} />Scanează {bpiFolderInfo.remaining?.toLocaleString()} PDF-uri</>
+                    }
+                  </Button>
+                  {bpiScanning && (
+                    <Button variant="destructive" onClick={stopBpiFolderScan} size="sm">
+                      <XCircle size={14} />
+                    </Button>
+                  )}
+                </div>
+              )}
+
+              {bpiFolderInfo?.exists && bpiFolderInfo?.remaining === 0 && !bpiScanning && (
+                <p style={{color:'#22c55e', fontSize:'0.82rem', textAlign:'center', padding:'8px'}}>
+                  ✅ Toate PDF-urile din folder au fost procesate!
+                </p>
+              )}
+
+              {/* Progress bar */}
+              {bpiScanProgress && bpiScanProgress.total_files > 0 && (
+                <div style={{marginBottom:'8px'}}>
+                  <div style={{
+                    height:'6px', borderRadius:'3px', background:'var(--border)', overflow:'hidden', marginBottom:'6px'
+                  }}>
+                    <div style={{
+                      height:'100%', background:'var(--primary)', transition:'width 0.3s',
+                      width: `${(bpiScanProgress.processed / bpiScanProgress.total_files * 100).toFixed(1)}%`
+                    }} />
+                  </div>
+                  <div style={{display:'flex', gap:'12px', fontSize:'0.75rem', color:'var(--text-muted)', flexWrap:'wrap'}}>
+                    <span>Procesate: <strong>{bpiScanProgress.processed?.toLocaleString()}</strong></span>
+                    <span>Înregistrări: <strong style={{color:'var(--primary)'}}>{bpiScanProgress.records_found?.toLocaleString()}</strong></span>
+                    <span>Erori: <strong style={{color:'#ef4444'}}>{bpiScanProgress.errors}</strong></span>
+                  </div>
+                </div>
+              )}
+
+              {/* Live log */}
+              {bpiScanLogs.length > 0 && (
+                <div className="download-log-panel" style={{marginTop:'8px'}}>
+                  <div className="download-log-header">
+                    <Upload size={13} />
+                    <span>Log scan folder BPI</span>
+                    {bpiScanning && <span className="download-log-stats">{bpiScanProgress?.current_file}</span>}
+                  </div>
+                  <div className="download-log-scroll" style={{height:'160px', overflow:'auto', padding:'8px 12px'}}>
+                    {bpiScanLogs.map((line, i) => (
+                      <div key={i} className="download-log-line"
+                        style={{color: line.includes('Eroare') ? '#ef4444' : line.includes('finalizat') ? '#22c55e' : undefined}}>
+                        {line}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 

@@ -171,6 +171,11 @@ function App() {
   const [bpiResults, setBpiResults] = useState(null);
   const [bpiHistory, setBpiHistory] = useState([]);
   const [bpiStats, setBpiStats] = useState(null);
+  // BPI Folder scan
+  const [bpiFolderInfo, setBpiFolderInfo] = useState(null);
+  const [bpiScanProgress, setBpiScanProgress] = useState(null);
+  const [bpiScanLogs, setBpiScanLogs] = useState([]);
+  const [bpiScanning, setBpiScanning] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -832,6 +837,46 @@ function App() {
     } catch (e) {}
   };
 
+  const loadBpiFolderInfo = async () => {
+    try {
+      const res = await axios.get(`${API}/bpi/folder-info`);
+      setBpiFolderInfo(res.data);
+    } catch (e) {}
+  };
+
+  const startBpiFolderScan = async (autoSave = true) => {
+    setBpiScanning(true);
+    setBpiScanLogs([]);
+    try {
+      await axios.post(`${API}/bpi/scan-folder?auto_save=${autoSave}`);
+      toast.success('Scan folder BPI pornit!');
+      const pollInterval = setInterval(async () => {
+        try {
+          const res = await axios.get(`${API}/bpi/scan-progress`);
+          setBpiScanProgress(res.data);
+          setBpiScanLogs(res.data.logs || []);
+          if (!res.data.active) {
+            clearInterval(pollInterval);
+            setBpiScanning(false);
+            loadBpiStats();
+            loadBpiFolderInfo();
+            toast.success(`Scan finalizat: ${res.data.records_found?.toLocaleString()} înregistrări`);
+          }
+        } catch (e) { clearInterval(pollInterval); setBpiScanning(false); }
+      }, 2000);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Eroare la pornirea scan-ului');
+      setBpiScanning(false);
+    }
+  };
+
+  const stopBpiFolderScan = async () => {
+    try {
+      await axios.post(`${API}/bpi/scan-progress/stop`);
+      toast.info('Scan oprit');
+    } catch (e) {}
+  };
+
   const cleanupDuplicateDenumiri = async () => {
     if (!window.confirm("Sigur vrei să ștergi duplicatele după denumire? Această acțiune este ireversibilă!")) {
       return;
@@ -1373,6 +1418,8 @@ function App() {
     // BPI
     bpiParsing, bpiResults, bpiHistory, bpiStats,
     parseBpiPdf, saveBpiRecord, loadBpiHistory, loadBpiStats,
+    bpiFolderInfo, bpiScanProgress, bpiScanLogs, bpiScanning,
+    loadBpiFolderInfo, startBpiFolderScan, stopBpiFolderScan,
     localitatiStats, localitatiLoading, normalizeProgress,
     loadLocalitatiStats, importLocalitati, startNormalizare,
     // Sync Dosare per Firma
@@ -1416,7 +1463,7 @@ function App() {
           <button className={`tab-btn ${activeTab === 'diagnostics' ? 'active' : ''}`} onClick={() => setActiveTab('diagnostics')} data-testid="tab-diagnostics">
             <Database size={18} /> Diagnosticare DB
           </button>
-          <button className={`tab-btn ${activeTab === 'bpi' ? 'active' : ''}`} onClick={() => { setActiveTab('bpi'); loadBpiHistory(); loadBpiStats(); }} data-testid="tab-bpi">
+          <button className={`tab-btn ${activeTab === 'bpi' ? 'active' : ''}`} onClick={() => { setActiveTab('bpi'); loadBpiHistory(); loadBpiStats(); loadBpiFolderInfo(); }} data-testid="tab-bpi">
             <FileJson size={18} /> BPI Parser
           </button>
         </div>
@@ -1453,3 +1500,5 @@ function App() {
 }
 
 export default App;
+
+// This line intentionally left blank for App.js EOF check

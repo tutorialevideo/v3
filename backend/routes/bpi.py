@@ -1,11 +1,12 @@
 """
 BPI (Buletinul Procedurilor de Insolvență) PDF Parser.
 Uses LiteParse (https://github.com/run-llama/liteparse) for local PDF parsing.
-No external API — runs entirely locally via 'lit parse' CLI.
+Supports single upload AND server-side folder scan for 20-30GB collections.
 """
 import re
 import os
 import json
+import asyncio
 import logging
 import tempfile
 import subprocess
@@ -13,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, File, UploadFile, HTTPException
+from fastapi import APIRouter, BackgroundTasks, File, UploadFile, HTTPException
 
 import database
 import state
@@ -23,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 BPI_UPLOADS_DIR = Path(__file__).parent.parent / "downloads" / "bpi"
 BPI_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+BPI_INPUT_DIR = Path(os.environ.get("BPI_INPUT_DIR", "/app/bpi_input"))
 
 
 # ─── LiteParse PDF Extraction ─────────────────────────────────────────────────
@@ -466,3 +468,191 @@ async def get_bpi_stats():
     async for doc in state.mongo_db.bpi_records.aggregate(pipeline):
         by_tip[doc["_id"] or "Necunoscut"] = doc["count"]
     return {"total_records": total, "by_tip_procedura": by_tip}
+
+
+# ─── Server-side Folder Scan ──────────────────────────────────────────────────
+
+@router.get("/bpi/folder-info")
+async def get_bpi_folder_info():
+    """Show info about the BPI input folder (mounted volume)."""
+    folder = BPI_INPUT_DIR
+    if not folder.exists():
+        return {
+            "path": str(folder),
+            "exists": False,
+            "message": f"Folderul nu există. Creează-l și pune PDF-urile acolo, sau editează docker-compose.yml să monteze folderul tău.",
+            "docker_hint": "volumes:\n  - /calea/ta/catre/bpi_pdfs:/app/bpi_input"
+        }
+
+    # Count PDF files recursively
+    pdf_files = list(folder.rglob("*.pdf")) + list(folder.rglob("*.PDF"))
+    total_size = sum(f.stat().st_size for f in pdf_files if f.is_file())
+    already_processed = await state.mongo_db.bpi_records.count_documents({"source_folder": str(folder)})
+
+    return {
+        "path": str(folder),
+        "exists": True,
+        "total_pdfs": len(pdf_files),
+        "total_size_gb": round(total_size / (1024**3), 2),
+        "total_size_mb": round(total_size / (1024**2), 1),
+        "already_processed": already_processed,
+        "remaining": len(pdf_files) - already_processed,
+        "sample_files": [str(f.name) for f in pdf_files[:5]]
+    }
+
+
+@router.get("/bpi/scan-progress")
+async def get_scan_progress():
+    """Get current folder scan progress."""
+    return state.bpi_scan_progress
+
+
+@router.post("/bpi/scan-progress/stop")
+async def stop_scan():
+    state.bpi_scan_progress["active"] = False
+    return {"message": "Stop requested"}
+
+
+@router.post("/bpi/scan-folder")
+async def scan_bpi_folder(
+    background_tasks: BackgroundTasks,
+    folder_path: str = None,
+    skip_already_processed: bool = True,
+    auto_save: bool = True,
+    batch_size: int = 10
+):
+    """
+    Scan a folder of BPI PDFs and process them all.
+    For large collections (20-30GB), runs in background with live progress.
+    
+    folder_path: override default BPI_INPUT_DIR (must be inside container)
+    skip_already_processed: skip files already in MongoDB
+    auto_save: automatically save all extracted records to MongoDB
+    batch_size: number of PDFs to process in parallel
+    """
+    if state.bpi_scan_progress["active"]:
+        raise HTTPException(status_code=400, detail="Scan already running")
+
+    scan_dir = Path(folder_path) if folder_path else BPI_INPUT_DIR
+
+    if not scan_dir.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Folderul '{scan_dir}' nu există în container. Verifică volumul montat în docker-compose.yml."
+        )
+
+    state.bpi_scan_progress.update({
+        "active": True, "total_files": 0, "processed": 0,
+        "records_found": 0, "errors": 0, "current_file": None, "logs": []
+    })
+
+    background_tasks.add_task(_run_folder_scan, scan_dir, skip_already_processed, auto_save, batch_size)
+    return {
+        "message": f"Scan pornit: {scan_dir}",
+        "status": "running"
+    }
+
+
+async def _run_folder_scan(scan_dir: Path, skip_processed: bool, auto_save: bool, batch_size: int):
+    """Process all PDFs in a folder recursively."""
+    try:
+        # Find all PDFs
+        pdf_files = sorted(scan_dir.rglob("*.pdf")) + sorted(scan_dir.rglob("*.PDF"))
+        pdf_files = list(set(pdf_files))  # deduplicate
+
+        if not pdf_files:
+            state.add_bpi_log(f"Niciun PDF găsit în {scan_dir}")
+            state.bpi_scan_progress["active"] = False
+            return
+
+        # Get already processed filenames
+        processed_names = set()
+        if skip_processed:
+            cursor = state.mongo_db.bpi_records.find({"source_file": {"$exists": True}}, {"source_file": 1, "_id": 0})
+            async for doc in cursor:
+                processed_names.add(doc.get("source_file", ""))
+
+        # Filter unprocessed
+        to_process = [f for f in pdf_files if str(f) not in processed_names]
+        state.bpi_scan_progress["total_files"] = len(to_process)
+        state.add_bpi_log(f"Total PDF-uri: {len(pdf_files)} | De procesat: {len(to_process)} | Skip: {len(pdf_files) - len(to_process)}")
+        state.add_bpi_log(f"Folder: {scan_dir}")
+        state.add_bpi_log("─" * 40)
+
+        if not to_process:
+            state.add_bpi_log("Toate PDF-urile sunt deja procesate!")
+            state.bpi_scan_progress["active"] = False
+            return
+
+        # Process files
+        for i, pdf_path in enumerate(to_process):
+            if not state.bpi_scan_progress["active"]:
+                state.add_bpi_log("Oprire solicitată.")
+                break
+
+            state.bpi_scan_progress["current_file"] = pdf_path.name
+            try:
+                pdf_bytes = pdf_path.read_bytes()
+                parsed = extract_text_with_liteparse(pdf_bytes)
+                text = parsed["text"]
+                pages = parsed["pages"]
+
+                if not text or not text.strip():
+                    state.add_bpi_log(f"[{i+1}/{len(to_process)}] {pdf_path.name} — text gol (scan/imagine?)")
+                    state.bpi_scan_progress["errors"] += 1
+                else:
+                    records = extract_bpi_data(text, pdf_path.name)
+                    state.bpi_scan_progress["records_found"] += len(records)
+
+                    # Match + save
+                    if auto_save and records:
+                        for record in records:
+                            record["source_file"] = str(pdf_path)
+                            record["source_folder"] = str(scan_dir)
+                            record["saved_at"] = datetime.utcnow().isoformat()
+                            # Match to DB firm
+                            record["firma_match"] = None
+                            if database.SessionLocal:
+                                db = database.SessionLocal()
+                                try:
+                                    Firma = database.Firma
+                                    if record.get("cui"):
+                                        f = db.query(Firma).filter(Firma.cui == record["cui"]).first()
+                                        if f:
+                                            record["firma_match"] = {"id": f.id, "denumire": f.denumire, "cui": f.cui}
+                                finally:
+                                    db.close()
+                            # Save to MongoDB
+                            await state.mongo_db.bpi_records.insert_one(
+                                {k: v for k, v in record.items() if k != "_id"}
+                            )
+
+                    matched = sum(1 for r in records if r.get("firma_match"))
+                    state.add_bpi_log(
+                        f"[{i+1}/{len(to_process)}] {pdf_path.name} | {pages}pg | {len(records)} înreg | {matched} match DB"
+                    )
+
+            except Exception as e:
+                state.bpi_scan_progress["errors"] += 1
+                state.add_bpi_log(f"[{i+1}/{len(to_process)}] {pdf_path.name} — Eroare: {str(e)[:60]}")
+                logger.error(f"[BPI] Error processing {pdf_path}: {e}")
+
+            state.bpi_scan_progress["processed"] = i + 1
+
+            # Small delay to not overwhelm the system
+            if (i + 1) % batch_size == 0:
+                await asyncio.sleep(0.1)
+
+        state.add_bpi_log("─" * 40)
+        state.add_bpi_log(
+            f"Scan finalizat: {state.bpi_scan_progress['processed']} fișiere procesate, "
+            f"{state.bpi_scan_progress['records_found']} înregistrări extrase, "
+            f"{state.bpi_scan_progress['errors']} erori"
+        )
+
+    except Exception as e:
+        state.add_bpi_log(f"Eroare generală: {str(e)[:80]}")
+        logger.error(f"[BPI] Folder scan error: {e}")
+    finally:
+        state.bpi_scan_progress["active"] = False
+

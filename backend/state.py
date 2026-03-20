@@ -132,3 +132,22 @@ captcha_session = {
     "cookies": None,
     "jsessionid": None
 }
+
+# ─── BPI folder scan state ────────────────────────────────────────────────────
+bpi_scan_progress = {
+    "active": False,
+    "total_files": 0,
+    "processed": 0,
+    "records_found": 0,
+    "errors": 0,
+    "current_file": None,
+    "logs": []
+}
+
+
+def add_bpi_log(message: str):
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    bpi_scan_progress["logs"].append(f"[{timestamp}] {message}")
+    if len(bpi_scan_progress["logs"]) > 200:
+        bpi_scan_progress["logs"] = bpi_scan_progress["logs"][-200:]
