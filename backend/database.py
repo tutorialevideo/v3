@@ -23,11 +23,16 @@ load_dotenv(ROOT_DIR / '.env')
 logger = logging.getLogger(__name__)
 
 POSTGRES_URL = os.environ.get('POSTGRES_URL', '').strip()
+SUPABASE_URL = os.environ.get('SUPABASE_URL', '').strip()
 
-# Fallback to local if not set
+# Priority: POSTGRES_URL > SUPABASE_URL > local fallback
 if not POSTGRES_URL:
-    POSTGRES_URL = 'postgresql://justapp:justapp123@localhost:5432/justportal'
-    logger.warning("[DB] POSTGRES_URL not set, using local fallback")
+    if SUPABASE_URL:
+        POSTGRES_URL = SUPABASE_URL
+        logger.info("[DB] Using SUPABASE_URL as POSTGRES_URL")
+    else:
+        POSTGRES_URL = 'postgresql://justapp:justapp123@localhost:5432/justportal'
+        logger.warning("[DB] No POSTGRES_URL/SUPABASE_URL set, using local fallback")
 
 # Supabase requires SSL
 if 'supabase.co' in POSTGRES_URL and 'sslmode' not in POSTGRES_URL:
