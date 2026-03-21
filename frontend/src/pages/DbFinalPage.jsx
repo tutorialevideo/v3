@@ -126,19 +126,23 @@ export default function DbFinalPage({ ctx }) {
                         borderRadius: '10px', border: '1px solid var(--border)'
                       }}>
                         <div style={{ fontSize: '0.82rem', fontWeight: 600, marginBottom: '10px', color: 'var(--text-muted)' }}>
-                          Detalii stare firme (din cele sincronizate ANAF)
+                          Stare firme (din cele sincronizate ANAF)
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px' }}>
                           <div style={{ padding: '10px', borderRadius: '8px', textAlign: 'center', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)' }}>
-                            <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#22c55e' }}>{dbFinalStats.active?.toLocaleString() || 0}</div>
-                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>INREGISTRAT (Active)</div>
+                            <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#22c55e' }}>{dbFinalStats.active_fiscal?.toLocaleString() || 0}</div>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>ACTIVE (inregistrat + activ fiscal)</div>
+                          </div>
+                          <div style={{ padding: '10px', borderRadius: '8px', textAlign: 'center', background: 'rgba(234,179,8,0.1)', border: '1px solid rgba(234,179,8,0.25)' }}>
+                            <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#eab308' }}>{dbFinalStats.active_dar_inactiv_fiscal?.toLocaleString() || 0}</div>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>INREGISTRAT dar INACTIV fiscal</div>
                           </div>
                           <div style={{ padding: '10px', borderRadius: '8px', textAlign: 'center', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)' }}>
                             <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#ef4444' }}>{dbFinalStats.radiate?.toLocaleString() || 0}</div>
                             <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>RADIATE (Inchise)</div>
                           </div>
-                          <div style={{ padding: '10px', borderRadius: '8px', textAlign: 'center', background: 'rgba(234,179,8,0.1)', border: '1px solid rgba(234,179,8,0.25)' }}>
-                            <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#eab308' }}>{dbFinalStats.suspendate?.toLocaleString() || 0}</div>
+                          <div style={{ padding: '10px', borderRadius: '8px', textAlign: 'center', background: 'rgba(249,115,22,0.1)', border: '1px solid rgba(249,115,22,0.25)' }}>
+                            <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#f97316' }}>{dbFinalStats.suspendate?.toLocaleString() || 0}</div>
                             <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>SUSPENDATE</div>
                           </div>
                           <div style={{ padding: '10px', borderRadius: '8px', textAlign: 'center', background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.25)' }}>
@@ -146,18 +150,36 @@ export default function DbFinalPage({ ctx }) {
                             <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>TRANSFER</div>
                           </div>
                           <div style={{ padding: '10px', borderRadius: '8px', textAlign: 'center', background: 'rgba(14,165,233,0.1)', border: '1px solid rgba(14,165,233,0.25)' }}>
-                            <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#0ea5e9' }}>{dbFinalStats.reluare?.toLocaleString() || 0}</div>
-                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>RELUARE ACTIVITATE</div>
-                          </div>
-                          <div style={{ padding: '10px', borderRadius: '8px', textAlign: 'center', background: 'rgba(168,85,247,0.1)', border: '1px solid rgba(168,85,247,0.25)' }}>
-                            <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#a855f7' }}>{dbFinalStats.dizolvare?.toLocaleString() || 0}</div>
-                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>DIZOLVARE</div>
+                            <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#0ea5e9' }}>{(dbFinalStats.reluare + dbFinalStats.dizolvare)?.toLocaleString() || 0}</div>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>RELUARE / DIZOLVARE</div>
                           </div>
                         </div>
-                        {dbFinalStats.inactiv_anaf > 0 && (
-                          <div style={{ marginTop: '8px', fontSize: '0.78rem', color: '#ef4444', padding: '6px 10px', background: 'rgba(239,68,68,0.06)', borderRadius: '6px' }}>
-                            Din care <strong>{dbFinalStats.inactiv_anaf?.toLocaleString()}</strong> marcate ca <strong>INACTIV</strong> de ANAF
-                          </div>
+
+                        {/* Fiscal / TVA section */}
+                        {(dbFinalStats.platitori_tva > 0 || dbFinalStats.e_factura > 0) && (
+                          <>
+                            <div style={{ fontSize: '0.82rem', fontWeight: 600, marginTop: '14px', marginBottom: '8px', color: 'var(--text-muted)' }}>
+                              Date fiscale
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px' }}>
+                              <div style={{ padding: '10px', borderRadius: '8px', textAlign: 'center', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.25)' }}>
+                                <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#10b981' }}>{dbFinalStats.platitori_tva?.toLocaleString() || 0}</div>
+                                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>Platitori TVA</div>
+                              </div>
+                              <div style={{ padding: '10px', borderRadius: '8px', textAlign: 'center', background: 'rgba(20,184,166,0.1)', border: '1px solid rgba(20,184,166,0.25)' }}>
+                                <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#14b8a6' }}>{dbFinalStats.tva_incasare?.toLocaleString() || 0}</div>
+                                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>TVA la incasare</div>
+                              </div>
+                              <div style={{ padding: '10px', borderRadius: '8px', textAlign: 'center', background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.25)' }}>
+                                <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#3b82f6' }}>{dbFinalStats.e_factura?.toLocaleString() || 0}</div>
+                                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>e-Factura</div>
+                              </div>
+                              <div style={{ padding: '10px', borderRadius: '8px', textAlign: 'center', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.15)' }}>
+                                <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#ef4444' }}>{dbFinalStats.inactiv_anaf?.toLocaleString() || 0}</div>
+                                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>Inactiv fiscal (total)</div>
+                              </div>
+                            </div>
+                          </>
                         )}
                       </div>
                     )}

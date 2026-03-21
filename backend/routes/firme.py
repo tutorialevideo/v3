@@ -391,7 +391,6 @@ async def get_firma_by_cui(cui: str):
 async def get_dbfinal_stats():
     base = {"cui": {"$ne": None, "$exists": True, "$not": {"$in": [None, ""]}}}
 
-    # Use aggregation pipeline to compute all counts in one pass
     pipeline = [
         {"$match": base},
         {"$group": {
@@ -401,12 +400,28 @@ async def get_dbfinal_stats():
             "sincronizate_mfinante": {"$sum": {"$cond": [{"$ne": [{"$ifNull": ["$mf_last_sync", None]}, None]}, 1, 0]}},
             "cu_date_bilant": {"$sum": {"$cond": [{"$ne": [{"$ifNull": ["$mf_cifra_afaceri", None]}, None]}, 1, 0]}},
             "active": {"$sum": {"$cond": [{"$regexMatch": {"input": {"$ifNull": ["$anaf_stare", ""]}, "regex": "^INREGISTRAT"}}, 1, 0]}},
+            "active_fiscal": {"$sum": {"$cond": [
+                {"$and": [
+                    {"$regexMatch": {"input": {"$ifNull": ["$anaf_stare", ""]}, "regex": "^INREGISTRAT"}},
+                    {"$ne": ["$anaf_inactiv", True]}
+                ]}, 1, 0
+            ]}},
+            "active_dar_inactiv_fiscal": {"$sum": {"$cond": [
+                {"$and": [
+                    {"$regexMatch": {"input": {"$ifNull": ["$anaf_stare", ""]}, "regex": "^INREGISTRAT"}},
+                    {"$eq": ["$anaf_inactiv", True]}
+                ]}, 1, 0
+            ]}},
             "radiate": {"$sum": {"$cond": [{"$regexMatch": {"input": {"$ifNull": ["$anaf_stare", ""]}, "regex": "^RADIERE"}}, 1, 0]}},
             "suspendate": {"$sum": {"$cond": [{"$regexMatch": {"input": {"$ifNull": ["$anaf_stare", ""]}, "regex": "^SUSPENDARE"}}, 1, 0]}},
             "transfer": {"$sum": {"$cond": [{"$regexMatch": {"input": {"$ifNull": ["$anaf_stare", ""]}, "regex": "^TRANSFER"}}, 1, 0]}},
             "dizolvare": {"$sum": {"$cond": [{"$regexMatch": {"input": {"$ifNull": ["$anaf_stare", ""]}, "regex": "^DIZOLVARE"}}, 1, 0]}},
             "reluare": {"$sum": {"$cond": [{"$regexMatch": {"input": {"$ifNull": ["$anaf_stare", ""]}, "regex": "^RELUARE"}}, 1, 0]}},
             "inactiv_anaf": {"$sum": {"$cond": [{"$eq": ["$anaf_inactiv", True]}, 1, 0]}},
+            "platitori_tva": {"$sum": {"$cond": [{"$eq": ["$anaf_platitor_tva", True]}, 1, 0]}},
+            "tva_incasare": {"$sum": {"$cond": [{"$eq": ["$anaf_tva_incasare", True]}, 1, 0]}},
+            "split_tva": {"$sum": {"$cond": [{"$eq": ["$anaf_split_tva", True]}, 1, 0]}},
+            "e_factura": {"$sum": {"$cond": [{"$eq": ["$anaf_e_factura", True]}, 1, 0]}},
             "nesincronizate": {"$sum": {"$cond": [
                 {"$or": [
                     {"$eq": [{"$ifNull": ["$anaf_sync_status", None]}, None]},
@@ -423,9 +438,10 @@ async def get_dbfinal_stats():
         return r
     return {
         "total_cu_cui": 0, "sincronizate_anaf": 0, "sincronizate_mfinante": 0,
-        "cu_date_bilant": 0, "active": 0, "radiate": 0, "suspendate": 0,
-        "transfer": 0, "dizolvare": 0, "reluare": 0, "inactiv_anaf": 0,
-        "nesincronizate": 0, "db_available": True
+        "cu_date_bilant": 0, "active": 0, "active_fiscal": 0, "active_dar_inactiv_fiscal": 0,
+        "radiate": 0, "suspendate": 0, "transfer": 0, "dizolvare": 0, "reluare": 0,
+        "inactiv_anaf": 0, "platitori_tva": 0, "tva_incasare": 0, "split_tva": 0,
+        "e_factura": 0, "nesincronizate": 0, "db_available": True
     }
 
 
