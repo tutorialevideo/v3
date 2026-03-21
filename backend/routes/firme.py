@@ -428,6 +428,16 @@ async def get_dbfinal_stats():
                     {"$eq": ["$anaf_sync_status", ""]}
                 ]}, 1, 0
             ]}},
+            "active_fara_mfinante": {"$sum": {"$cond": [
+                {"$and": [
+                    {"$regexMatch": {"input": {"$ifNull": ["$anaf_stare", ""]}, "regex": "^INREGISTRAT"}},
+                    {"$ne": ["$anaf_inactiv", True]},
+                    {"$or": [
+                        {"$eq": [{"$ifNull": ["$mf_last_sync", None]}, None]},
+                        {"$eq": ["$mf_last_sync", ""]}
+                    ]}
+                ]}, 1, 0
+            ]}},
         }}
     ]
     result = await mdb.firme_col.aggregate(pipeline).to_list(1)
@@ -457,9 +467,8 @@ async def get_dbfinal_firme(skip: int = 0, limit: int = 100, search: str = None,
     if judet:
         query["judet"] = {"$regex": judet, "$options": "i"}
     if doar_active:
-        query["anaf_stare"] = {"$regex": "ACTIV", "$options": "i"}
-        query["$nor"] = [{"anaf_stare": {"$regex": "INACTIV", "$options": "i"}},
-                         {"anaf_stare": {"$regex": "RADIERE", "$options": "i"}}]
+        query["anaf_stare"] = {"$regex": "^INREGISTRAT"}
+        query["anaf_inactiv"] = {"$ne": True}
     if doar_cu_bilant:
         query["mf_cifra_afaceri"] = {"$ne": None}
 

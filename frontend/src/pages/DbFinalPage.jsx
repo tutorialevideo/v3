@@ -181,6 +181,34 @@ export default function DbFinalPage({ ctx }) {
                             </div>
                           </>
                         )}
+
+                        {/* MFinante sync indicator */}
+                        {dbFinalStats.active_fiscal > 0 && (
+                          <>
+                            <div style={{ fontSize: '0.82rem', fontWeight: 600, marginTop: '14px', marginBottom: '8px', color: 'var(--text-muted)' }}>
+                              Sync MFinante (date financiare)
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '8px' }}>
+                              <div style={{ padding: '10px', borderRadius: '8px', textAlign: 'center', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)' }}>
+                                <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#22c55e' }}>{dbFinalStats.sincronizate_mfinante?.toLocaleString() || 0}</div>
+                                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>Cu date MFinante</div>
+                              </div>
+                              <div style={{ padding: '10px', borderRadius: '8px', textAlign: 'center', background: 'rgba(249,115,22,0.12)', border: '1px solid rgba(249,115,22,0.3)' }}>
+                                <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#f97316' }}>{dbFinalStats.active_fara_mfinante?.toLocaleString() || 0}</div>
+                                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>Active fiscal FARA MFinante</div>
+                              </div>
+                              <div style={{ padding: '10px', borderRadius: '8px', textAlign: 'center', background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.25)' }}>
+                                <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#6366f1' }}>{dbFinalStats.cu_date_bilant?.toLocaleString() || 0}</div>
+                                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>Cu cifra afaceri</div>
+                              </div>
+                            </div>
+                            {dbFinalStats.active_fara_mfinante > 0 && (
+                              <div style={{ marginTop: '8px', fontSize: '0.78rem', color: '#f97316', padding: '6px 10px', background: 'rgba(249,115,22,0.06)', borderRadius: '6px' }}>
+                                <strong>{dbFinalStats.active_fara_mfinante?.toLocaleString()}</strong> firme active fiscal necesita sync MFinante (rezolva CAPTCHA in tab-ul dedicat, apoi porneste sync)
+                              </div>
+                            )}
+                          </>
+                        )}
                       </div>
                     )}
                   </>

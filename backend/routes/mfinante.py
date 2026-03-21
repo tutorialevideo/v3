@@ -888,10 +888,9 @@ async def _run_mfinante_sync(limit: int, only_without_bilant: bool, only_anaf_ac
     query = {"cui": {"$ne": None, "$exists": True, "$not": {"$in": [None, ""]}}}
     if only_anaf_active:
         query["anaf_sync_status"] = "found"
-        query["anaf_stare"] = {"$regex": "ACTIV", "$options": "i"}
-        query["$nor"] = [{"anaf_stare": {"$regex": "INACTIV", "$options": "i"}},
-                         {"anaf_stare": {"$regex": "RADIERE", "$options": "i"}}]
-        state.add_mfinante_log("Filtru: doar firme ACTIVE conform ANAF")
+        query["anaf_stare"] = {"$regex": "^INREGISTRAT"}
+        query["anaf_inactiv"] = {"$ne": True}
+        state.add_mfinante_log("Filtru: doar firme INREGISTRAT + activ fiscal")
     else:
         state.add_mfinante_log("Filtru: toate firmele cu CUI")
 
