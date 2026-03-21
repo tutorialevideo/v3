@@ -900,7 +900,7 @@ async def _run_mfinante_sync(limit: int, only_without_bilant: bool, only_anaf_ac
         ]
         state.add_mfinante_log("Filtru suplimentar: fara bilant salvat")
 
-    firms = await mdb.firme_col.find(query, {"_id": 0}).limit(limit or 10000).to_list(limit or 10000)
+    firms = await mdb.firme_col.find(query, {"_id": 0}).sort("id", 1).to_list(None) if not limit else await mdb.firme_col.find(query, {"_id": 0}).sort("id", 1).limit(limit).to_list(limit)
     state.mfinante_sync_progress["total_firms"] = len(firms)
     state.add_mfinante_log(f"Total firme de procesat: {len(firms)}")
 

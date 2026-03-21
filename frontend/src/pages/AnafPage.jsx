@@ -705,6 +705,14 @@ export default function AnafPage({ ctx }) {
                       Sync 1.000 firme
                     </Button>
                     <Button
+                      style={{background:'#22c55e', color:'#000', fontWeight:700}}
+                      onClick={() => startMfSync(0)}
+                      disabled={mfLoading || !mfProgress?.session_valid}
+                      data-testid="mf-sync-all-btn"
+                    >
+                      Sync TOATE active fără bilanț ({mfStats?.active_fara_bilant?.toLocaleString() ?? '?'})
+                    </Button>
+                    <Button
                       variant="destructive"
                       onClick={stopMfSync}
                       disabled={!mfProgress?.progress?.active}
