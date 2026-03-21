@@ -497,7 +497,8 @@ async def export_dbfinal_csv(search: str = None, judet: str = None,
     if judet:
         query["judet"] = {"$regex": judet, "$options": "i"}
     if doar_active:
-        query["anaf_stare"] = {"$regex": "ACTIV", "$options": "i"}
+        query["anaf_stare"] = {"$regex": "^INREGISTRAT"}
+        query["anaf_inactiv"] = {"$ne": True}
     if doar_cu_bilant:
         query["mf_cifra_afaceri"] = {"$ne": None}
 

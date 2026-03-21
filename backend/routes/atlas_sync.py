@@ -74,9 +74,8 @@ async def get_atlas_status():
     local_counts = {}
     try:
         base = {"cui": {"$ne": None, "$exists": True, "$not": {"$in": [None, ""]}}}
-        active = {**base, "anaf_stare": {"$regex": "ACTIV", "$options": "i"},
-                  "$nor": [{"anaf_stare": {"$regex": "INACTIV", "$options": "i"}},
-                           {"anaf_stare": {"$regex": "RADIERE", "$options": "i"}}]}
+        active = {**base, "anaf_stare": {"$regex": "^INREGISTRAT"},
+                  "anaf_inactiv": {"$ne": True}}
         local_counts = {
             "firme_total": await mdb.firme_col.count_documents({}),
             "firme_active": await mdb.firme_col.count_documents(active),
@@ -186,11 +185,10 @@ async def _run_atlas_sync(only_active, sync_bilanturi, sync_dosare, clean_first,
         if only_active:
             query = {
                 "cui": {"$ne": None, "$exists": True, "$not": {"$in": [None, ""]}},
-                "anaf_stare": {"$regex": "ACTIV", "$options": "i"},
-                "$nor": [{"anaf_stare": {"$regex": "INACTIV", "$options": "i"}},
-                         {"anaf_stare": {"$regex": "RADIERE", "$options": "i"}}]
+                "anaf_stare": {"$regex": "^INREGISTRAT"},
+                "anaf_inactiv": {"$ne": True}
             }
-            add_atlas_log("Filtru: doar firme ACTIVE ANAF")
+            add_atlas_log("Filtru: doar firme INREGISTRAT + activ fiscal")
         else:
             add_atlas_log("Filtru: toate firmele")
 

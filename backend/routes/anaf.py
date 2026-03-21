@@ -92,9 +92,8 @@ async def get_anaf_stats():
     not_found = await mdb.firme_col.count_documents({"anaf_sync_status": "not_found"})
     errors = await mdb.firme_col.count_documents({"anaf_sync_status": "error"})
     active = await mdb.firme_col.count_documents({
-        "anaf_stare": {"$regex": "ACTIV", "$options": "i"},
-        "$nor": [{"anaf_stare": {"$regex": "INACTIV", "$options": "i"}},
-                 {"anaf_stare": {"$regex": "RADIERE", "$options": "i"}}]
+        "anaf_stare": {"$regex": "^INREGISTRAT"},
+        "anaf_inactiv": {"$ne": True}
     })
     radiate = await mdb.firme_col.count_documents({"anaf_stare": {"$regex": "RADIERE", "$options": "i"}})
     platitori = await mdb.firme_col.count_documents({"anaf_platitor_tva": True})

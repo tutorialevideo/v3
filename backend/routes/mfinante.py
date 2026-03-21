@@ -1041,9 +1041,8 @@ async def get_mfinante_stats():
     import mongo_db as mdb
     base = {"cui": {"$ne": None, "$exists": True, "$not": {"$in": [None, ""]}}}
     active_q = {**base, "anaf_sync_status": "found",
-                "anaf_stare": {"$regex": "ACTIV", "$options": "i"},
-                "$nor": [{"anaf_stare": {"$regex": "INACTIV", "$options": "i"}},
-                         {"anaf_stare": {"$regex": "RADIERE", "$options": "i"}}]}
+                "anaf_stare": {"$regex": "^INREGISTRAT"},
+                "anaf_inactiv": {"$ne": True}}
     total = await mdb.firme_col.count_documents(base)
     synced = await mdb.firme_col.count_documents({**base, "mf_last_sync": {"$ne": None}})
     with_ca = await mdb.firme_col.count_documents({**base, "mf_cifra_afaceri": {"$ne": None}})

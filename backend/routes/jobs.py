@@ -524,9 +524,8 @@ async def _run_sync_dosare_per_firma(
         mf_query = {
             "anaf_sync_status": "found",
             "anaf_denumire": {"$ne": None, "$not": {"$in": [None, ""]}},
-            "anaf_stare": {"$regex": "ACTIV", "$options": "i"},
-            "$nor": [{"anaf_stare": {"$regex": "INACTIV", "$options": "i"}},
-                     {"anaf_stare": {"$regex": "RADIERE", "$options": "i"}}]
+            "anaf_stare": {"$regex": "^INREGISTRAT"},
+            "anaf_inactiv": {"$ne": True}
         }
         if judet:
             mf_query["$or"] = [
