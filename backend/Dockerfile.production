@@ -2,11 +2,20 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies + Node.js (for LiteParse) + Tesseract OCR
 RUN apt-get update && apt-get install -y \
     gcc \
     curl \
+    libjpeg-dev \
+    zlib1g-dev \
+    tesseract-ocr \
+    tesseract-ocr-eng \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
+
+# Install LiteParse globally
+RUN npm install -g @llamaindex/liteparse
 
 # Copy requirements and install dependencies
 COPY requirements.txt .
@@ -17,19 +26,17 @@ RUN pip install --no-cache-dir gunicorn
 COPY . .
 
 # Create downloads directory
-RUN mkdir -p /app/downloads
+RUN mkdir -p /app/downloads /app/downloads/bpi
 
 # Environment variables
-ENV WORKERS=8
-ENV THREADS_PER_WORKER=2
+ENV WORKERS=4
 ENV HOST=0.0.0.0
 ENV PORT=8001
 
 # Expose port
 EXPOSE 8001
 
-# Run with Gunicorn for production with multiple workers
-# Use uvicorn workers for async support
+# Run with Gunicorn for production with uvicorn workers for async support
 CMD gunicorn server:app \
     --workers ${WORKERS} \
     --worker-class uvicorn.workers.UvicornWorker \
