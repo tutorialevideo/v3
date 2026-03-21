@@ -390,16 +390,42 @@ async def get_firma_by_cui(cui: str):
 @router.get("/dbfinal/stats")
 async def get_dbfinal_stats():
     base = {"cui": {"$ne": None, "$exists": True, "$not": {"$in": [None, ""]}}}
-    active = {**base, "anaf_stare": {"$regex": "ACTIV", "$options": "i"},
-              "$nor": [{"anaf_stare": {"$regex": "INACTIV", "$options": "i"}},
-                       {"anaf_stare": {"$regex": "RADIERE", "$options": "i"}}]}
+
+    # Use aggregation pipeline to compute all counts in one pass
+    pipeline = [
+        {"$match": base},
+        {"$group": {
+            "_id": None,
+            "total_cu_cui": {"$sum": 1},
+            "sincronizate_anaf": {"$sum": {"$cond": [{"$eq": ["$anaf_sync_status", "found"]}, 1, 0]}},
+            "sincronizate_mfinante": {"$sum": {"$cond": [{"$ne": [{"$ifNull": ["$mf_last_sync", None]}, None]}, 1, 0]}},
+            "cu_date_bilant": {"$sum": {"$cond": [{"$ne": [{"$ifNull": ["$mf_cifra_afaceri", None]}, None]}, 1, 0]}},
+            "active": {"$sum": {"$cond": [{"$regexMatch": {"input": {"$ifNull": ["$anaf_stare", ""]}, "regex": "^INREGISTRAT"}}, 1, 0]}},
+            "radiate": {"$sum": {"$cond": [{"$regexMatch": {"input": {"$ifNull": ["$anaf_stare", ""]}, "regex": "^RADIERE"}}, 1, 0]}},
+            "suspendate": {"$sum": {"$cond": [{"$regexMatch": {"input": {"$ifNull": ["$anaf_stare", ""]}, "regex": "^SUSPENDARE"}}, 1, 0]}},
+            "transfer": {"$sum": {"$cond": [{"$regexMatch": {"input": {"$ifNull": ["$anaf_stare", ""]}, "regex": "^TRANSFER"}}, 1, 0]}},
+            "dizolvare": {"$sum": {"$cond": [{"$regexMatch": {"input": {"$ifNull": ["$anaf_stare", ""]}, "regex": "^DIZOLVARE"}}, 1, 0]}},
+            "reluare": {"$sum": {"$cond": [{"$regexMatch": {"input": {"$ifNull": ["$anaf_stare", ""]}, "regex": "^RELUARE"}}, 1, 0]}},
+            "inactiv_anaf": {"$sum": {"$cond": [{"$eq": ["$anaf_inactiv", True]}, 1, 0]}},
+            "nesincronizate": {"$sum": {"$cond": [
+                {"$or": [
+                    {"$eq": [{"$ifNull": ["$anaf_sync_status", None]}, None]},
+                    {"$eq": ["$anaf_sync_status", ""]}
+                ]}, 1, 0
+            ]}},
+        }}
+    ]
+    result = await mdb.firme_col.aggregate(pipeline).to_list(1)
+    if result:
+        r = result[0]
+        r.pop("_id", None)
+        r["db_available"] = True
+        return r
     return {
-        "total_cu_cui": await mdb.firme_col.count_documents(base),
-        "sincronizate_anaf": await mdb.firme_col.count_documents({**base, "anaf_last_sync": {"$ne": None}}),
-        "sincronizate_mfinante": await mdb.firme_col.count_documents({**base, "mf_last_sync": {"$ne": None}}),
-        "cu_date_bilant": await mdb.firme_col.count_documents({**base, "mf_cifra_afaceri": {"$ne": None}}),
-        "active": await mdb.firme_col.count_documents(active),
-        "db_available": True
+        "total_cu_cui": 0, "sincronizate_anaf": 0, "sincronizate_mfinante": 0,
+        "cu_date_bilant": 0, "active": 0, "radiate": 0, "suspendate": 0,
+        "transfer": 0, "dizolvare": 0, "reluare": 0, "inactiv_anaf": 0,
+        "nesincronizate": 0, "db_available": True
     }
 
 

@@ -98,24 +98,70 @@ export default function DbFinalPage({ ctx }) {
               </CardHeader>
               <CardContent>
                 {dbFinalStats && (
-                  <div className="stats-grid-4">
-                    <div className="stat-card primary">
-                      <span className="stat-value">{dbFinalStats.total_cu_cui?.toLocaleString() || 0}</span>
-                      <span className="stat-label">Total cu CUI</span>
+                  <>
+                    {/* Main stats row */}
+                    <div className="stats-grid-4">
+                      <div className="stat-card primary">
+                        <span className="stat-value">{dbFinalStats.total_cu_cui?.toLocaleString() || 0}</span>
+                        <span className="stat-label">Total cu CUI</span>
+                      </div>
+                      <div className="stat-card success">
+                        <span className="stat-value">{dbFinalStats.sincronizate_anaf?.toLocaleString() || 0}</span>
+                        <span className="stat-label">Sincronizate ANAF</span>
+                      </div>
+                      <div className="stat-card info">
+                        <span className="stat-value">{dbFinalStats.cu_date_bilant?.toLocaleString() || 0}</span>
+                        <span className="stat-label">Cu Bilant</span>
+                      </div>
+                      <div className="stat-card warning">
+                        <span className="stat-value">{dbFinalStats.nesincronizate?.toLocaleString() || 0}</span>
+                        <span className="stat-label">Nesincronizate ANAF</span>
+                      </div>
                     </div>
-                    <div className="stat-card success">
-                      <span className="stat-value">{dbFinalStats.sincronizate_anaf?.toLocaleString() || 0}</span>
-                      <span className="stat-label">Sincronizate ANAF</span>
-                    </div>
-                    <div className="stat-card info">
-                      <span className="stat-value">{dbFinalStats.cu_date_bilant?.toLocaleString() || 0}</span>
-                      <span className="stat-label">Cu Bilanț</span>
-                    </div>
-                    <div className="stat-card warning">
-                      <span className="stat-value">{dbFinalStats.active?.toLocaleString() || 0}</span>
-                      <span className="stat-label">Active</span>
-                    </div>
-                  </div>
+
+                    {/* Detailed breakdown */}
+                    {(dbFinalStats.sincronizate_anaf > 0 || dbFinalStats.active > 0) && (
+                      <div data-testid="stare-breakdown" style={{
+                        marginTop: '14px', padding: '14px', background: 'var(--bg-secondary)',
+                        borderRadius: '10px', border: '1px solid var(--border)'
+                      }}>
+                        <div style={{ fontSize: '0.82rem', fontWeight: 600, marginBottom: '10px', color: 'var(--text-muted)' }}>
+                          Detalii stare firme (din cele sincronizate ANAF)
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px' }}>
+                          <div style={{ padding: '10px', borderRadius: '8px', textAlign: 'center', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)' }}>
+                            <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#22c55e' }}>{dbFinalStats.active?.toLocaleString() || 0}</div>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>INREGISTRAT (Active)</div>
+                          </div>
+                          <div style={{ padding: '10px', borderRadius: '8px', textAlign: 'center', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)' }}>
+                            <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#ef4444' }}>{dbFinalStats.radiate?.toLocaleString() || 0}</div>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>RADIATE (Inchise)</div>
+                          </div>
+                          <div style={{ padding: '10px', borderRadius: '8px', textAlign: 'center', background: 'rgba(234,179,8,0.1)', border: '1px solid rgba(234,179,8,0.25)' }}>
+                            <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#eab308' }}>{dbFinalStats.suspendate?.toLocaleString() || 0}</div>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>SUSPENDATE</div>
+                          </div>
+                          <div style={{ padding: '10px', borderRadius: '8px', textAlign: 'center', background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.25)' }}>
+                            <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#6366f1' }}>{dbFinalStats.transfer?.toLocaleString() || 0}</div>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>TRANSFER</div>
+                          </div>
+                          <div style={{ padding: '10px', borderRadius: '8px', textAlign: 'center', background: 'rgba(14,165,233,0.1)', border: '1px solid rgba(14,165,233,0.25)' }}>
+                            <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#0ea5e9' }}>{dbFinalStats.reluare?.toLocaleString() || 0}</div>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>RELUARE ACTIVITATE</div>
+                          </div>
+                          <div style={{ padding: '10px', borderRadius: '8px', textAlign: 'center', background: 'rgba(168,85,247,0.1)', border: '1px solid rgba(168,85,247,0.25)' }}>
+                            <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#a855f7' }}>{dbFinalStats.dizolvare?.toLocaleString() || 0}</div>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>DIZOLVARE</div>
+                          </div>
+                        </div>
+                        {dbFinalStats.inactiv_anaf > 0 && (
+                          <div style={{ marginTop: '8px', fontSize: '0.78rem', color: '#ef4444', padding: '6px 10px', background: 'rgba(239,68,68,0.06)', borderRadius: '6px' }}>
+                            Din care <strong>{dbFinalStats.inactiv_anaf?.toLocaleString()}</strong> marcate ca <strong>INACTIV</strong> de ANAF
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
                 )}
               </CardContent>
             </Card>
