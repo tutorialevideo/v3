@@ -685,3 +685,215 @@ async def _save_dosare_for_firma(firma: dict, dosare: list, categorie_caz: str =
             logger.error(f"[SYNC_DOSARE] Save error: {e}")
     return new_count
 
+
+
+# ─── Bulk Download (month by month) ──────────────────────────────────────────
+
+@router.post("/bulk-download")
+async def start_bulk_download(
+    background_tasks: BackgroundTasks,
+    date_start: str = "2020-01-01",
+    date_end: str = None,
+    categorie_caz: str = None,
+):
+    """
+    Download ALL dosare from Portal JUST, month by month.
+    Saves raw JSON files without matching to DB.
+    Designed for later offline matching on Docker.
+    """
+    if state.download_job_progress["active"]:
+        raise HTTPException(status_code=409, detail="A download job is already running")
+
+    if not date_end:
+        date_end = datetime.now().strftime("%Y-%m-%d")
+
+    state.download_job_stop_flag = False
+    state.download_job_progress.update({
+        "active": True, "processed": 0, "total": 0,
+        "dosare_found": 0, "firme_new": 0, "logs": []
+    })
+    background_tasks.add_task(_run_bulk_download, date_start, date_end, categorie_caz)
+    return {"message": f"Bulk download started: {date_start} → {date_end}", "status": "running"}
+
+
+async def _run_bulk_download(date_start: str, date_end: str, categorie_caz: str = None):
+    """Download dosare month by month, save raw JSON per month."""
+    from dateutil.relativedelta import relativedelta
+
+    start = datetime.strptime(date_start, "%Y-%m-%d")
+    end = datetime.strptime(date_end, "%Y-%m-%d")
+    cat_label = CATEGORII_NUME.get(categorie_caz, categorie_caz) if categorie_caz else "Toate"
+
+    # Calculate months
+    months = []
+    current = start.replace(day=1)
+    while current <= end:
+        month_end = (current + relativedelta(months=1)) - relativedelta(days=1)
+        if month_end > end:
+            month_end = end
+        months.append((current.strftime("%Y-%m-%d"), month_end.strftime("%Y-%m-%d")))
+        current = current + relativedelta(months=1)
+
+    state.download_job_progress["total"] = len(months) * len(INSTITUTII)
+    state.add_download_log(f"BULK DOWNLOAD: {date_start} → {date_end}")
+    state.add_download_log(f"Categorie: {cat_label}")
+    state.add_download_log(f"Luni de procesat: {len(months)} | Instituții: {len(INSTITUTII)}")
+    state.add_download_log("─" * 50)
+
+    total_dosare = 0
+    total_companies = 0
+    processed = 0
+
+    async with aiohttp.ClientSession() as session:
+        for month_start, month_end in months:
+            if state.download_job_stop_flag:
+                state.add_download_log("Oprire solicitată.")
+                break
+
+            month_label = month_start[:7]  # "2024-01"
+            state.add_download_log(f"Luna {month_label}: {month_start} → {month_end}")
+            month_dosare = []
+            month_institutions_with_data = 0
+
+            for institutie in INSTITUTII:
+                if state.download_job_stop_flag:
+                    break
+                try:
+                    dosare = await fetch_dosare(session, "", institutie, month_start, month_end)
+                    if dosare:
+                        # Filter by category if specified
+                        if categorie_caz:
+                            dosare = [d for d in dosare if d.get('categorieCaz') == categorie_caz]
+                        if dosare:
+                            month_dosare.extend(dosare)
+                            month_institutions_with_data += 1
+                except Exception as e:
+                    logger.error(f"[BULK] Error {institutie} {month_label}: {e}")
+
+                processed += 1
+                state.download_job_progress["processed"] = processed
+                await asyncio.sleep(0.3)
+
+            # Save month file
+            if month_dosare:
+                filename = f"bulk_{month_label}_{len(month_dosare)}dosare.json"
+                filepath = DOWNLOADS_DIR / filename
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    json.dump({
+                        "month": month_label,
+                        "date_start": month_start,
+                        "date_end": month_end,
+                        "categorie_caz": categorie_caz,
+                        "total_dosare": len(month_dosare),
+                        "institutions_with_data": month_institutions_with_data,
+                        "dosare": month_dosare
+                    }, f, ensure_ascii=False, indent=2)
+                total_dosare += len(month_dosare)
+                # Count unique companies
+                companies_set = set()
+                for d in month_dosare:
+                    for p in d.get('parti', []):
+                        name = p.get('nume', '') or p.get('numeParte', '')
+                        if name:
+                            companies_set.add(name[:50])
+                total_companies += len(companies_set)
+                state.add_download_log(f"  → {len(month_dosare)} dosare salvate ({month_institutions_with_data} instituții) → {filename}")
+            else:
+                state.add_download_log(f"  → 0 dosare")
+
+            state.download_job_progress["dosare_found"] = total_dosare
+
+    state.add_download_log("─" * 50)
+    state.add_download_log(f"FINALIZAT: {total_dosare:,} dosare descărcate, ~{total_companies:,} părți unice")
+    state.download_job_progress["active"] = False
+
+
+@router.get("/bulk-download/progress")
+async def get_bulk_progress():
+    return {
+        "active": state.download_job_progress["active"],
+        "processed": state.download_job_progress["processed"],
+        "total": state.download_job_progress["total"],
+        "dosare_found": state.download_job_progress["dosare_found"],
+        "logs": state.download_job_progress["logs"][-80:]
+    }
+
+
+@router.post("/bulk-download/stop")
+async def stop_bulk_download():
+    state.download_job_stop_flag = True
+    return {"message": "Stop requested"}
+
+
+# ─── Match from saved files ──────────────────────────────────────────────────
+
+@router.post("/match-from-files")
+async def match_from_saved_files(
+    background_tasks: BackgroundTasks,
+    categorie_caz: str = None,
+):
+    """
+    Process ALL saved bulk_*.json files and match companies against DB.
+    Creates firms + dosare for matched companies.
+    """
+    if state.download_job_progress["active"]:
+        raise HTTPException(status_code=409, detail="A job is already running")
+
+    bulk_files = sorted([f for f in DOWNLOADS_DIR.iterdir() if f.name.startswith("bulk_") and f.suffix == ".json"])
+    if not bulk_files:
+        raise HTTPException(status_code=404, detail="Nu există fișiere bulk_*.json de procesat")
+
+    state.download_job_stop_flag = False
+    state.download_job_progress.update({
+        "active": True, "processed": 0, "total": len(bulk_files),
+        "dosare_found": 0, "firme_new": 0, "logs": []
+    })
+    background_tasks.add_task(_run_match_from_files, bulk_files, categorie_caz)
+    return {"message": f"Match started: {len(bulk_files)} fișiere", "status": "running"}
+
+
+async def _run_match_from_files(bulk_files: list, categorie_caz: str = None):
+    """Process bulk JSON files and match/save to MongoDB."""
+    import mongo_db as mdb
+    state.add_download_log(f"MATCH FROM FILES: {len(bulk_files)} fișiere")
+    state.add_download_log("─" * 50)
+
+    total_stats = {'firme_new': 0, 'firme_existing': 0, 'dosare_new': 0, 'timeline_new': 0, 'skipped_no_match': 0}
+
+    for i, filepath in enumerate(bulk_files):
+        if state.download_job_stop_flag:
+            state.add_download_log("Oprire solicitată.")
+            break
+
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            dosare = data.get("dosare", [])
+            if not dosare:
+                state.add_download_log(f"[{i+1}/{len(bulk_files)}] {filepath.name}: 0 dosare, skip")
+                state.download_job_progress["processed"] = i + 1
+                continue
+
+            stats = await save_to_mongo(dosare, "", categorie_caz, only_match_existing=False)
+            for key in total_stats:
+                total_stats[key] = total_stats.get(key, 0) + stats.get(key, 0)
+
+            state.add_download_log(
+                f"[{i+1}/{len(bulk_files)}] {filepath.name}: "
+                f"{stats['dosare_new']} dosare, {stats['firme_new']} firme noi, "
+                f"{stats['firme_existing']} existente"
+            )
+        except Exception as e:
+            state.add_download_log(f"[{i+1}/{len(bulk_files)}] {filepath.name}: EROARE {str(e)[:60]}")
+
+        state.download_job_progress["processed"] = i + 1
+        state.download_job_progress["dosare_found"] = total_stats['dosare_new']
+        state.download_job_progress["firme_new"] = total_stats['firme_new']
+
+    state.add_download_log("─" * 50)
+    state.add_download_log(
+        f"FINALIZAT: {total_stats['dosare_new']:,} dosare noi, "
+        f"{total_stats['firme_new']:,} firme noi, "
+        f"{total_stats['firme_existing']:,} firme existente"
+    )
+    state.download_job_progress["active"] = False

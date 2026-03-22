@@ -675,6 +675,107 @@ export default function DashboardPage({ ctx }) {
             </CardContent>
           </Card>
         </div>
+
+          {/* Bulk Download Card */}
+          <Card data-testid="bulk-download-card" style={{marginTop:'16px'}}>
+            <CardHeader>
+              <CardTitle className="card-title">
+                <Download size={20} />
+                Bulk Download — Toate dosarele
+              </CardTitle>
+              <CardDescription>
+                Descarcă TOATE dosarele de pe Portal JUST pe o perioadă, lună cu lună. Salvează JSON-uri raw fără match — procesezi offline.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div style={{display:'flex', gap:'8px', flexWrap:'wrap', marginBottom:'12px', alignItems:'flex-end'}}>
+                <div>
+                  <label style={{fontSize:'0.75rem', color:'var(--text-muted)', display:'block', marginBottom:'4px'}}>De la</label>
+                  <input type="date" defaultValue="2020-01-01" id="bulk-start" style={{padding:'6px 10px', borderRadius:'6px', border:'1px solid var(--border)', background:'var(--bg-secondary)', color:'var(--text-primary)', fontSize:'0.85rem'}} />
+                </div>
+                <div>
+                  <label style={{fontSize:'0.75rem', color:'var(--text-muted)', display:'block', marginBottom:'4px'}}>Până la</label>
+                  <input type="date" defaultValue={new Date().toISOString().split('T')[0]} id="bulk-end" style={{padding:'6px 10px', borderRadius:'6px', border:'1px solid var(--border)', background:'var(--bg-secondary)', color:'var(--text-primary)', fontSize:'0.85rem'}} />
+                </div>
+                <Button
+                  data-testid="bulk-download-btn"
+                  style={{background:'#22c55e', color:'#000', fontWeight:700}}
+                  disabled={downloadProgress?.active}
+                  onClick={async () => {
+                    const ds = document.getElementById('bulk-start')?.value || '2020-01-01';
+                    const de = document.getElementById('bulk-end')?.value || new Date().toISOString().split('T')[0];
+                    try {
+                      await axios.post(`${API}/bulk-download?date_start=${ds}&date_end=${de}`);
+                      toast.success(`Bulk download pornit: ${ds} → ${de}`);
+                    } catch(e) { toast.error(e.response?.data?.detail || 'Eroare'); }
+                  }}
+                >
+                  {downloadProgress?.active ? <><Loader2 className="animate-spin" size={14} style={{marginRight:6}} />Descărcare...</> : <><Download size={14} style={{marginRight:6}} />Start Bulk Download</>}
+                </Button>
+                <Button
+                  variant="outline"
+                  data-testid="match-files-btn"
+                  disabled={downloadProgress?.active}
+                  onClick={async () => {
+                    try {
+                      const res = await axios.post(`${API}/match-from-files`);
+                      toast.success(res.data.message);
+                    } catch(e) { toast.error(e.response?.data?.detail || 'Eroare'); }
+                  }}
+                >
+                  <Search size={14} style={{marginRight:6}} />
+                  Match din fișiere salvate
+                </Button>
+                {downloadProgress?.active && (
+                  <Button variant="destructive" onClick={async () => { await axios.post(`${API}/bulk-download/stop`); toast.info('Oprire solicitată'); }}>
+                    <XCircle size={14} style={{marginRight:4}} /> Stop
+                  </Button>
+                )}
+              </div>
+
+              <p style={{fontSize:'0.75rem', color:'var(--text-muted)', marginBottom:'10px'}}>
+                Descarcă raw JSON-uri (fără match). Apoi rulează "Match din fișiere" sau procesează pe Docker local.
+                ~0.3s/instituție × 246 instituții × N luni. O lună ≈ 75 sec.
+              </p>
+
+              {/* Progress */}
+              {downloadProgress?.active && downloadProgress?.total > 0 && (
+                <div style={{marginBottom:'8px'}}>
+                  <div style={{display:'flex', justifyContent:'space-between', fontSize:'0.75rem', color:'var(--text-muted)', marginBottom:'3px'}}>
+                    <span>Progres: {downloadProgress.processed?.toLocaleString()}/{downloadProgress.total?.toLocaleString()}</span>
+                    <span style={{color:'var(--primary)'}}>{downloadProgress.total > 0 ? `${(downloadProgress.processed/downloadProgress.total*100).toFixed(0)}%` : ''}</span>
+                  </div>
+                  <div style={{height:'5px', background:'var(--border)', borderRadius:'3px', overflow:'hidden'}}>
+                    <div style={{height:'100%', background:'var(--primary)', transition:'width 0.5s', width:`${downloadProgress.total>0?Math.min(downloadProgress.processed/downloadProgress.total*100,100):0}%`}} />
+                  </div>
+                  <div style={{fontSize:'0.72rem', color:'var(--text-muted)', marginTop:'3px'}}>
+                    Dosare descărcate: <strong style={{color:'var(--primary)'}}>{downloadProgress.dosare_found?.toLocaleString()}</strong>
+                  </div>
+                </div>
+              )}
+
+              {/* Log panel — reuse existing downloadLogs */}
+              {downloadLogs?.length > 0 && (
+                <div className="download-log-panel" style={{marginTop:'8px'}}>
+                  <div className="download-log-header">
+                    <Activity size={14} />
+                    <span>Log bulk download</span>
+                  </div>
+                  <ScrollArea className="download-log-scroll">
+                    <div className="download-log-content">
+                      {downloadLogs.map((line, i) => (
+                        <div key={i} className="download-log-line"
+                          style={{color: line.includes('EROARE') ? '#ef4444' : line.includes('FINALIZAT') ? '#22c55e' : undefined}}>
+                          {line}
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           </>
   );
 }
