@@ -25,14 +25,34 @@ def extract_companies_from_parti(parti: list) -> list:
     for parte in parti:
         if not isinstance(parte, dict):
             continue
-        name = parte.get('numeParte', '') or parte.get('denumire', '')
+        name = parte.get('nume', '') or parte.get('numeParte', '') or parte.get('denumire', '')
         if name and is_company(name):
+            # Clean long names: "SC FIRMA SRL PRIN ADMINISTRATOR JUDICIAR..." -> "SC FIRMA SRL"
+            clean_name = _extract_core_company_name(name)
             companies.append({
-                'denumire': name,
-                'denumire_normalized': normalize_company_name(name),
+                'denumire': clean_name,
+                'denumire_normalized': normalize_company_name(clean_name),
+                'denumire_raw': name,
                 'calitate': parte.get('calitateParte', '')
             })
     return companies
+
+
+def _extract_core_company_name(name: str) -> str:
+    """Extract core company name, removing 'PRIN ADMINISTRATOR...' suffixes."""
+    # Cut at common suffixes that follow the company name
+    cut_patterns = [
+        r'\s+REPREZENTAT[AĂ]?\b',
+        r'\s+PRIN\s+(?:ADMINISTRATOR|LICHIDATOR|MANDATAR|CURATOR|TUTORE)',
+        r'\s*[-–]\s*(?:SEDIUL|SUCURSALA|FILIALA|PUNCT\s+DE\s+LUCRU)',
+    ]
+    result = name.strip()
+    for pat in cut_patterns:
+        m = re.search(pat, result, re.IGNORECASE)
+        if m:
+            result = result[:m.start()].strip()
+            break
+    return result if len(result) >= 5 else name.strip()
 
 
 def parse_date(date_str: str) -> Optional[datetime]:

@@ -67,6 +67,13 @@ async def save_to_mongo(dosare: list, search_term: str,
                 norm_cache[doc["denumire_normalized"]] = doc
             if doc.get("anaf_denumire"):
                 norm_cache[normalize_company_name(doc["anaf_denumire"])] = doc
+            # Also index by shorter names (first 2-3 words) for fuzzy match
+            if doc.get("denumire_normalized"):
+                words = doc["denumire_normalized"].split()
+                if len(words) >= 2:
+                    short_key = " ".join(words[:3])
+                    if short_key not in norm_cache:
+                        norm_cache[short_key] = doc
 
     from pymongo import InsertOne, UpdateOne
     bulk_dosare = []
@@ -87,10 +94,23 @@ async def save_to_mongo(dosare: list, search_term: str,
             firma_doc = None
             if only_match_existing:
                 norm = company['denumire_normalized']
+                # Strategy 1: exact match
                 firma_doc = norm_cache.get(norm)
+                # Strategy 2: match by first 3 words (covers "FIRMA SRL" vs "FIRMA SRL PRIN ADMIN...")
                 if not firma_doc and len(norm) >= 5:
+                    words = norm.split()
+                    if len(words) >= 2:
+                        short_key = " ".join(words[:3])
+                        firma_doc = norm_cache.get(short_key)
+                # Strategy 3: prefix match (DB name starts with portal name or vice versa)
+                if not firma_doc and len(norm) >= 8:
                     for k, v in norm_cache.items():
-                        if k.startswith(norm[:20]) or norm.startswith(k[:20]):
+                        if len(k) >= 8 and (k.startswith(norm[:25]) or norm.startswith(k[:25])):
+                            firma_doc = v; break
+                # Strategy 4: contains match (portal name contains DB firm name)
+                if not firma_doc and len(norm) >= 10:
+                    for k, v in norm_cache.items():
+                        if len(k) >= 6 and k in norm:
                             firma_doc = v; break
                 if not firma_doc:
                     stats['skipped_no_match'] += 1; continue
